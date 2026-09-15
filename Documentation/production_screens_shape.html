@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="utf-8">
+<title>أمر الإنتاج وتسليم الإنتاج — التصميم المعتمد</title>
+<style>
+  :root{
+    --navy:#16283C; --navy2:#0A246A; --green:#14532D; --green2:#1D5B3A;
+    --gold:#C9A227; --beige:#F4F2E8; --line:#D9D4C4; --ink:#1F2937; --mut:#6B7280;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:"Segoe UI",Tahoma,Arial,sans-serif;background:#E9E6DC;margin:0;padding:14px;color:var(--ink);}
+  .win{max-width:1900px;margin:18px auto;background:#FDFCF8;border:1px solid #B8B5A0;border-radius:7px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.14);}
+
+  .cmd{background:linear-gradient(90deg,var(--navy),#1d3b57);color:#fff;padding:7px 14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+  .cmd .logo{font-weight:700;font-size:14px;}
+  .cmd .docno{background:rgba(255,255,255,.12);border:1px solid rgba(201,162,39,.55);border-radius:14px;padding:2px 11px;font-size:12px;font-weight:700;}
+  .cmd .pillstat{background:#FACC15;color:#3b2f00;border-radius:12px;padding:2px 11px;font-size:11.5px;font-weight:700;}
+  .cmd .spacer{flex:1;}
+  .cmd .who{font-size:11px;opacity:.8;}
+
+  .btn{display:inline-block;padding:5px 12px;border-radius:5px;font-size:12px;font-weight:700;border:1px solid var(--line);background:#F7F5EE;color:var(--ink);white-space:nowrap;}
+  .btn.primary{background:var(--green);color:#fff;border-color:#0f3d22;}
+  .btn.approve{background:var(--gold);color:#2b2200;border-color:#a8871c;}
+  .btn.danger{background:#B42318;color:#fff;border-color:#8f1c13;}
+
+  .band{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:7px 14px;border-bottom:1px solid var(--line);background:#fff;}
+  .band.alt{background:var(--beige);}
+  .sepv{width:1px;height:22px;background:var(--line);}
+  .fld{display:flex;align-items:center;gap:6px;font-size:12px;}
+  .fld > label{font-weight:700;color:var(--mut);font-size:11px;white-space:nowrap;}
+  .inp{border:1px solid #9A9782;border-radius:4px;background:#fff;padding:4px 8px;font-size:12px;white-space:nowrap;}
+  .inp.ro{background:#EDEBE0;font-weight:700;color:var(--navy2);}
+  .chip{background:#EDF3EE;border:1px solid #CADCCF;border-radius:13px;padding:3px 11px;font-size:11.5px;font-weight:700;color:var(--green);}
+  .chip.gold{background:#FFF7E0;border-color:#E9CE7E;color:#8a6a00;}
+  .chip.violet{background:#F3EEFB;border-color:#D6C8EF;color:#6D28D9;}
+  .chip.blue{background:#E8F1FA;border-color:#B8CFE8;color:#0A246A;}
+
+  .cap{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:7px 14px;border-bottom:1px solid var(--line);background:#F7F9F6;}
+  .cap .kpi{display:flex;gap:14px;font-size:11.5px;flex-wrap:wrap;align-items:center;}
+  .cap .kpi b{color:var(--green);}
+
+  .gridwrap{padding:0 14px 8px;}
+  .ghead{display:flex;align-items:center;gap:10px;padding:9px 2px 7px;}
+  .ghead .ttl{font-size:12.5px;font-weight:700;color:var(--navy2);}
+  table{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px;}
+  thead th{position:sticky;top:0;background:var(--navy);color:#fff;padding:7px 6px;font-weight:600;white-space:nowrap;text-align:center;border-inline-end:1px solid #2a4470;font-size:11px;}
+  tbody td{border-bottom:1px solid #E8E4D8;border-inline-end:1px solid #F0EDE4;padding:6px;text-align:center;white-space:nowrap;background:#fff;}
+  tbody tr:nth-child(even) td{background:#FBFAF5;}
+  tbody tr:hover td{background:#F4F8F3;}
+  td.lead{text-align:right;font-weight:600;}
+  td.num{font-variant-numeric:tabular-nums;}
+  td.qty{font-weight:700;color:var(--green);}
+  td.edit{background:#FFFDF3 !important;border:1px solid var(--gold);}
+  .badge{display:inline-block;padding:2px 9px;border-radius:11px;font-size:10.5px;font-weight:700;}
+  .bg-ok{background:#DCFCE7;color:#166534;}
+  .bg-run{background:#DBEAFE;color:#1E3A8A;}
+  .bg-wait{background:#F1F0EA;color:#57534E;}
+  .bg-warn{background:#FEF3C7;color:#92400E;}
+  .note{font-size:11px;color:var(--mut);padding:6px 14px 10px;}
+  .save{display:flex;align-items:center;gap:12px;padding:9px 14px;border-top:1px solid var(--line);background:var(--beige);flex-wrap:wrap;}
+  .save .exp{font-size:11px;color:var(--mut);flex:1;min-width:320px;}
+</style>
+</head>
+<body>
+
+<!-- ═══════════ ١) شاشة أمر إنتاج اليوم ═══════════ -->
+<div class="win">
+  <div class="cmd">
+    <span class="logo">📝 أمر إنتاج اليوم</span>
+    <span class="docno">اليوم: 10/04/2026 — تاريخ العمل من الخادم</span>
+    <span class="pillstat">ماذا سننتج اليوم؟ البيانات من الخطط المعتمدة — لا إضافة أو تعديل هنا</span>
+    <div class="spacer"></div>
+    <span class="who">MRPMPS1007</span>
+  </div>
+
+  <div class="band alt">
+    <span class="chip gold">📅 اليوم: 10/04/2026</span>
+    <span class="chip">📦 بنود اليوم: 6</span>
+    <span class="chip violet">🗂 أوامر صادرة: 4</span>
+    <span class="chip blue">⏳ بانتظار الإصدار: 2</span>
+  </div>
+
+  <div class="cap">
+    <span style="font-size:12px;font-weight:700;color:var(--green)">⚖ إجماليات اليوم:</span>
+    <div class="kpi">
+      <span>كراتين اليوم: <b>9,400</b></span>
+      <span>الوزن: <b>129,300.0 كجم</b></span>
+      <span>عملاء: <b style="color:#6D28D9">3</b></span>
+      <span>خطوط: <b>2</b></span>
+    </div>
+    <div class="spacer" style="flex:1"></div>
+    <span class="btn approve">📤 إصدار أوامر اليوم من الخطة</span>
+    <span class="btn primary">🏭 متابعة تنفيذ الأمر</span>
+  </div>
+
+  <div class="gridwrap">
+    <table>
+      <thead>
+        <tr><th>العميل 👤</th><th>ماذا سننتج؟ 🏷️</th><th>كمية اليوم المعتمدة</th><th>الوزن (كجم) ⚖️</th><th>الوحدة 📏</th><th>الوردية ⏰</th><th>الخط 🏭</th><th>الخطة 📋</th><th>الأمر 📄</th><th>حالة التنفيذ</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="lead">سوق المدينة</td><td class="lead">تمر سكري فاخر 5كجم</td><td class="num">1,200</td><td class="num">6,000.0</td><td>كرتون</td><td>صباحية أ</td><td>خط 1</td><td>PLN-0004</td><td>ORD-0091</td><td><span class="badge bg-run">جاهز للتنفيذ</span></td></tr>
+        <tr><td class="lead">مجمع النخيل</td><td class="lead">تمر خلاص ممتاز 10كجم</td><td class="num">2,000</td><td class="num">20,000.0</td><td>كرتون</td><td>صباحية أ</td><td>خط 1</td><td>PLN-0004</td><td>—</td><td><span class="badge bg-warn">جاهز للإصدار من الخطة</span></td></tr>
+        <tr><td class="lead">أسواق الجنوب</td><td class="lead">تمر برحي تام 3كجم</td><td class="num">3,400</td><td class="num">10,200.0</td><td>كرتون</td><td>مسائية ب</td><td>خط 2</td><td>PLN-0004</td><td>ORD-0092</td><td><span class="badge bg-run">جاهز للتنفيذ</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">الكمية المخططة ثابتة. تسجيل الإنتاج الفعلي يتم ضمن تنفيذ الأمر، ولا يغيّر الخطة. النقر المزدوج على بند له أمر = متابعة التنفيذ.</div>
+</div>
+
+<!-- ═══════════ ٢) شاشة تسليم الإنتاج — تسجيل الفعلي ═══════════ -->
+<div class="win">
+  <div class="cmd">
+    <span class="logo">📤 تسليم الإنتاج — تسجيل الفعلي</span>
+    <span class="pillstat">لمن كانت الخطة؟ ماذا خططنا؟ ماذا أنتجنا؟ كم توقفنا؟ وما المخلفات؟</span>
+    <div class="spacer"></div>
+    <span class="who">MRPMPS1021</span>
+  </div>
+
+  <div class="band alt">
+    <span class="chip">👤 العميل: سوق المدينة</span>
+    <span class="chip gold">📋 الخطة: PLN-0004</span>
+    <span class="chip violet">⏰ الوردية: صباحية أ</span>
+    <div class="sepv"></div>
+    <div class="fld"><label>اختر الأمر:</label><span class="inp" style="min-width:340px">ORD-0091 · سوق المدينة · خطة PLN-0004 · صباحية أ</span></div>
+  </div>
+
+  <div class="band">
+    <span style="font-size:11.5px;font-weight:700;color:var(--green)">قيد التسجيل ✍️ — أدخل الفعلي لكل بند ثم الخام المستهلك، والحفظ يستلم التام ويرسله للفحص.</span>
+  </div>
+
+  <div class="gridwrap">
+    <div class="ghead"><span class="ttl">📦 بنود الأمر — المنتج فعليًا مقابل المخطط</span></div>
+    <table>
+      <thead>
+        <tr><th>العميل 👤</th><th>الصنف من الخطة 🏷️</th><th>المخطط</th><th>الوحدة 📏</th><th>المنتج فعليًا ✏️</th><th>الفرق</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="lead">سوق المدينة</td><td class="lead">تمر سكري فاخر 5كجم</td><td class="num">1,200</td><td>كرتون</td><td class="edit">1,180</td><td class="num" style="color:#B42318">-20</td></tr>
+        <tr><td class="lead">سوق المدينة</td><td class="lead">تمر سكري ممتاز 3كجم</td><td class="num">800</td><td>كرتون</td><td class="edit">800</td><td class="num" style="color:#15803D">0</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="band">
+    <div class="fld"><label>الخام المستهلك فعليًا — كجم *</label><span class="inp" style="min-width:180px">11,850</span></div>
+    <div class="fld"><label>التوقف — ساعة</label><span class="inp" style="width:90px">0.5</span></div>
+    <div class="fld"><label>سبب التوقف — سبب واحد للعملية</label><span class="inp" style="min-width:260px">توقف مغذي الخط 20 دقيقة</span></div>
+  </div>
+
+  <div class="gridwrap">
+    <div class="ghead"><span class="ttl">🧪 المخلفات / المخرجات الثانوية</span><span class="note" style="padding:0">اختر من المخرجات المعرّفة — السطر الفارغ يضيف، وDelete يحذف.</span></div>
+    <table style="max-width:900px">
+      <thead><tr><th>المخرج من التعريفات</th><th>الكمية</th><th>الوحدة من التعريف</th></tr></thead>
+      <tbody>
+        <tr><td class="lead">نوى التمور — مخزن الثانوي</td><td class="num">310.0</td><td>كجم</td></tr>
+        <tr><td class="lead">تمر غير مطابق — إعادة تدوير</td><td class="num">45.0</td><td>كجم</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="save">
+    <span class="exp">الحفظ يسجل الفعلي، ويصرف الخام المدخل، ويستلم التام في المخزون ويرسله للفحص. لا اعتماد جودة أو بيع أو فاتورة. عند تعدد دفعات الخام يوزع الإجمالي بنسب بنود الأمر وفق الدورة القائمة.</span>
+    <span class="btn approve">💾 حفظ الفعلي واستلام الإنتاج وإرساله للفحص</span>
+  </div>
+  <div class="note">بعد الحفظ يظهر في بانر الحالة: سند الاستلام + رقم الفحص.</div>
+</div>
+
+<div class="note" style="text-align:center">التصميم المعتمد — v1.50.18 · نفس لغة شاشة التخطيط: شرائح سياق + أشرطة إجماليات + جداول بصفوف متبادلة + أزرار الهوية (ذهبي = إجراء نهائي، أخضر = إجراء رئيسي)</div>
+</body>
+</html>
