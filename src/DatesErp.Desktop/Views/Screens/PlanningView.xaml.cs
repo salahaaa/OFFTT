@@ -894,8 +894,15 @@ public partial class PlanningView : UserControl
             UpdateCapacityBar();
             if (!_capacityValid) { AppContainer.Get<DialogService>().Error(RemainingBadge.Text); return; }
             if (string.IsNullOrWhiteSpace(TitleBox.Text)) { AppContainer.Get<DialogService>().Error("أدخل عنوان الخطة."); return; }
-            var validRows = _rows.Where(r => r.LotId != null || r.ProductId != 0).ToList();
-            if (validRows.Count == 0) { AppContainer.Get<DialogService>().Error("أضف بنداً واحداً على الأقل — اختر دفعة من الجدول مباشرة."); return; }
+            // §1.50.67 FIX2: عند الضغط على صنف جديد يتشفر الحفظ — تجاهل الصفوف غير المكتملة (كراتين 0) عند الحفظ
+            // مثل UpdateCapacityBar: فقط البنود المكتملة (هوية + كراتين>0) تُحفظ، الصف الجديد الفارغ لا يعطل الحفظ
+            var allValid = _rows.Where(r => r.LotId != null || r.ProductId != 0).ToList();
+            var validRows = allValid.Where(r => r.Cartons > 0 && int.TryParse(r.CartonsText, out var nn) && nn > 0).ToList();
+            if (validRows.Count == 0)
+            {
+                if (allValid.Count > 0) { AppContainer.Get<DialogService>().Error("أكمل كمية الكراتين للبند الجديد (يجب أن تكون >0) أو احذفه — الصفوف الفارغة لا تُحفظ."); return; }
+                AppContainer.Get<DialogService>().Error("أضف بنداً واحداً على الأقل — اختر دفعة من الجدول مباشرة."); return;
+            }
             // §B80: فرض تاريخ كل إنتاج — كل بند بتاريخ صالح داخل فترة الخطة (قبل الخلفية أيضاً)
             var perStart = (StartBox.SelectedDate ?? DateTime.Today).Date;
             var perEnd = (EndBox.SelectedDate ?? DateTime.Today).Date;

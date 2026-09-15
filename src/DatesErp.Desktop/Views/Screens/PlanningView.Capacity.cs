@@ -23,8 +23,8 @@ public partial class PlanningView
         {
             if (quantity == 0) return null;
             var candidate = CapacityItem(row); candidate.PlannedCartons = quantity; candidate.PlannedQtyKg = quantity * row.CartonWeight;
-            // §1.50.67 FIX: استثناء الصفوف الفارغة placeholder من فحص الطاقة
-            var validOthers = _rows.Where(r => r != row && (r.LotId != null || r.ProductId != 0)).Select(CapacityItem).ToList();
+            // §1.50.67 FIX: استثناء الصفوف الفارغة وغير المكتملة من فحص الطاقة — فقط المكتملة (كراتين>0)
+            var validOthers = _rows.Where(r => r != row && (r.LotId != null || r.ProductId != 0) && r.Cartons > 0).Select(CapacityItem).ToList();
             validOthers.Add(candidate);
             var check = EvaluateDraft(validOthers);
             return check.Rows.LastOrDefault()?.Error ?? check.Error;
@@ -41,13 +41,16 @@ public partial class PlanningView
         try
         {
             // §1.50.67 FIX: زر الحفظ يتشفر بعد تعديل الأصناف دون حفظ — السبب صف فارغ placeholder
-            // كان _rows.Any يفحص حتى الصف الفارغ (0 كرتون) فيعطي inputError ويعطل الحفظ دائماً.
-            // الآن نفحص فقط البنود الفعلية (LotId != null || ProductId != 0) مثل Save_Click.
-            var validRows = _rows.Where(r => r.LotId != null || r.ProductId != 0).ToList();
-            var result = EvaluateDraft(validRows.Select(CapacityItem).ToList());
-            string inputError = validRows.FirstOrDefault(r => r.QuantityError != null)?.QuantityError;
-            if (validRows.Any(r => !int.TryParse(r.CartonsText, out var n) || n <= 0)) inputError ??= "صحّح الكميات: يجب أن تكون أعداداً صحيحة أكبر من صفر.";
-            _capacityValid = result.IsValid && inputError == null && validRows.Count > 0;
+            // و §1.50.67 FIX2: عند الضغط على صنف جديد يتشفر الحفظ — لأن صف جديد ProductId!=0 وكرتون 0 كان يُحتسب خطأ.
+            // الآن: valid = كل البنود التي لها هوية (Lot/Product)، complete = التي لها كراتين>0 وبلا QuantityError
+            // الحفظ يبقى مفعلاً إذا وجد complete واحد على الأقل، والصفوف غير المكتملة تُتجاهل ولا تعطل الحفظ.
+            var allValid = _rows.Where(r => r.LotId != null || r.ProductId != 0).ToList();
+            var completeRows = allValid.Where(r => r.Cartons > 0 && int.TryParse(r.CartonsText, out var n) && n > 0).ToList();
+            var result = EvaluateDraft(completeRows.Select(CapacityItem).ToList());
+            // أخطاء الكمية فقط من البنود المكتملة (مismatch كجم/كرتون) — الصفوف قيد الإدخال (0 كرتون) لا تعطل الحفظ
+            string inputError = completeRows.FirstOrDefault(r => r.QuantityError != null)?.QuantityError;
+            // إذا كان هناك بند مكتمل بكراتين>0 لكن به خطأ طاقة، يظهر في result.Error
+            _capacityValid = result.IsValid && inputError == null && completeRows.Count > 0;
             // §التخطيط الأفقي: شريط التقدّم يترجم الطاقة إلى مؤشر بصري فوري (أخضر ضمن الطاقة، أحمر عند التجاوز)
             double usedHours = result.Slots.Sum(s => s.UsedHours);
             double totalHours = result.Slots.Sum(s => s.TotalHours);
@@ -69,10 +72,11 @@ public partial class PlanningView
                 : string.Join("\n", result.Slots.Select(s => $"{s.Label}: مستخدم {s.UsedHours:N1} / {s.TotalHours:N1} س"));
             RemainingBadge.Text = inputError ?? result.Error ?? "ضمن الطاقة — الحساب تراكمي لجميع الأصناف";
             RemainingBadge.Foreground = _capacityValid ? Brushes.DarkGreen : Brushes.Firebrick;
-            // §1.50.67 FIX: تعيين الطاقة فقط للبنود الفعلية — كان يعين حسب index في _rows فيخطئ مع placeholder
-            for (int i = 0; i < validRows.Count && i < result.Rows.Count; i++) validRows[i].Capacity = result.Rows[i];
-            // مسح طاقة الصفوف الفارغة
+            // §1.50.67 FIX: تعيين الطاقة فقط للبنود المكتملة — كان يعين حسب index في _rows فيخطئ مع placeholder
+            for (int i = 0; i < completeRows.Count && i < result.Rows.Count; i++) completeRows[i].Capacity = result.Rows[i];
+            // مسح طاقة الصفوف الفارغة وغير المكتملة
             foreach (var empty in _rows.Where(r => r.LotId == null && r.ProductId == 0)) empty.Capacity = null;
+            foreach (var inc in allValid.Where(r => r.Cartons <= 0)) inc.Capacity = null;
         }
         catch (Exception ex) { ErrorLog.Write(ex, "Planning.CapacityBar"); _capacityValid = false; RemainingBadge.Text = "تعذر التحقق من الطاقة؛ الحفظ موقوف."; }
         finally
