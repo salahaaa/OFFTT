@@ -256,10 +256,17 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="الدفعة والشحنة 📦 *" Width="1*" MinWidth="120">
+                            <DataGridTemplateColumn Header="رقم الاستلام 📦 *" Width="90" MinWidth="85">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Button Content="{Binding LotCode}" Click="LotCode_Click" Tag="{Binding}" Style="{StaticResource PickCellButton}" ToolTip="جميع الدفعات المتاحة معروضة فوراً مرتبة FIFO"/>
+                                        <Button Content="{Binding ShipmentNo}" Click="LotCode_Click" Tag="{Binding}" Style="{StaticResource PickCellButton}">
+                                            <Button.ToolTip>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding ShipmentNo, StringFormat=رقم الاستلام: {0}}" FontWeight="Bold"/>
+                                                    <TextBlock Text="{Binding LotCode, StringFormat=الدفعة: {0}}"/>
+                                                </StackPanel>
+                                            </Button.ToolTip>
+                                        </Button>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
