@@ -106,7 +106,7 @@ public partial class ProductionAuxiliaryView : UserControl
 
             var dlg = new Views.InputDialog($"صرف {need.AuxiliaryProductName}", $"الكمية المطلوب صرفها (المتبقي {need.RemainingQty:N3} {need.Unit}):", need.RemainingQty.ToString("0.###"));
             if (dlg.ShowDialog() != true) return;
-            if (!decimal.TryParse(dlg.Value, out var qty) || qty <= 0)
+            if (!double.TryParse(dlg.Value, out var qty) || qty <= 0)
             {
                 AppContainer.Get<DialogService>().Error("أدخل كمية صحيحة.");
                 return;

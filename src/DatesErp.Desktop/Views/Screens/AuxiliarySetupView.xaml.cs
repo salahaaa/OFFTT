@@ -62,7 +62,7 @@ public partial class AuxiliarySetupView : UserControl
         }
 
         string method = (MethodBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "ByUnit";
-        decimal.TryParse(WeightBox.Text, out var w);
+        double.TryParse(WeightBox.Text, out var w);
 
         try
         {

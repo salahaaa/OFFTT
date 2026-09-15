@@ -99,7 +99,7 @@ public class DeliveryPickService
             double ctnW = UnitsPolicy.CartonWeight(_db, prod.Id, b.PackagingTypeId);
             int cartons = b.PackageCount > 0 ? b.PackageCount : (int)Math.Round(UnitsPolicy.CartonsOf(b.QtyKg, ctnW));
             rows.Add(new DeliveryPickRow(
-                prod.Id, prod.ProductCode ?? "", prod.ProductNameAr ?? prod.ProductName ?? "", grade,
+                prod.Id, prod.ProductCode ?? "", prod.ProductNameAr ?? "", grade,
                 ctnW, cartons, b.QtyKg,
                 fgDate?.ToString("dd/MM/yyyy") ?? "—",
                 prodDate?.ToString("dd/MM/yyyy") ?? "—",

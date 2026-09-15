@@ -30,8 +30,11 @@ public class SupplierMovementService
     {
         var ids = _db.InventoryTransactions.AsNoTracking().Where(t => t.CustomerId != null)
             .Select(t => t.CustomerId).Distinct().ToList();
+        // §1.50.66 — إصلاح Tuple داخل Expression Tree: AsEnumerable قبل إنشاء ValueTuple
         return _db.Customers.AsNoTracking().Where(c => ids.Contains(c.Id))
-            .OrderBy(c => c.CustomerCode).Select(c => (c.Id, c.CustomerCode, c.CustomerName)).ToList();
+            .OrderBy(c => c.CustomerCode)
+            .AsEnumerable()
+            .Select(c => (c.Id, c.CustomerCode, c.CustomerName)).ToList();
     }
 
     /// <summary>الكمية بوحدة الصنف: أصناف الوزن بالكيلو وما عداها بعدد العبوات.</summary>
@@ -56,13 +59,17 @@ public class SupplierMovementService
         if (txns.Count == 0) return new List<SmGroup>();
 
         var partyIds = txns.Where(t => t.CustomerId != null).Select(t => t.CustomerId!.Value).Distinct().ToList();
+        // §1.50.66 — إصلاح Tuple داخل Expression Tree: AsEnumerable قبل إنشاء ValueTuple
         var customers = _db.Customers.AsNoTracking().Where(c => partyIds.Contains(c.Id))
+            .AsEnumerable()
             .ToDictionary(c => c.Id, c => (c.CustomerCode, c.CustomerName));
         var prodIds = txns.Where(t => t.ProductId != null).Select(t => t.ProductId!.Value).Distinct().ToList();
         var products = _db.Products.AsNoTracking().Where(p => prodIds.Contains(p.Id))
+            .AsEnumerable()
             .ToDictionary(p => p.Id, p => (p.ProductCode, p.ProductNameAr, p.UnitOfMeasure));
         var matIds = txns.Where(t => t.ProductId == null && t.MaterialId != null).Select(t => t.MaterialId!.Value).Distinct().ToList();
         var aux = _db.AuxiliaryMaterials.AsNoTracking().Where(a => matIds.Contains(a.Id))
+            .AsEnumerable()
             .ToDictionary(a => a.Id, a => (a.MaterialCode, a.MaterialNameAr, a.UnitOfMeasure));
 
         var byPartyItem = new Dictionary<int, Dictionary<string, double[]>>();

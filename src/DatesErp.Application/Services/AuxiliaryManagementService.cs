@@ -1,4 +1,6 @@
+using DatesErp.Core.Common;
 using DatesErp.Core.Domain.Entities;
+using DatesErp.Core.Domain.Enums;
 using DatesErp.Core.Exceptions;
 using DatesErp.Core.Interfaces.Services;
 using Microsoft.EntityFrameworkCore;
@@ -6,8 +8,8 @@ using Microsoft.EntityFrameworkCore;
 namespace DatesErp.Application.Services;
 
 /// <summary>
-/// §1.50.63 — نظام إدارة الأصناف المساعدة وصرفها للإنتاج
-/// يغطي: تهيئة الأصناف المساعدة، ربطها بالصنف التام، حساب المطلوب، صرف، تتبع، تقارير.
+/// §1.50.66 — نظام إدارة الأصناف المساعدة وصرفها للإنتاج — مراجعة شاملة
+/// توحيد الكميات على double (حقول الإنتاج الحالية double) + منع خلط كجم مع عدد عبوات
 /// </summary>
 public class AuxiliaryManagementService : ServiceBase
 {
@@ -18,7 +20,6 @@ public class AuxiliaryManagementService : ServiceBase
     // أولًا: تهيئة الأصناف المساعدة
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>قائمة الأصناف المساعدة المعرّفة في بطاقة الأصناف (ItemType=Auxiliary/Pack/ByProduct) مع إعداداتها.</summary>
     public List<AuxiliarySetupDto> GetAuxiliarySetups()
     {
         var products = Db.Products.AsNoTracking()
@@ -37,7 +38,7 @@ public class AuxiliaryManagementService : ServiceBase
                 ProductName = p.ProductNameAr,
                 GroupCode = cfg?.GroupCode ?? p.GroupCode,
                 BaseUnit = cfg?.BaseUnit ?? p.UnitOfMeasure,
-                UnitWeightKg = cfg?.UnitWeightKg ?? p.CartonWeightKg,
+                UnitWeightKg = cfg != null ? (double)cfg.UnitWeightKg : p.CartonWeightKg,
                 DispensingMethod = cfg?.DispensingMethod ?? "ByUnit",
                 DispensingMethodAr = ToDispensingAr(cfg?.DispensingMethod ?? "ByUnit"),
                 NeedsIssueOnOrder = cfg?.NeedsIssueOnOrder ?? true,
@@ -48,16 +49,11 @@ public class AuxiliaryManagementService : ServiceBase
         }).ToList();
     }
 
-    public OpResult SaveAuxiliarySetup(int productId, string groupCode, string baseUnit, decimal unitWeight, string dispensingMethod, bool needsIssue, bool isActive, string notes = null)
+    public OpResult SaveAuxiliarySetup(int productId, string groupCode, string baseUnit, double unitWeight, string dispensingMethod, bool needsIssue, bool isActive, string notes = null)
     {
         Require("products", "Edit");
         var product = Db.Products.FirstOrDefault(p => p.Id == productId);
         if (product == null) return OpResult.Fail("الصنف غير موجود في بطاقة الأصناف — عرّفه أولاً في شاشة الأصناف.");
-        if (product.ItemType != "Auxiliary" && product.ItemType != "Pack" && product.GroupCode != "004")
-        {
-            // تحويل تلقائي إلى مساعد إذا كان تاماً؟ لا — نطلب من المستخدم تغيير النوع في البطاقة
-            // لكن نسمح بالتهيئة مع تحذير
-        }
 
         return RunOp(() =>
         {
@@ -69,7 +65,7 @@ public class AuxiliaryManagementService : ServiceBase
             }
             cfg.GroupCode = string.IsNullOrWhiteSpace(groupCode) ? product.GroupCode : groupCode.Trim();
             cfg.BaseUnit = string.IsNullOrWhiteSpace(baseUnit) ? product.UnitOfMeasure : baseUnit.Trim();
-            cfg.UnitWeightKg = unitWeight;
+            cfg.UnitWeightKg = (decimal)unitWeight;
             cfg.DispensingMethod = string.IsNullOrWhiteSpace(dispensingMethod) ? "ByUnit" : dispensingMethod.Trim();
             cfg.NeedsIssueOnOrder = needsIssue;
             cfg.IsActive = isActive;
@@ -107,7 +103,7 @@ public class AuxiliaryManagementService : ServiceBase
             AuxiliaryProductId = r.AuxiliaryProductId,
             AuxiliaryProductName = auxProducts.GetValueOrDefault(r.AuxiliaryProductId, $"صنف #{r.AuxiliaryProductId}"),
             Unit = r.Unit,
-            QtyPerCarton = r.QtyPerCarton,
+            QtyPerCarton = (double)r.QtyPerCarton,
             CalculationMethod = r.CalculationMethod,
             CalculationMethodAr = ToCalcAr(r.CalculationMethod),
             IsActive = r.IsActive,
@@ -122,7 +118,7 @@ public class AuxiliaryManagementService : ServiceBase
         .Where(p => (p.ItemType == "Auxiliary" || p.ItemType == "Pack" || p.GroupCode == "004") && p.IsActive)
         .OrderBy(p => p.ProductNameAr).ToList();
 
-    public OpResult SaveRequirement(int? id, int finishedProductId, int auxiliaryProductId, string unit, decimal qtyPerCarton, string calcMethod, string notes = null)
+    public OpResult SaveRequirement(int? id, int finishedProductId, int auxiliaryProductId, string unit, double qtyPerCarton, string calcMethod, string notes = null)
     {
         Require("products", "Edit");
         if (finishedProductId == auxiliaryProductId) return OpResult.Fail("لا يمكن ربط الصنف بنفسه.");
@@ -133,15 +129,24 @@ public class AuxiliaryManagementService : ServiceBase
 
         return RunOp(() =>
         {
-            var req = id == null ? new ProductAuxiliaryRequirement() : Db.ProductAuxiliaryRequirements.FirstOrDefault(r => r.Id == id);
-            if (req == null) throw new DomainException("الاحتياج غير موجود.");
+            ProductAuxiliaryRequirement req;
+            if (id == null)
+            {
+                req = new ProductAuxiliaryRequirement();
+            }
+            else
+            {
+                req = Db.ProductAuxiliaryRequirements.FirstOrDefault(r => r.Id == id.Value);
+                if (req == null) throw new DomainException("الاحتياج غير موجود.");
+            }
+
             if (Db.ProductAuxiliaryRequirements.Any(r => r.FinishedProductId == finishedProductId && r.AuxiliaryProductId == auxiliaryProductId && r.Id != req.Id && r.IsActive))
                 throw new DomainException("هذا الصنف المساعد مرتبط مسبقاً بهذا الصنف التام — عدّل الكمية بدل التكرار.");
 
             req.FinishedProductId = finishedProductId;
             req.AuxiliaryProductId = auxiliaryProductId;
             req.Unit = string.IsNullOrWhiteSpace(unit) ? aux.UnitOfMeasure : unit.Trim();
-            req.QtyPerCarton = qtyPerCarton;
+            req.QtyPerCarton = (decimal)qtyPerCarton;
             req.CalculationMethod = string.IsNullOrWhiteSpace(calcMethod) ? "PerCarton" : calcMethod.Trim();
             req.IsActive = true;
             req.Notes = notes?.Trim();
@@ -176,13 +181,11 @@ public class AuxiliaryManagementService : ServiceBase
     // ثالثًا ورابعًا: حساب المطلوب وعرضه عند أمر الإنتاج
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>حساب احتياجات الأصناف المساعدة لأمر إنتاج حسب كميته (كراتين).</summary>
     public List<AuxiliaryNeedDto> CalculateNeedsForOrder(int orderId)
     {
         var order = Db.ProductionOrders.AsNoTracking().Include(o => o.Items).FirstOrDefault(o => o.Id == orderId);
         if (order == null) throw new DomainException("أمر الإنتاج غير موجود.");
 
-        // تجميع كراتين لكل صنف تام
         var cartonsByProduct = order.Items.GroupBy(i => i.ProductId)
             .ToDictionary(g => g.Key, g => g.Sum(i => i.PlannedCartons));
 
@@ -191,13 +194,12 @@ public class AuxiliaryManagementService : ServiceBase
         foreach (var kv in cartonsByProduct)
         {
             int finishedId = kv.Key;
-            int cartons = kv.Value;
+            double cartons = kv.Value;
             var reqs = Db.ProductAuxiliaryRequirements.AsNoTracking()
                 .Where(r => r.FinishedProductId == finishedId && r.IsActive).ToList();
 
             foreach (var r in reqs)
             {
-                // §1.50.64 — ربط كراتين العميل: استبدال العام بماركة العميل
                 int effectiveAuxId = r.AuxiliaryProductId;
                 if (order.CustomerId != null)
                 {
@@ -205,19 +207,20 @@ public class AuxiliaryManagementService : ServiceBase
                     effectiveAuxId = ResolveAuxProductForCustomerInternal(r.AuxiliaryProductId, order.CustomerId, finishedId, packagingTypeId);
                 }
 
-                decimal required = 0;
+                double qtyPerCarton = (double)r.QtyPerCarton;
+                double required = 0;
                 switch (r.CalculationMethod)
                 {
                     case "PerCarton":
                     default:
-                        required = cartons * r.QtyPerCarton;
+                        required = cartons * qtyPerCarton;
                         break;
                     case "PerKg":
                         var totalKg = order.Items.Where(i => i.ProductId == finishedId).Sum(i => i.PlannedQtyKg);
-                        required = (decimal)totalKg * r.QtyPerCarton;
+                        required = totalKg * qtyPerCarton;
                         break;
                     case "PerProduction":
-                        required = cartons * r.QtyPerCarton;
+                        required = cartons * qtyPerCarton;
                         break;
                 }
 
@@ -226,8 +229,8 @@ public class AuxiliaryManagementService : ServiceBase
                     var auxProd = Db.Products.AsNoTracking().FirstOrDefault(p => p.Id == effectiveAuxId);
                     var originalProd = effectiveAuxId != r.AuxiliaryProductId ? Db.Products.AsNoTracking().FirstOrDefault(p => p.Id == r.AuxiliaryProductId) : null;
                     string details = originalProd != null
-                        ? $"{cartons:N0} كرتون × {r.QtyPerCarton} {r.Unit} = {required:N3} (عام: {originalProd.ProductNameAr} → ماركة عميل: {auxProd?.ProductNameAr})"
-                        : $"{cartons:N0} كرتون × {r.QtyPerCarton} {r.Unit} = {required:N3}";
+                        ? $"{cartons:N0} كرتون × {qtyPerCarton} {r.Unit} = {required:N3} (عام: {originalProd.ProductNameAr} → ماركة عميل: {auxProd?.ProductNameAr})"
+                        : $"{cartons:N0} كرتون × {qtyPerCarton} {r.Unit} = {required:N3}";
                     needs[effectiveAuxId] = new AuxiliaryNeedDto
                     {
                         AuxiliaryProductId = effectiveAuxId,
@@ -246,7 +249,6 @@ public class AuxiliaryManagementService : ServiceBase
             }
         }
 
-        // جلب المصروف والمتبقي والمتاح
         var materials = Db.ProductionOrderMaterials.AsNoTracking().Where(m => m.OrderId == orderId).ToList();
         var auxConfigs = Db.AuxiliaryProductConfigs.AsNoTracking().ToDictionary(c => c.ProductId);
         var whAux = Db.Warehouses.AsNoTracking().FirstOrDefault(w => w.WarehouseCode == "WAUX")?.Id ?? 0;
@@ -256,8 +258,8 @@ public class AuxiliaryManagementService : ServiceBase
             var mat = materials.FirstOrDefault(m => m.AuxiliaryProductId == need.AuxiliaryProductId);
             if (mat != null)
             {
-                need.IssuedQty = (decimal)mat.ActualIssuedQty;
-                need.RemainingQty = Math.Max(0, need.RequiredQty - (decimal)mat.ActualIssuedQty);
+                need.IssuedQty = mat.ActualIssuedQty;
+                need.RemainingQty = Math.Max(0d, need.RequiredQty - mat.ActualIssuedQty);
             }
             else
             {
@@ -265,41 +267,38 @@ public class AuxiliaryManagementService : ServiceBase
                 need.RemainingQty = need.RequiredQty;
             }
 
-            // المتاح في المخزن
-            decimal available = 0;
-            if (whAux != 0)
+            double available = 0;
+            if (whAux != 0 && need.AuxiliaryProductId != null)
             {
-                // §1.50.66 — مفتاح الرصيد يشمل PackagingTypeId + CustomerId (للمساعد نستخدم nulls لكن نذكرها صراحة لمنع خلط)
-                available = Db.StockBalances.AsNoTracking()
-                    .Where(b => b.WarehouseId == whAux && b.ProductId == need.AuxiliaryProductId && b.LotId == null && b.CustomerId == null)
-                    .Sum(b => b.QtyKg + b.PackageCount);
-                var bal = Db.StockBalances.AsNoTracking().FirstOrDefault(b => b.WarehouseId == whAux && b.ProductId == need.AuxiliaryProductId && b.LotId == null && b.CustomerId == null && b.PackagingTypeId == null);
+                var bal = Db.StockBalances.AsNoTracking()
+                    .FirstOrDefault(b => b.WarehouseId == whAux && b.ProductId == need.AuxiliaryProductId.Value && b.LotId == null && b.CustomerId == null && b.PackagingTypeId == null);
                 if (bal != null)
                 {
-                    available = need.Unit.Contains("كجم") || need.Unit == "Kg" ? bal.QtyKg : (bal.PackageCount > 0 ? bal.PackageCount : bal.QtyKg);
+                    bool isKg = need.Unit != null && need.Unit.Contains("كجم");
+                    available = isKg ? bal.QtyKg : (bal.PackageCount > 0 ? bal.PackageCount : bal.QtyKg);
                 }
             }
             need.AvailableQty = available;
-            need.StockStatus = available >= need.RemainingQty ? "متوفر" : available > 0 ? "جزئي" : "غير متوفر";
+            need.StockStatus = available >= need.RemainingQty - 0.001 ? "متوفر" : available > 0.001 ? "جزئي" : "غير متوفر";
             need.StockStatusAr = need.StockStatus;
-            need.NeedsIssue = auxConfigs.TryGetValue(need.AuxiliaryProductId, out var cfg) ? cfg.NeedsIssueOnOrder : true;
+            need.NeedsIssue = need.AuxiliaryProductId != null && auxConfigs.TryGetValue(need.AuxiliaryProductId.Value, out var cfg) ? cfg.NeedsIssueOnOrder : true;
         }
 
-        // إضافة مواد من النظام القديم (ConsumptionFormula) إن وجدت ولم تُغطّ بالنظام الجديد
         var oldMaterials = Db.ProductionOrderMaterials.AsNoTracking().Where(m => m.OrderId == orderId && m.AuxiliaryProductId == null).ToList();
         foreach (var om in oldMaterials)
         {
-            if (needs.ContainsKey(om.MaterialId)) continue; // لا نكرر
+            if (om.AuxiliaryProductId != null && needs.ContainsKey(om.AuxiliaryProductId.Value)) continue;
+            if (needs.ContainsKey(om.MaterialId)) continue;
             var auxMat = Db.AuxiliaryMaterials.AsNoTracking().FirstOrDefault(a => a.Id == om.MaterialId);
-            needs[om.MaterialId + 1000000] = new AuxiliaryNeedDto // مفتاح وهمي للقديم
+            needs[om.MaterialId + 1000000] = new AuxiliaryNeedDto
             {
                 AuxiliaryProductId = null,
                 MaterialId = om.MaterialId,
                 AuxiliaryProductName = auxMat?.MaterialNameAr ?? $"مادة #{om.MaterialId}",
                 Unit = om.UnitOfMeasure ?? auxMat?.UnitOfMeasure ?? "وحدة",
-                RequiredQty = (decimal)om.CalculatedQty,
-                IssuedQty = (decimal)om.ActualIssuedQty,
-                RemainingQty = (decimal)(om.CalculatedQty - om.ActualIssuedQty),
+                RequiredQty = om.CalculatedQty,
+                IssuedQty = om.ActualIssuedQty,
+                RemainingQty = om.CalculatedQty - om.ActualIssuedQty,
                 AvailableQty = 0,
                 StockStatus = "قديم",
                 StockStatusAr = "قديم",
@@ -310,7 +309,6 @@ public class AuxiliaryManagementService : ServiceBase
         return needs.Values.OrderBy(n => n.AuxiliaryProductName).ToList();
     }
 
-    /// <summary>§1.50.64 — حل صنف مساعد العميل داخلياً (نفس منطق ProductionOrderService).</summary>
     private int ResolveAuxProductForCustomerInternal(int genericAuxProductId, int? customerId, int? productId, int? packagingTypeId)
     {
         if (customerId == null) return genericAuxProductId;
@@ -346,10 +344,10 @@ public class AuxiliaryManagementService : ServiceBase
     // خامسًا وسادسًا: التحقق من المخزون والصرف الجزئي
     // ═══════════════════════════════════════════════════════════════
 
-    public OpResult IssueAuxiliary(int orderId, int auxiliaryProductId, decimal qty, string notes = null)
+    public OpResult IssueAuxiliary(int orderId, int auxiliaryProductId, double qty, string notes = null)
     {
         Require("materials", "Post");
-        if (qty <= 0) return OpResult.Fail("كمية الصرف يجب أن تكون أكبر من صفر.");
+        if (qty <= 0.001) return OpResult.Fail("كمية الصرف يجب أن تكون أكبر من صفر.");
 
         var order = Db.ProductionOrders.Include(o => o.Materials).FirstOrDefault(o => o.Id == orderId);
         if (order == null) return OpResult.Fail("أمر الإنتاج غير موجود.");
@@ -361,8 +359,7 @@ public class AuxiliaryManagementService : ServiceBase
 
         if (qty > need.RemainingQty + 0.001)
         {
-            // السماح بالصرف الجزئي — إذا تجاوز المتبقي نرفض إلا بصلاحية
-            if (!Session.Can("materials", "OverIssue"))
+            if (Session == null || !Session.Can("materials", "OverIssue"))
                 return OpResult.Fail($"الكمية المطلوب صرفها {qty:N3} تتجاوز المتبقي {need.RemainingQty:N3} — لا يسمح بالصرف الزائد إلا بصلاحية.");
         }
 
@@ -371,49 +368,47 @@ public class AuxiliaryManagementService : ServiceBase
             var whAux = Db.Warehouses.FirstOrDefault(w => w.WarehouseCode == "WAUX");
             if (whAux == null) throw new DomainException("مخزن الأصناف المساعدة WAUX غير موجود — أنشئه من شاشة المخازن.");
 
-            // التحقق من المخزون
-            // §1.50.66 — مفتاح كامل: Warehouse + Product + PackagingType (null للمساعد) + Customer null + Lot null
             var balance = Db.StockBalances.FirstOrDefault(b => b.WarehouseId == whAux.Id && b.ProductId == auxiliaryProductId && b.LotId == null && b.CustomerId == null && b.PackagingTypeId == null);
-            double availableD = balance != null ? (need.Unit.Contains("كجم") ? balance.QtyKg : (balance.PackageCount > 0 ? balance.PackageCount : balance.QtyKg)) : 0;
-            decimal available = (decimal)availableD;
-
-            if (available < qty - 0.001)
+            bool isKg = need.Unit != null && need.Unit.Contains("كجم");
+            double availableD = 0;
+            if (balance != null)
             {
-                // رسالة تفصيلية كما طلب المستخدم
-                throw new DomainException($"غير كافٍ للصرف\nالمطلوب: {qty:N3} {need.Unit}\nالمتاح: {available:N3}\nالعجز: {(qty - available):N3}");
+                availableD = isKg ? balance.QtyKg : (balance.PackageCount > 0 ? (double)balance.PackageCount : balance.QtyKg);
             }
 
-            decimal before = available;
+            if (availableD + 0.001 < qty)
+            {
+                throw new DomainException($"غير كافٍ للصرف\nالمطلوب: {qty:N3} {need.Unit}\nالمتاح: {availableD:N3}\nالعجز: {(qty - availableD):N3}");
+            }
 
-            // إنشاء حركة مخزنية
+            double before = availableD;
+
             var txn = new InventoryTransaction
             {
                 TxnDate = Db.BusinessNow,
                 WarehouseId = whAux.Id,
                 ProductId = auxiliaryProductId,
-                QtyKg = need.Unit.Contains("كجم") ? -qty : 0,
-                PackageCount = need.Unit.Contains("كجم") ? 0 : -(int)qty,
+                QtyKg = isKg ? -qty : 0,
+                PackageCount = isKg ? 0 : -(int)Math.Round(qty),
                 ReferenceDocType = ReferenceDocType.MaterialIssue,
                 ReferenceDocNumber = $"{order.DocumentNumber}#AUX-{auxiliaryProductId}-{DateTime.Now:yyyyMMddHHmmss}",
                 Notes = notes ?? $"صرف {qty:N3} {need.Unit} من {need.AuxiliaryProductName} لأمر {order.DocumentNumber}",
-                CreatedBy = Session.UserId
+                CreatedBy = Session?.UserId
             };
             Db.InventoryTransactions.Add(txn);
 
-            // تحديث الرصيد — §1.50.66 مفتاح كامل
             if (balance == null)
             {
                 balance = new StockBalance { WarehouseId = whAux.Id, ProductId = auxiliaryProductId, QtyKg = 0, PackageCount = 0, LotId = null, CustomerId = null, PackagingTypeId = null };
                 Db.StockBalances.Add(balance);
             }
-            if (need.Unit.Contains("كجم"))
+            if (isKg)
                 balance.QtyKg -= qty;
             else
-                balance.PackageCount -= (int)qty;
+                balance.PackageCount -= (int)Math.Round(qty);
 
-            decimal after = (decimal)(need.Unit.Contains("كجم") ? balance.QtyKg : balance.PackageCount);
+            double after = isKg ? balance.QtyKg : balance.PackageCount;
 
-            // تحديث ProductionOrderMaterial
             var mat = Db.ProductionOrderMaterials.FirstOrDefault(m => m.OrderId == orderId && m.AuxiliaryProductId == auxiliaryProductId);
             if (mat == null)
             {
@@ -436,22 +431,21 @@ public class AuxiliaryManagementService : ServiceBase
                 mat.Status = DocStatuses.Issued;
             }
 
-            // تسجيل حركة تتبع مفصلة
             var issueTxn = new AuxiliaryIssueTransaction
             {
                 OrderId = orderId,
                 OrderNumber = order.DocumentNumber,
                 AuxiliaryProductId = auxiliaryProductId,
-                RequiredQty = need.RequiredQty,
-                IssuedQty = qty,
+                RequiredQty = (decimal)need.RequiredQty,
+                IssuedQty = (decimal)qty,
                 Unit = need.Unit,
                 IssueDate = Db.BusinessNow,
-                UserId = Session.UserId,
-                UserName = Session.UserName,
+                UserId = Session?.UserId,
+                UserName = Session?.UserName,
                 DocumentNumber = txn.ReferenceDocNumber,
                 WarehouseId = whAux.Id,
-                BalanceBefore = before,
-                BalanceAfter = after,
+                BalanceBefore = (decimal)before,
+                BalanceAfter = (decimal)after,
                 Notes = notes
             };
             Db.AuxiliaryIssueTransactions.Add(issueTxn);
@@ -472,7 +466,7 @@ public class AuxiliaryManagementService : ServiceBase
         var errors = new List<string>();
         foreach (var need in remaining)
         {
-            var r = IssueAuxiliary(orderId, need.AuxiliaryProductId.Value, need.RemainingQty, "صرف جماعي للمتبقي");
+            var r = IssueAuxiliary(orderId, need.AuxiliaryProductId!.Value, need.RemainingQty, "صرف جماعي للمتبقي");
             if (r.Ok) success++;
             else errors.Add($"{need.AuxiliaryProductName}: {r.Message}");
         }
@@ -483,24 +477,11 @@ public class AuxiliaryManagementService : ServiceBase
         return OpResult.Success($"تم صرف جميع المتبقي — {success} صنف مساعد.");
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // سابعًا: الفصل بين الخام والمساعد — مضمون في التصميم
-    // الخام من Lot/Shipment، المساعد من WAUX بلا Lot
-    // ═══════════════════════════════════════════════════════════════
-
-    // ═══════════════════════════════════════════════════════════════
-    // ثامنًا: التتبع
-    // ═══════════════════════════════════════════════════════════════
-
     public List<AuxiliaryIssueTransaction> GetIssueHistory(int orderId)
         => Db.AuxiliaryIssueTransactions.AsNoTracking().Where(t => t.OrderId == orderId).OrderByDescending(t => t.IssueDate).ToList();
 
     public List<AuxiliaryIssueTransaction> GetConsumptionByOrder(int orderId)
         => GetIssueHistory(orderId);
-
-    // ═══════════════════════════════════════════════════════════════
-    // تاسعًا وعاشرًا وحادي عشر: إعادة حساب عند التعديل والإرجاع
-    // ═══════════════════════════════════════════════════════════════
 
     public OpResult RecalculateOnOrderChange(int orderId)
     {
@@ -510,15 +491,16 @@ public class AuxiliaryManagementService : ServiceBase
             var order = Db.ProductionOrders.Include(o => o.Items).Include(o => o.Materials).FirstOrDefault(o => o.Id == orderId);
             if (order == null) throw new DomainException("الأمر غير موجود.");
 
-            var cartonsByProduct = order.Items.GroupBy(i => i.ProductId).ToDictionary(g => g.Key, g => g.Sum(i => i.PlannedCartons));
-            var newNeeds = new Dictionary<int, decimal>();
+            var cartonsByProduct = order.Items.GroupBy(i => i.ProductId).ToDictionary(g => g.Key, g => (double)g.Sum(i => i.PlannedCartons));
+            var newNeeds = new Dictionary<int, double>();
 
             foreach (var kv in cartonsByProduct)
             {
                 var reqs = Db.ProductAuxiliaryRequirements.AsNoTracking().Where(r => r.FinishedProductId == kv.Key && r.IsActive).ToList();
                 foreach (var r in reqs)
                 {
-                    decimal reqQty = (decimal)kv.Value * r.QtyPerCarton;
+                    double qtyPerCarton = (double)r.QtyPerCarton;
+                    double reqQty = kv.Value * qtyPerCarton;
                     if (newNeeds.ContainsKey(r.AuxiliaryProductId))
                         newNeeds[r.AuxiliaryProductId] += reqQty;
                     else
@@ -526,14 +508,12 @@ public class AuxiliaryManagementService : ServiceBase
                 }
             }
 
-            // لا نعدل حركات الصرف السابقة — فقط نحدث المطلوب
             foreach (var kv in newNeeds)
             {
                 var mat = Db.ProductionOrderMaterials.FirstOrDefault(m => m.OrderId == orderId && m.AuxiliaryProductId == kv.Key);
                 if (mat != null)
                 {
                     mat.CalculatedQty = Math.Round(kv.Value, 3);
-                    // المتبقي = الجديد - المصروف السابق
                 }
                 else
                 {
@@ -557,36 +537,42 @@ public class AuxiliaryManagementService : ServiceBase
         });
     }
 
-    public OpResult ReturnAuxiliary(int orderId, int auxiliaryProductId, decimal qty, string reason)
+    public OpResult ReturnAuxiliary(int orderId, int auxiliaryProductId, double qty, string reason)
     {
         Require("materials", "Post");
-        if (qty <= 0) return OpResult.Fail("كمية الإرجاع يجب أن تكون أكبر من صفر.");
+        if (qty <= 0.001) return OpResult.Fail("كمية الإرجاع يجب أن تكون أكبر من صفر.");
         if (string.IsNullOrWhiteSpace(reason)) return OpResult.Fail("سبب الإرجاع إجباري للتدقيق.");
 
         return RunOp(() =>
         {
             var mat = Db.ProductionOrderMaterials.FirstOrDefault(m => m.OrderId == orderId && m.AuxiliaryProductId == auxiliaryProductId);
             if (mat == null) throw new DomainException("هذا الصنف غير مصروف لهذا الأمر.");
-            decimal unused = (decimal)(mat.ActualIssuedQty - mat.ConsumedQty - mat.WastedQty - mat.ReturnedQty);
+            double unused = mat.ActualIssuedQty - mat.ConsumedQty - mat.WastedQty - mat.ReturnedQty;
             if (qty > unused + 0.001) throw new DomainException($"كمية الإرجاع {qty:N3} تتجاوز الفائض غير المستخدم {unused:N3}.");
 
             var whAux = Db.Warehouses.FirstOrDefault(w => w.WarehouseCode == "WAUX");
             if (whAux == null) throw new DomainException("مخزن WAUX غير موجود.");
 
             var balance = Db.StockBalances.FirstOrDefault(b => b.WarehouseId == whAux.Id && b.ProductId == auxiliaryProductId && b.LotId == null && b.CustomerId == null && b.PackagingTypeId == null);
-            decimal before = (decimal)(balance != null ? (balance.QtyKg + balance.PackageCount) : 0);
+            double before = 0;
+            if (balance != null)
+            {
+                bool isKgBal = mat.UnitOfMeasure != null && mat.UnitOfMeasure.Contains("كجم");
+                before = isKgBal ? balance.QtyKg : balance.PackageCount;
+            }
 
+            bool isKgUnit = mat.UnitOfMeasure != null && mat.UnitOfMeasure.Contains("كجم");
             var txn = new InventoryTransaction
             {
                 TxnDate = Db.BusinessNow,
                 WarehouseId = whAux.Id,
                 ProductId = auxiliaryProductId,
-                QtyKg = mat.UnitOfMeasure.Contains("كجم") ? qty : 0,
-                PackageCount = mat.UnitOfMeasure.Contains("كجم") ? 0 : (int)qty,
+                QtyKg = isKgUnit ? qty : 0,
+                PackageCount = isKgUnit ? 0 : (int)Math.Round(qty),
                 ReferenceDocType = ReferenceDocType.Return,
                 ReferenceDocNumber = $"{Db.ProductionOrders.Where(o => o.Id == orderId).Select(o => o.DocumentNumber).FirstOrDefault()}#RET-{auxiliaryProductId}-{DateTime.Now:yyyyMMddHHmmss}",
                 Notes = $"إرجاع {qty:N3} {mat.UnitOfMeasure} — السبب: {reason}",
-                CreatedBy = Session.UserId
+                CreatedBy = Session?.UserId
             };
             Db.InventoryTransactions.Add(txn);
 
@@ -595,12 +581,12 @@ public class AuxiliaryManagementService : ServiceBase
                 balance = new StockBalance { WarehouseId = whAux.Id, ProductId = auxiliaryProductId, QtyKg = 0, PackageCount = 0, LotId = null, CustomerId = null, PackagingTypeId = null };
                 Db.StockBalances.Add(balance);
             }
-            if (mat.UnitOfMeasure.Contains("كجم"))
+            if (isKgUnit)
                 balance.QtyKg += qty;
             else
-                balance.PackageCount += (int)qty;
+                balance.PackageCount += (int)Math.Round(qty);
 
-            decimal after = (decimal)(balance.QtyKg + balance.PackageCount);
+            double after = isKgUnit ? balance.QtyKg : balance.PackageCount;
 
             mat.ReturnedQty += qty;
 
@@ -609,15 +595,15 @@ public class AuxiliaryManagementService : ServiceBase
                 OrderId = orderId,
                 OrderNumber = Db.ProductionOrders.Where(o => o.Id == orderId).Select(o => o.DocumentNumber).FirstOrDefault(),
                 AuxiliaryProductId = auxiliaryProductId,
-                ReturnedQty = qty,
+                ReturnedQty = (decimal)qty,
                 Unit = mat.UnitOfMeasure,
                 ReturnDate = Db.BusinessNow,
-                UserId = Session.UserId,
-                UserName = Session.UserName,
+                UserId = Session?.UserId,
+                UserName = Session?.UserName,
                 DocumentNumber = txn.ReferenceDocNumber,
                 WarehouseId = whAux.Id,
-                BalanceBefore = before,
-                BalanceAfter = after,
+                BalanceBefore = (decimal)before,
+                BalanceAfter = (decimal)after,
                 Reason = reason
             };
             Db.AuxiliaryReturnTransactions.Add(retTxn);
@@ -626,10 +612,6 @@ public class AuxiliaryManagementService : ServiceBase
             return OpResult.Success($"تم إرجاع {qty:N3} {mat.UnitOfMeasure} إلى المخزن.", retTxn.Id, txn.ReferenceDocNumber);
         });
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    // ثاني عشر: التقارير
-    // ═══════════════════════════════════════════════════════════════
 
     public List<AuxiliaryConsumptionReportRow> GetConsumptionByOrderReport(int orderId)
     {
@@ -656,21 +638,16 @@ public class AuxiliaryManagementService : ServiceBase
         if (auxiliaryProductId != null)
             q = q.Where(t => t.AuxiliaryProductId == auxiliaryProductId);
 
-        return q.GroupBy(t => t.AuxiliaryProductId)
+        return q.AsEnumerable().GroupBy(t => t.AuxiliaryProductId)
             .Select(g => new AuxiliaryPeriodConsumptionRow
             {
                 AuxiliaryProductId = g.Key,
                 AuxiliaryProductName = Db.Products.Where(p => p.Id == g.Key).Select(p => p.ProductNameAr).FirstOrDefault() ?? $"صنف #{g.Key}",
-                TotalIssued = g.Sum(x => x.IssuedQty),
+                TotalIssued = g.Sum(x => (double)x.IssuedQty),
                 Unit = g.Select(x => x.Unit).FirstOrDefault(),
                 TransactionsCount = g.Count()
             }).ToList();
     }
-}
-
-    // ═══════════════════════════════════════════════════════════════
-    // §1.50.64 — كراتين العملاء (ماركات)
-    // ═══════════════════════════════════════════════════════════════
 
     public List<AuxCustomerSpec> GetCustomerCartonMappings()
         => Db.AuxCustomerSpecs.AsNoTracking().OrderByDescending(s => s.Priority).ToList();
@@ -716,9 +693,10 @@ public class AuxiliaryManagementService : ServiceBase
             return OpResult.Success("تم إيقاف الربط — لن يُستخدم في الأوامر الجديدة.");
         });
     }
+}
 
 // ═══════════════════════════════════════════════════════════════
-// DTOs
+// DTOs — موحدة على double
 // ═══════════════════════════════════════════════════════════════
 
 public class AuxiliarySetupDto
@@ -728,7 +706,7 @@ public class AuxiliarySetupDto
     public string ProductName { get; set; }
     public string GroupCode { get; set; }
     public string BaseUnit { get; set; }
-    public decimal UnitWeightKg { get; set; }
+    public double UnitWeightKg { get; set; }
     public string DispensingMethod { get; set; }
     public string DispensingMethodAr { get; set; }
     public bool NeedsIssueOnOrder { get; set; }
@@ -744,7 +722,7 @@ public class ProductAuxiliaryRequirementDto
     public int AuxiliaryProductId { get; set; }
     public string AuxiliaryProductName { get; set; }
     public string Unit { get; set; }
-    public decimal QtyPerCarton { get; set; }
+    public double QtyPerCarton { get; set; }
     public string CalculationMethod { get; set; }
     public string CalculationMethodAr { get; set; }
     public bool IsActive { get; set; }
@@ -757,10 +735,10 @@ public class AuxiliaryNeedDto
     public int? MaterialId { get; set; }
     public string AuxiliaryProductName { get; set; }
     public string Unit { get; set; }
-    public decimal RequiredQty { get; set; }
-    public decimal IssuedQty { get; set; }
-    public decimal RemainingQty { get; set; }
-    public decimal AvailableQty { get; set; }
+    public double RequiredQty { get; set; }
+    public double IssuedQty { get; set; }
+    public double RemainingQty { get; set; }
+    public double AvailableQty { get; set; }
     public string StockStatus { get; set; }
     public string StockStatusAr { get; set; }
     public bool NeedsIssue { get; set; } = true;
@@ -775,9 +753,9 @@ public class AuxiliaryConsumptionReportRow
     public string OrderNumber { get; set; }
     public string AuxiliaryProductName { get; set; }
     public string Unit { get; set; }
-    public decimal RequiredQty { get; set; }
-    public decimal IssuedQty { get; set; }
-    public decimal RemainingQty { get; set; }
+    public double RequiredQty { get; set; }
+    public double IssuedQty { get; set; }
+    public double RemainingQty { get; set; }
     public string CalculationDetails { get; set; }
 }
 
@@ -785,7 +763,7 @@ public class AuxiliaryPeriodConsumptionRow
 {
     public int? AuxiliaryProductId { get; set; }
     public string AuxiliaryProductName { get; set; }
-    public decimal TotalIssued { get; set; }
+    public double TotalIssued { get; set; }
     public string Unit { get; set; }
     public int TransactionsCount { get; set; }
 }

@@ -93,7 +93,7 @@ public partial class ProductBOMView : UserControl
             AppContainer.Get<DialogService>().Error("اختر الصنف المساعد.");
             return;
         }
-        if (!decimal.TryParse(QtyBox.Text, out var qty) || qty <= 0)
+        if (!double.TryParse(QtyBox.Text, out var qty) || qty <= 0)
         {
             AppContainer.Get<DialogService>().Error("أدخل كمية صحيحة لكل كرتون.");
             return;
