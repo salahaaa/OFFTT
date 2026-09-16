@@ -829,14 +829,14 @@ public partial class PlanningView : UserControl
     {
         try
         {
-            if (_currentPlanId == null) { AppContainer.Get<DialogService>().Error("احفظ الخطة أولاً قبل حفظها كقالب."); return; }
+            if (_currentPlanId == 0) { AppContainer.Get<DialogService>().Error("احفظ الخطة أولاً قبل حفظها كقالب."); return; }
             var dlg = new Views.InputDialog("حفظ كقالب","اسم القالب:", $"قالب - {TitleBox.Text}") { Owner = System.Windows.Window.GetWindow(this) };
             if (dlg.ShowDialog() != true) return;
             using var scope = AppContainer.NewScope();
             var svc = scope.ServiceProvider.GetRequiredService<DatesErp.Core.Interfaces.Services.IPlanningService>();
             // Use PlanningService directly for template methods
             var ps = scope.ServiceProvider.GetRequiredService<DatesErp.Application.Services.PlanningService>();
-            var r = ps.SaveAsTemplate(_currentPlanId.Value, dlg.Value);
+            var r = ps.SaveAsTemplate(_currentPlanId, dlg.Value);
             if (!r.Ok) AppContainer.Get<DialogService>().Error(r.Message);
             else AppContainer.Get<DialogService>().Info(r.Message);
         }
