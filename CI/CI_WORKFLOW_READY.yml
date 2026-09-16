@@ -1,0 +1,104 @@
+name: DateERP CI
+
+on:
+  push:
+    branches: [main, master, 'arena/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+jobs:
+  build-and-test:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore including transitive security audit
+        run: dotnet restore DateERP.sln
+      - name: Clean Release build (warnings fail the actual build)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          dotnet build DateERP.sln -c Release --no-restore -t:Rebuild -warnaserror 2>&1 | tee artifacts/build.log
+      - name: Unit and integration tests
+        run: |
+          dotnet test tests/DatesErp.Tests/DatesErp.Tests.csproj -c Release --no-build \
+            --logger 'trx;LogFileName=results.trx' --results-directory artifacts/tests
+      - name: Full workflow acceptance
+        run: |
+          set -euo pipefail
+          dotnet run --project tools/AcceptanceRunner/AcceptanceRunner.csproj -c Release --no-build 2>&1 | tee artifacts/acceptance.log
+      - name: Unit policy audit
+        run: |
+          set -euo pipefail
+          dotnet run --project audit/UnitRuleAudit/UnitRuleAudit.csproj -c Release --no-build 2>&1 | tee artifacts/unit-audit.log
+      - name: Real WPF receiving regressions (Windows only, no DB)
+        if: runner.os == 'Windows'
+        run: |
+          set -euo pipefail
+          dotnet run --project tools/ReceivingWpfSmoke/ReceivingWpfSmoke.csproj -c Release --no-build 2>&1 | tee artifacts/receiving-wpf.log
+      - name: Build Windows installer package (publish self-contained)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $out = "artifacts/MfgSystem_Publish"
+          dotnet publish "src/DatesErp.Desktop/DatesErp.Desktop.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o $out
+          if (-not (Test-Path "$out/MfgSystem.exe")) { throw "MfgSystem.exe not produced" }
+          Copy-Item "Installer/2-تنصيب.bat" "Installer/فحص_المتطلبات.bat" "Installer/إلغاء_التنصيب.bat" "Installer/README_التنصيب.md" -Destination $out
+          $ver = (Select-String -Path "src/DatesErp.Desktop/DatesErp.Desktop.csproj" -Pattern '<Version>([^<]+)</Version>').Matches[0].Groups[1].Value
+          Set-Content -Path "$out/VERSION.txt" -Value $ver
+          $sha = (Get-FileHash "$out/MfgSystem.exe" -Algorithm SHA256).Hash
+          Set-Content -Path "$out/SHA256.txt" -Value $sha
+          Write-Host "Package version: $ver"
+          Write-Host "SHA256: $sha"
+          Compress-Archive -Path "$out/*" -DestinationPath "artifacts/MfgSystem_$ver_FULL.zip"
+      - name: Save vulnerability inventory
+        run: dotnet list DateERP.sln package --vulnerable --include-transitive --format json > artifacts/vulnerabilities.json
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ matrix.os }}
+          path: artifacts/
+          retention-days: 14
+      - name: Upload Windows installer package
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mfgsystem-installer-package
+          path: artifacts/MfgSystem_*.zip
+          retention-days: 30
+
+  structural-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test the source guards
+        run: python -m unittest discover -s tools/ci -p 'test_*.py'
+      - name: RTL, empty handlers and legacy double policy
+        run: python tools/ci/structural_checks.py
