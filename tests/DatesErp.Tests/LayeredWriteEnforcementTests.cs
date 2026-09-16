@@ -2,7 +2,6 @@ using DatesErp.Application.Services;
 using DatesErp.Core.Domain.Entities;
 using DatesErp.Core.Exceptions;
 using DatesErp.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 

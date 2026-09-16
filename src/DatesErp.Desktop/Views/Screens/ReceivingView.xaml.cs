@@ -35,7 +35,7 @@ public partial class ReceivingView : UserControl
     // §1.50.60 7-ب/7-ج/7-هـ
     private System.Windows.Threading.DispatcherTimer _autoSaveTimer2;
     private DateTime _lastAutoSave2 = DateTime.MinValue;
-    private string AutoSavePath2 => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"ReceivingDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId : 0)}.json");
+    private string AutoSavePath2 => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"ReceivingDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId ?? 0 : 0)}.json");
 
     public ReceivingView()
     {
@@ -126,8 +126,20 @@ public partial class ReceivingView : UserControl
 
     private void OpenSearchWindow()
     {
-        RefreshList();
-        ShipsSearchBox.Focus();
+        try
+        {
+            var w = new DocSearchWindow("بحث سندات الاستلام", _ship_all.Cast<dynamic>().Select(s => new DocSearchWindow.DocRow
+            {
+                Id = s.Id,
+                DocNo = s.DocNo,
+                Customer = s.Customer,
+                Date = s.Date,
+                Weight = s.Weight,
+                StatusAr = s.StatusAr
+            }).ToList());
+            if (w.ShowDialog() == true && w.SelectedId is int id) OpenShipment(id);
+        }
+        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Receiving.Search"); }
     }
 
     private void EditDocument()
@@ -360,8 +372,14 @@ public partial class ReceivingView : UserControl
             if (_locked) { AppContainer.Get<DialogService>().Error("السند في وضع العرض؛ اضغط تعديل على المسودة أولاً."); return; }
             if (!CommitItems()) return;
             if (ReceivedDate.SelectedDate == null) { AppContainer.Get<DialogService>().Error("حدد تاريخ الاستلام."); return; }
-            var validRows = _items.Where(r => r.ProductId != 0).ToList();
-            if (validRows.Count == 0) { AppContainer.Get<DialogService>().Error("أضف بنداً واحداً على الأقل — اختر صنفاً من الجدول."); return; }
+            // §1.50.67 FIX متوسط: تجاهل الصفوف غير المكتملة (عدد 0) عند الحفظ — مثل إصلاح الخطط
+            var allValid = _items.Where(r => r.ProductId != 0).ToList();
+            var validRows = allValid.Where(r => r.PackageCount > 0 && r.UnitWeightKg > 0).ToList();
+            if (validRows.Count == 0)
+            {
+                if (allValid.Count > 0) { AppContainer.Get<DialogService>().Error("أكمل عدد الوحدات ووزن العبوة للبند الجديد (>0) أو احذفه — الصفوف الفارغة لا تُحفظ."); return; }
+                AppContainer.Get<DialogService>().Error("أضف بنداً واحداً على الأقل — اختر صنفاً من الجدول."); return;
+            }
             foreach (var row in validRows)
             {
                 if (row.PackageCount <= 0) { AppContainer.Get<DialogService>().Error($"البند {row.RowNo} ({row.ProductName}): أدخل عدد الوحدات."); return; }
@@ -596,8 +614,9 @@ public partial class ReceivingView : UserControl
             if (_currentId == 0) { AppContainer.Get<DialogService>().Error("احفظ السند أولاً قبل الطباعة — الطباعة تُنفَّذ من بيانات محفوظة."); return; }
             using var scope = AppContainer.NewScope();
             var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
-            var model = Printing.StoredPrintModels.Receiving(db, _currentId);
-            var preview = new Views.PrintPreviewWindow(PhasePrint.Build(model), $"سند استلام {model.DocNo}") { Owner = Window.GetWindow(this) };
+            var model = Views.ReceivingPrintModel.Load(db, _currentId);
+            var doc = new Views.PrintRenderer().Render(model);
+            var preview = new Views.PrintPreviewWindow(doc, $"سند استلام {model.DocumentNumber}") { Owner = Window.GetWindow(this) };
             preview.ShowDialog();
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Receiving.Print"); }

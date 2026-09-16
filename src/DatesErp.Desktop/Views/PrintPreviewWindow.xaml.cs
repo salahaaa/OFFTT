@@ -6,7 +6,6 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using DatesErp.Desktop.Printing;
-using DatesErp.Desktop.Services;
 
 namespace DatesErp.Desktop.Views;
 

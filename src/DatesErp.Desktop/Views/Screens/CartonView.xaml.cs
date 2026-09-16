@@ -94,6 +94,8 @@ public partial class CartonView : UserControl
             CountWhBox.SelectedValue = Svc().DefaultCartonWarehouseId();
             SaleWhBox.SelectedValue = Svc().DefaultCartonWarehouseId();
             var packs = db.Products.AsNoTracking().Where(p => p.GroupCode == "004" && p.IsActive).ToList();
+            CountProdBox.ItemsSource = packs;
+            SaleProdBox.ItemsSource = packs;
             SaleCustBox.ItemsSource = db.Customers.AsNoTracking().Where(c => c.IsActive).ToList();
             SaleCustBox.Items.Insert(0, null);
             RefreshData();

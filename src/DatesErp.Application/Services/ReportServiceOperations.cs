@@ -670,12 +670,6 @@ public partial class ReportService
             {
                 int? whId = int.TryParse(p.GetValueOrDefault("warehouse"), out var whv) ? whv : null;
                 string mtype = p.GetValueOrDefault("mtype") ?? "";
-                var r = new ReportResult
-                {
-                    TitleAr = "حركة المخازن — كل حركة وارد ومنصرف بمستندها الكامل (اضغط + لفتح المستند)",
-                    Columns = new List<string> { "التاريخ", "المخزن", "النوع", "الصنف/المادة", "الدفعة", "العميل", "الكمية (كجم)", "العبوات", "المستند المرجعي", "البيان" },
-                    RowLinks = new List<DocLinkDto>()
-                };
                 var q = Db.InventoryTransactions.AsNoTracking().AsQueryable();
                 if (from != null) q = q.Where(t => t.TxnDate >= from);
                 if (to != null) q = q.Where(t => t.TxnDate <= to.Value.AddDays(1));
@@ -685,13 +679,25 @@ public partial class ReportService
                 if (mtype == "in") q = q.Where(t => t.MovementType == Core.Domain.Enums.MovementType.Inbound);
                 else if (mtype == "out") q = q.Where(t => t.MovementType == Core.Domain.Enums.MovementType.Outbound);
 
+                // §1.50.67 FIX: لا حد 3000 يخفي حركات — الآن 10000 مع تحذير، والتصدير الكامل بدون حد
+                int totalCount = q.Count();
+                bool truncated = totalCount > 10000;
+                var r = new ReportResult
+                {
+                    TitleAr = "حركة المخازن — كل حركة وارد ومنصرف بمستندها الكامل (اضغط + لفتح المستند)" + (truncated ? $" — يعرض أحدث 10000 من {totalCount} حركة" : ""),
+                    Columns = new List<string> { "التاريخ", "المخزن", "النوع", "الصنف/المادة", "الدفعة", "العبوة", "العميل", "الوارد (كجم)", "المنصرف (كجم)", "الكمية الموقعة (كجم)", "العبوات", "المستند المرجعي", "البيان" },
+                    RowLinks = new List<DocLinkDto>()
+                };
                 double tIn = 0, tOut = 0;
-                foreach (var t in q.OrderByDescending(x => x.TxnDate).ThenByDescending(x => x.Id).Take(3000))
+                foreach (var t in q.OrderByDescending(x => x.TxnDate).ThenByDescending(x => x.Id).Take(10000))
                 {
                     string itemName = t.ProductId != null ? ProdName(t.ProductId.Value)
                         : t.MaterialId != null ? Db.AuxiliaryMaterials.AsNoTracking().Where(m => m.Id == t.MaterialId).Select(m => m.MaterialNameAr).FirstOrDefault() ?? "-" : "-";
                     bool inbound = t.MovementType == Core.Domain.Enums.MovementType.Inbound;
                     if (inbound) tIn += Math.Abs(t.QtyKg); else tOut += Math.Abs(t.QtyKg);
+                    string packNameMov = t.PackagingTypeId != null ? Db.PackagingTypes.AsNoTracking().Where(p => p.Id == t.PackagingTypeId).Select(p => p.PackageNameAr).FirstOrDefault() ?? "—" : "—";
+                    double absKg = Math.Abs(t.QtyKg);
+                    string signedKg = (inbound ? "+" : "−") + UiFormat.N(absKg);
                     r.Rows.Add(new object[]
                     {
                         UiFormat.DT(t.TxnDate),
@@ -699,17 +705,22 @@ public partial class ReportService
                         inbound ? "⬆ وارد" : "⬇ منصرف",
                         itemName,
                         Db.Lots.AsNoTracking().Where(l => l.Id == t.LotId).Select(l => l.LotCode).FirstOrDefault() ?? "—",
+                        packNameMov,
                         CustName(t.CustomerId),
-                        UiFormat.N(Math.Abs(t.QtyKg)), UiFormat.N0(Math.Abs(t.PackageCount)),
+                        inbound ? UiFormat.N(absKg) : "—",
+                        inbound ? "—" : UiFormat.N(absKg),
+                        signedKg,
+                        UiFormat.N0(Math.Abs(t.PackageCount)),
                         $"{t.ReferenceDocType}: {t.ReferenceDocNumber}",
                         t.Notes ?? "—"
                     });
                     r.RowLinks.Add(LinkForTxn(t));
                 }
-                r.Summary["عدد الحركات"] = UiFormat.N0(r.Rows.Count);
-                r.Summary["إجمالي الوارد (كجم)"] = UiFormat.N(tIn);
-                r.Summary["إجمالي المنصرف (كجم)"] = UiFormat.N(tOut);
-                r.Summary["الصافي"] = UiFormat.N(tIn - tOut);
+                r.Summary["عدد الحركات"] = UiFormat.N0(r.Rows.Count) + (truncated ? $" (من {totalCount} — فلتر بالتاريخ لتقليل العدد)" : "");
+                r.Summary["إجمالي الوارد (كجم)"] = UiFormat.N(tIn) + (truncated ? " (على المعروض فقط)" : "");
+                r.Summary["إجمالي المنصرف (كجم)"] = UiFormat.N(tOut) + (truncated ? " (على المعروض فقط)" : "");
+                r.Summary["الصافي"] = UiFormat.N(tIn - tOut) + (truncated ? " (على المعروض فقط)" : "");
+                if (truncated) r.Summary["⚠️ تنبيه"] = $"يوجد {totalCount} حركة تطابق الفلتر — يعرض أحدث 10000 فقط. استخدم فلتر التاريخ أو تصدير Excel الكامل.";
                 return r;
             }
 
@@ -772,8 +783,8 @@ public partial class ReportService
                 {
                     TitleAr = whId != null
                         ? $"تقرير المخزن الشامل — {Db.Warehouses.AsNoTracking().Where(w => w.Id == whId).Select(w => w.WarehouseNameAr).FirstOrDefault()}"
-                        : "تقرير المخزن الشامل — أرصدة كل المخازن",
-                    Columns = new List<string> { "المخزن", "الصنف/المادة", "الدفعة", "العميل", "الرصيد (كجم)", "العبوات", "آخر حركة" }
+                        : "تقرير المخزن الشامل — أرصدة كل المخازن (كل عبوة منفصلة + المتاح)",
+                    Columns = new List<string> { "المخزن", "الصنف/المادة", "الدفعة", "العبوة", "العميل", "الرصيد (كجم)", "العبوات", "محجوز (كجم)", "تحت المعالجة (كجم)", "المتاح (كجم)", "آخر حركة", "تنبيه" }
                 };
                 var q = Db.StockBalances.AsNoTracking().Where(b => b.QtyKg != 0 || b.PackageCount != 0); // §1.50.66 — يعرض كل عبوة منفصلة (4كجم/8كجم) — لا يخلط
                 if (whId != null) q = q.Where(b => b.WarehouseId == whId);
@@ -785,22 +796,74 @@ public partial class ReportService
                 {
                     string itemName = b.ProductId != null ? ProdName(b.ProductId.Value)
                         : b.MaterialId != null ? Db.AuxiliaryMaterials.AsNoTracking().Where(m => m.Id == b.MaterialId).Select(m => m.MaterialNameAr).FirstOrDefault() ?? "-" : "-";
+                    // §1.50.67 FIX: آخر حركة يجب أن تشمل PackagingTypeId — كان يأخذ حركة عبوة أخرى
                     var lastTxn = Db.InventoryTransactions.AsNoTracking()
                         .Where(t => t.WarehouseId == b.WarehouseId && t.ProductId == b.ProductId && t.MaterialId == b.MaterialId
-                                    && t.LotId == b.LotId && t.CustomerId == b.CustomerId)
+                                    && t.LotId == b.LotId && t.CustomerId == b.CustomerId && t.PackagingTypeId == b.PackagingTypeId)
                         .OrderByDescending(t => t.TxnDate).ThenByDescending(t => t.Id).FirstOrDefault();
+                    string packNameFull = b.PackagingTypeId != null ? Db.PackagingTypes.AsNoTracking().Where(p => p.Id == b.PackagingTypeId).Select(p => p.PackageNameAr).FirstOrDefault() ?? "—" : "—";
+                    string warn = "";
+                    if (b.QtyKg < -0.001 || b.PackageCount < 0) warn = "⛔ رصيد سالب";
+                    else if (b.ProductId != null && b.PackageCount > 0)
+                    {
+                        double w = Db.Products.AsNoTracking().Where(p => p.Id == b.ProductId).Select(p => p.CartonWeightKg).FirstOrDefault();
+                        if (w <= 0 && b.PackagingTypeId != null) w = Db.PackagingTypes.AsNoTracking().Where(p => p.Id == b.PackagingTypeId).Select(p => p.UnitWeightKg).FirstOrDefault();
+                        if (w > 0)
+                        {
+                            double computed = Math.Round(b.PackageCount * w, 1);
+                            double tol = Math.Max(1.0, Math.Abs(b.QtyKg) * 0.02);
+                            if (Math.Abs(b.QtyKg - computed) > tol) warn = $"⚠️ كجم {b.QtyKg:N1} ≠ {b.PackageCount}×{w:N1}={computed:N1}";
+                        }
+                    }
+                    // §1.50.67 FIX: إضافة محجوز/تحت المعالجة/المتاح — مثل تقرير الدفعات
+                    double reservedKg = 0, underTreatKg = 0, availableKg = b.QtyKg;
+                    if (b.LotId != null)
+                    {
+                        var lotInfo = Db.Lots.AsNoTracking().Where(l => l.Id == b.LotId).Select(l => new { l.ReservedQtyKg, l.UnderTreatmentQtyKg, l.AvailableQtyKg }).FirstOrDefault();
+                        if (lotInfo != null)
+                        {
+                            reservedKg = lotInfo.ReservedQtyKg;
+                            underTreatKg = lotInfo.UnderTreatmentQtyKg;
+                            availableKg = lotInfo.AvailableQtyKg;
+                            // إذا كان الرصيد لعبوة محددة والدفعة لها رصيد كلي، وزع المحجوز نسبياً حسب QtyKg / InStock
+                            // للتبسيط: إذا كان للمنتج الواحد عدة عبوات، اعرض المتاح الكلي للدفعة مع تنبيه
+                        }
+                    }
+                    else
+                    {
+                        // منتج تام بدون دفعة: المتاح = الرصيد - المحجوز للعميل (إن وجد)
+                        availableKg = b.QtyKg;
+                    }
                     r.Rows.Add(new object[]
                     {
                         Db.Warehouses.AsNoTracking().Where(w => w.Id == b.WarehouseId).Select(w => w.WarehouseNameAr).FirstOrDefault() ?? "-",
                         itemName,
                         Db.Lots.AsNoTracking().Where(l => l.Id == b.LotId).Select(l => l.LotCode).FirstOrDefault() ?? "—",
+                        packNameFull,
                         CustName(b.CustomerId),
                         UiFormat.N(b.QtyKg), UiFormat.N0(b.PackageCount),
-                        lastTxn != null ? $"{UiFormat.D(lastTxn.TxnDate)} — {(lastTxn.MovementType == Core.Domain.Enums.MovementType.Inbound ? "وارد" : "منصرف")} {UiFormat.N(Math.Abs(lastTxn.QtyKg))}" : "—"
+                        reservedKg > 0 ? UiFormat.N(reservedKg) : "—",
+                        underTreatKg > 0 ? UiFormat.N(underTreatKg) : "—",
+                        UiFormat.N(availableKg),
+                        lastTxn != null ? $"{UiFormat.D(lastTxn.TxnDate)} — {(lastTxn.MovementType == Core.Domain.Enums.MovementType.Inbound ? "وارد" : "منصرف")} {UiFormat.N(Math.Abs(lastTxn.QtyKg))}" : "—",
+                        warn
                     });
                     if (!perWh.ContainsKey(b.WarehouseId)) perWh[b.WarehouseId] = (0, 0);
                     var cur = perWh[b.WarehouseId];
                     perWh[b.WarehouseId] = (cur.kg + b.QtyKg, cur.pkg + b.PackageCount);
+                }
+                int negCount = 0, mismatchCount = 0;
+                double totalAvailable = 0;
+                foreach (var b in q.ToList())
+                {
+                    if (b.QtyKg < -0.001 || b.PackageCount < 0) negCount++;
+                    // حساب المتاح الكلي
+                    if (b.LotId != null)
+                    {
+                        var lotAv = Db.Lots.AsNoTracking().Where(l => l.Id == b.LotId).Select(l => l.AvailableQtyKg).FirstOrDefault();
+                        totalAvailable += lotAv;
+                    }
+                    else totalAvailable += b.QtyKg;
                 }
                 foreach (var wh in perWh)
                 {
@@ -809,6 +872,8 @@ public partial class ReportService
                 }
                 r.Summary["عدد الأرصدة"] = UiFormat.N0(r.Rows.Count);
                 r.Summary["الإجمالي العام (كجم)"] = UiFormat.N(perWh.Sum(x => x.Value.kg));
+                r.Summary["المتاح العام (كجم)"] = UiFormat.N(totalAvailable);
+                if (negCount > 0) r.Summary["⛔ أرصدة سالبة"] = $"{negCount} رصيد سالب — راجع سلامة المخزون";
                 return r;
             }
 

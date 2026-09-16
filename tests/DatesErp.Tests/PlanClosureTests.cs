@@ -219,10 +219,8 @@ public class PlanClosureTests
         Assert.False(info.CanClose);
         Assert.Contains(info.Blockers, b => b.Contains("بلا سبب موثق"));
         Assert.False(svc.ClosePlanFinal(e.PlanId).Ok);
+        // الحالة الموثقة (بسبب إلغاء) لا تمنع الإقفال — يغطيها T07.
     }
-
-    [Fact]
-    public void T08_Idempotent_Closure()
     {
         using var host = new TestHost();
         var e = Setup(host, e => new List<PlanItemDto>

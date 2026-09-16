@@ -230,8 +230,17 @@ public partial class FinishedGoodsView : UserControl
                 if (sel == null || sel.ItemId == 0)
                 { AppContainer.Get<DialogService>().Error("اختر بنداً من الجدول لاستلام كمية جزئية منه."); return; }
                 // §قاعدة الكرتون: الإدخال بالكرتون ويُشتق الكجم المكافئ من وزن كرتون البند
-                double unitW = sel.Packages > 0 ? sel.Weight / sel.Packages : 7.5;
-                received = new Dictionary<int, double> { [sel.ItemId] = Math.Round(cartons * (unitW > 0 ? unitW : 7.5), 1) };
+                double unitW = sel.Packages > 0 ? sel.Weight / sel.Packages : 0;
+                double effectiveW = unitW > 0 ? unitW : 0;
+                if (effectiveW <= 0)
+                {
+                    // §1.50.67 FIX: لا وزن ثابت 7.5 — استخدم وزن البطاقة
+                    using var scope2 = AppContainer.NewScope();
+                    var db2 = scope2.ServiceProvider.GetRequiredService<DatesErp.Infrastructure.Persistence.DatesErpDbContext>();
+                    effectiveW = db2.Products.AsNoTracking().Where(p => p.Id == sel.ProductId).Select(p => p.CartonWeightKg).FirstOrDefault();
+                }
+                if (effectiveW <= 0) throw new InvalidOperationException($"وزن الكرتون غير معرف للصنف {sel.ProductName} — عرّفه في بطاقة الصنف.");
+                received = new Dictionary<int, double> { [sel.ItemId] = Math.Round(cartons * effectiveW, 1) };
             }
 
             using var scope = AppContainer.NewScope();

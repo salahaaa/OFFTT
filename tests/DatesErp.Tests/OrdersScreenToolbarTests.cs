@@ -74,6 +74,6 @@ public class OrdersScreenToolbarTests
         Assert.Contains("SaveTodayGroup(\"FromPlan\", planId, customerId, day.ToString(\"dd/MM/yyyy\"), shiftId, lineId, group.Select(e => FromPlan(e.Item)).ToList());", today);
         // حراسة الهوية والكمية الأصلية باقية في SaveTodayGroup
         Assert.Contains("هوية بند أمر الإنتاج وكميته يجب أن تطابق الخطة المعتمدة تماماً", today);
-        Assert.Contains("أمر الإنتاج لا ينشأ يدوياً؛ يلزم مرجع خطة اليوم المعتمدة", today);
+        Assert.Contains("أمر الإنتاج لا ينشأ يدوياً؛ يلزم مرجع خطة اليوم المعتمدة.", today);
     }
 }

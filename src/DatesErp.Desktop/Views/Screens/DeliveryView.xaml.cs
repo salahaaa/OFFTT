@@ -67,7 +67,7 @@ public partial class DeliveryView : UserControl
     private Views.ErpToolbar _toolbar;
     private System.Windows.Threading.DispatcherTimer _autoSaveTimer;
     private DateTime _lastAutoSave = DateTime.MinValue;
-    private string AutoSavePath => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"DeliveryDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId : 0)}.json");
+    private string AutoSavePath => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"DeliveryDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId ?? 0 : 0)}.json");
 
     public DeliveryView()
     {
@@ -80,7 +80,8 @@ public partial class DeliveryView : UserControl
             if (e.Row?.Item is DelivBalanceRow row && e.Column?.Header?.ToString() == "الكراتين *")
             {
                 if (row.Packages < 0) row.Packages = 0;   // §B105/P1 — لا سالب في الشبكة
-                row.Qty = Math.Round(row.Packages * (row.UnitWeight > 0 ? row.UnitWeight : (row.CartonWeight > 0 ? row.CartonWeight : 0)), 1);
+                double w2 = row.UnitWeight > 0 ? row.UnitWeight : (row.CartonWeight > 0 ? row.CartonWeight : 0);
+                row.Qty = w2 > 0 ? Math.Round(row.Packages * w2, 1) : 0;
                 ItemsGrid.Items.Refresh();
             }
         };
@@ -342,7 +343,9 @@ public partial class DeliveryView : UserControl
         {
             if (_locked) { AppContainer.Get<DialogService>().Error("السند مقفل (معتمد)."); return; }
             if (_currentCustomerId == 0) { AppContainer.Get<DialogService>().Error("اختر العميل."); return; }
-            if (_items.Count == 0) { AppContainer.Get<DialogService>().Error("أضف بنداً من رصيد العميل (نقر مزدوج أو زر تسليم الكامل)."); return; }
+            // §1.50.67 FIX متوسط: تجاهل الصفوف الفارغة placeholder عند الحفظ — مثل إصلاح الخطط
+            var validItems = _items.Where(r => !r.IsEmptyRow && r.ProductId != 0 && r.Packages > 0).ToList();
+            if (validItems.Count == 0) { AppContainer.Get<DialogService>().Error("أضف بنداً من رصيد العميل (نقر مزدوج أو زر تسليم الكامل)."); return; }
 
             using var scope = AppContainer.NewScope();
             var svc = (ICustomerDeliveryService)scope.ServiceProvider.GetService(typeof(ICustomerDeliveryService));
@@ -358,7 +361,7 @@ public partial class DeliveryView : UserControl
                         .Where(i => i.LotId == firstLot).OrderBy(i => i.Id)
                         .Select(i => (int?)i.OrderId).FirstOrDefault();
             }
-            var itemsDto = _items.Select(i => new CustomerDeliveryItemDto
+            var itemsDto = validItems.Select(i => new CustomerDeliveryItemDto
             {
                 ProductId = i.ProductId, LotId = i.LotId, PackagingTypeId = i.PackagingTypeId,
                 QtyKg = i.Qty, PackageCount = i.Packages
@@ -499,7 +502,7 @@ public partial class DeliveryView : UserControl
                 row.LotCode = batch.LotCode;
                 row.PackName = batch.PackName;
                 row.Unit = batch.Unit;
-                row.UnitWeight = batch.CartonWeight > 0 ? batch.CartonWeight : (batch.Qty > 0 && batch.Packages > 0 ? batch.Qty / batch.Packages : 0);
+                row.UnitWeight = 0; // §1.50.67 FIX: لا وزن ثابت 7.5 — سيُحدث من بطاقة الصنف عبر UnitsPolicy
                 row.AvailableQty = batch.Qty;
                 row.AvailablePackages = batch.Packages;
                 row.Qty = batch.Qty;
@@ -562,6 +565,7 @@ public partial class DeliveryView : UserControl
                     ? db.PackagingTypes.Where(k => k.Id == it.PackagingTypeId).Select(k => k.UnitWeightKg).FirstOrDefault()
                     : 0;
                 if (unitW <= 0) unitW = it.CartonWeightKg > 0 ? it.CartonWeightKg : (prod?.CartonWeightKg > 0 ? prod.CartonWeightKg : 0);
+                if (unitW <= 0) throw new InvalidOperationException($"وزن الكرتون غير معرف للصنف {prod?.ProductNameAr ?? it.ProductId.ToString()} — عرّفه في بطاقة الصنف.");
                 _items.Add(new DelivBalanceRow
                 {
                     ProductId = it.ProductId,
@@ -726,7 +730,7 @@ public partial class DeliveryView : UserControl
                 {
                     ProductId = r.ProductId, LotId = r.LotId, PackagingTypeId = r.PackagingTypeId,
                     ProductName = prod?.ProductNameAr ?? "—", LotCode = lot?.LotCode ?? "—",
-                    Packages = r.Packages, Qty = r.Packages * (prod?.CartonWeightKg ?? 0)
+                    Packages = r.Packages, Qty = r.Packages * (prod?.CartonWeightKg > 0 ? prod.CartonWeightKg : 0)
                 });
             }
         }

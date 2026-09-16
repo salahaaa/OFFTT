@@ -164,6 +164,43 @@ public partial class ItemsView : UserControl
                 int.TryParse(MoldsBox.Text, out molds);
                 double.TryParse(MoldWBox.Text, out mw);
                 double.TryParse(CartonWBox.Text, out cw);
+                // §1.50.67 FIX متوسط: تحذير فوري عند تناقض وزن الكرتون مع وزن العبوة الافتراضية — سبب خطأ سكري فاخر 0.5 vs 2 كجم
+                if (cw > 0)
+                {
+                    try
+                    {
+                        using var dbChk = Db();
+                        var prodId = _editId > 0 ? _editId : 0;
+                        var linkedPacks = dbChk.ProductShiftCapacities.AsNoTracking()
+                            .Where(c => c.ProductId == prodId)
+                            .Select(c => c.PackagingTypeId).Where(id => id != null).Distinct().ToList();
+                        var packWeights = dbChk.PackagingTypes.AsNoTracking()
+                            .Where(p => linkedPacks.Contains(p.Id) && p.UnitWeightKg > 0)
+                            .Select(p => new { p.PackageNameAr, p.UnitWeightKg }).ToList();
+                        // أيضاً العبوة الافتراضية للصنف
+                        var defPackId = dbChk.Products.AsNoTracking().Where(p => p.Id == prodId).Select(p => p.DefaultPackagingTypeId).FirstOrDefault();
+                        if (defPackId != null)
+                        {
+                            var defW = dbChk.PackagingTypes.AsNoTracking().Where(p => p.Id == defPackId).Select(p => new { p.PackageNameAr, p.UnitWeightKg }).FirstOrDefault();
+                            if (defW != null) packWeights.Add(defW);
+                        }
+                        foreach (var pw in packWeights)
+                        {
+                            double diff = Math.Abs(cw - pw.UnitWeightKg);
+                            double tol = Math.Max(0.5, cw * 0.05);
+                            if (diff > tol)
+                            {
+                                if (!AppContainer.Get<DialogService>().Confirm($"⚠️ تنبيه: وزن الكرتون المدخل ({cw:N1} كجم) يختلف عن وزن العبوة «{pw.PackageNameAr}» ({pw.UnitWeightKg:N1} كجم) المرتبطة بهذا الصنف.
+هذا التناقض هو سبب خطأ «كمية الكيلو لا تطابق عدد الكراتين» في خطط الإنتاج.
+
+هل تريد المتابعة بالحفظ على أي حال؟"))
+                                    return;
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                }
             }
             int? srcId = finished ? (SourceBox.SelectedItem as SrcOpt)?.Id : null;
             if (finished && srcId == null) { AppContainer.Get<DialogService>().Error("اختر الصنف المصدر (الخام) لربط الصنف التام قبل الحفظ."); return; }

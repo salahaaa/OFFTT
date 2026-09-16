@@ -111,21 +111,46 @@ public static class UnitsPolicy
     }
 
     /// <summary>
-    /// §وزن الكرتون المعتمد لصنف/عبوة: العبوة المحددة أولاً، ثم وزن كرتون المنتج،
+    /// §وزن الكرتون المعتمد لصنف/عبوة: بطاقة الصنف التام أولاً (المصدر الموثوق)، ثم العبوة المحددة،
     /// ثم عدد القوالب × وزن القالب (مثال: 5 قوالب × 2 كجم = 10 كجم/كرتون).
+    /// §1.50.66 FIX: كانت العبوة أولاً فتسبب mismatch عندما تكون بطاقة الصنف 2 كجم وعبوة عامة 0.5 كجم
+    /// فيُحسب 6000×0.5=3000 بينما المستخدم أدخل 12000 (6000×2) — فيرفض عند الحفظ فقط.
+    /// الآن بطاقة الصنف هي المرجع، والعبوة fallback فقط إذا لم يعرّف وزن في البطاقة.
     /// </summary>
     public static double CartonWeight(DatesErpDbContext db, int productId, int? packagingTypeId)
     {
+        var prod = db.Products.AsNoTracking().FirstOrDefault(p => p.Id == productId);
+        if (prod != null)
+        {
+            if (prod.CartonWeightKg > 0) return prod.CartonWeightKg;
+            if (prod.MoldsCount > 0 && prod.MoldWeightKg > 0) return prod.MoldsCount * prod.MoldWeightKg;
+        }
         if (packagingTypeId != null)
         {
             var packW = db.PackagingTypes.AsNoTracking().Where(p => p.Id == packagingTypeId).Select(p => p.UnitWeightKg).FirstOrDefault();
             if (packW > 0) return packW;
         }
-        var prod = db.Products.AsNoTracking().FirstOrDefault(p => p.Id == productId);
-        if (prod == null) return 0;
-        if (prod.CartonWeightKg > 0) return prod.CartonWeightKg;
-        if (prod.MoldsCount > 0 && prod.MoldWeightKg > 0) return prod.MoldsCount * prod.MoldWeightKg;
+        // fallback ثانوي: عبوة من بطاقة الصنف إن وجدت
+        if (prod?.DefaultPackagingTypeId != null)
+        {
+            var defW = db.PackagingTypes.AsNoTracking().Where(p => p.Id == prod.DefaultPackagingTypeId).Select(p => p.UnitWeightKg).FirstOrDefault();
+            if (defW > 0) return defW;
+        }
         return 0;
+    }
+
+    /// <summary>§1.50.66 — تحقق فوري بدون DB للواجهة: وزن مباشر + كراتين + كجم.</summary>
+    public static (bool ok, string error, double computedKg) CheckCartonKgImmediate(double cartonWeight, int cartons, double qtyKg, string productName)
+    {
+        if (cartons <= 0 || cartonWeight <= 0 || qtyKg <= 0) return (true, null, cartons * cartonWeight);
+        double computed = Math.Round(cartons * cartonWeight, 1);
+        double tolerance = Math.Max(1.0, qtyKg * 0.02);
+        if (Math.Abs(qtyKg - computed) > tolerance)
+        {
+            string err = $"⛔ كمية الكيلو لا تطابق عدد الكراتين ووزن الكرتون للصنف «{productName ?? \"-\"}». المدخل: {qtyKg:N1} كجم ← {cartons:N0} كرتون والمحسوب من وزن الكرتون ({cartonWeight:N1} كجم): {computed:N1} كجم.";
+            return (false, err, computed);
+        }
+        return (true, null, computed);
     }
 
     /// <summary>

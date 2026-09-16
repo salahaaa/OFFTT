@@ -256,10 +256,17 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="الدفعة والشحنة 📦 *" Width="1*" MinWidth="120">
+                            <DataGridTemplateColumn Header="رقم الاستلام 📦 *" Width="90" MinWidth="85">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Button Content="{Binding LotCode}" Click="LotCode_Click" Tag="{Binding}" Style="{StaticResource PickCellButton}" ToolTip="جميع الدفعات المتاحة معروضة فوراً مرتبة FIFO"/>
+                                        <Button Content="{Binding ShipmentNo}" Click="LotCode_Click" Tag="{Binding}" Style="{StaticResource PickCellButton}">
+                                            <Button.ToolTip>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding ShipmentNo, StringFormat=رقم الاستلام: {0}}" FontWeight="Bold"/>
+                                                    <TextBlock Text="{Binding LotCode, StringFormat=الدفعة: {0}}"/>
+                                                </StackPanel>
+                                            </Button.ToolTip>
+                                        </Button>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -270,12 +277,30 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="الوحدة" Binding="{Binding UnitDisplay}" Width="70" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="المتاح كجم" Binding="{Binding SourceQtyKg, StringFormat=N1}" Width="85" IsReadOnly="True">
+                            <DataGridTextColumn Header="الوحدة" Binding="{Binding UnitDisplay}" Width="110" IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontSize" Value="11"/>
+                                        <Setter Property="FontWeight" Value="Bold"/>
+                                        <Setter Property="ToolTip" Value="{Binding UnitDisplay}"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <!-- §1.50.66 — طريقة السحب selectable: سلة/كرتون/كجم + المتاح بالوحدتين -->
+                            <DataGridTemplateColumn Header="طريقة السحب" Width="95">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ComboBox ItemsSource="{Binding SourceModes}" SelectedItem="{Binding SourceMode, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2,0" ToolTip="اختر وحدة السحب: سلة/كرتون/كجم — تُحسب تلقائياً من وحدة الاستلام"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="المتاح" Binding="{Binding AvailableDisplay}" Width="130" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="HorizontalAlignment" Value="Right"/>
                                         <Setter Property="FontWeight" Value="Bold"/>
+                                        <Setter Property="FontSize" Value="11"/>
+                                        <Setter Property="ToolTip" Value="{Binding AvailableDisplay}"/>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
@@ -287,11 +312,31 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="الوزن كجم ⚖️" Binding="{Binding QtyKg, StringFormat=N1}" Width="85" IsReadOnly="True">
+                            <DataGridTemplateColumn Header="الوزن كجم ⚖️" Width="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding QtyKg, StringFormat=N1}" HorizontalAlignment="Right" FontWeight="Bold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding QuantityError}" Value="{x:Null}">
+                                                            <Setter Property="Foreground" Value="#14532D"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                    <Setter Property="Foreground" Value="#DC2626"/>
+                                                    <Setter Property="ToolTip" Value="{Binding QuantityError}"/>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="المسحوب" Binding="{Binding SourceDisplay}" Width="110" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="HorizontalAlignment" Value="Right"/>
-                                        <Setter Property="FontWeight" Value="Bold"/>
+                                        <Setter Property="FontSize" Value="11"/>
+                                        <Setter Property="ToolTip" Value="{Binding SourceDisplay}"/>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>

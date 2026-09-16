@@ -113,7 +113,7 @@ public partial class ReportsView : UserControl
                 {
                     var dp = new DatePicker { Width = 150, FontSize = 13.5 };
                     sp.Children.Add(dp);
-                    _paramGetters.Add((prm.Key, () => dp.SelectedDate?.ToString(DatesErp.Core.Common.UiFormat.DatePattern) ?? ""));
+                    _paramGetters.Add((prm.Key, () => dp.SelectedDate?.ToString(UiFormat.DatePattern) ?? ""));
                     break;
                 }
                 case "list":
@@ -257,7 +257,7 @@ public partial class ReportsView : UserControl
 
         // §التطوير الشامل: شريط إجماليات الأعمدة الرقمية أسفل العدّاد
         var totalsLine = ExportPrintService.TotalsLine(_columns, rows);
-        RowsCount.Text = $"عدد الصفوف: {DatesErp.Core.Common.UiFormat.N0(rows.Count)}" + (links != null ? " — اضغط «+» أمام أي صف لفتح مستنده" : "")
+        RowsCount.Text = $"عدد الصفوف: {UiFormat.N0(rows.Count)}" + (links != null ? " — اضغط «+» أمام أي صف لفتح مستنده" : "")
             + (string.IsNullOrEmpty(totalsLine) ? "" : "\n" + totalsLine);
     }
 

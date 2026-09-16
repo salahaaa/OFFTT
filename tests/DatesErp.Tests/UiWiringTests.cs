@@ -188,8 +188,8 @@ public class UiWiringTests
         Assert.Contains("StageBrush", cs);
         Assert.Contains("IsNumericColumn", cs);
 
-        // العنوان بخط كبير (19 أو 20)
-        Assert.True(xaml.Contains("FontSize=\"19\"") || xaml.Contains("FontSize=\"20\""));
+        // العنوان بخط كبير
+        Assert.Contains("FontSize=\"19\"", xaml);
 
         // الأعمدة بعرض نجمي يملأ الواجهة لا بعرض ذاتي يتزاحم
         Assert.Contains("DataGridLengthUnitType.Star", cs);

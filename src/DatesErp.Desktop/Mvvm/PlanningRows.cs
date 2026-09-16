@@ -110,9 +110,23 @@ public class LotEditorRow : INotifyPropertyChanged
         OnChange(nameof(TreatmentDisplay)); OnChange(nameof(TreatmentBlocked)); OnChange(nameof(TreatmentBlockReason));
     }
 
-    // تعريف الصنف التام
+    // تعريف الصنف التام — §1.50.67 FIX: عرض الوحدة بوحدتين (كرتون + كجم) بدل كجم فقط
     public Dictionary<int, string> ProductUnits { get; set; } = new();
-    public string UnitDisplay => _productId != null && ProductUnits.TryGetValue(_productId.Value, out var u) && !string.IsNullOrWhiteSpace(u) ? u : "—";
+    public Dictionary<int, double> ProductCartonWeights { get; set; } = new();
+    public string UnitDisplay
+    {
+        get
+        {
+            if (_productId == null) return "—";
+            string u = ProductUnits.TryGetValue(_productId.Value, out var uu) && !string.IsNullOrWhiteSpace(uu) ? uu : "كرتون";
+            double cw = 0;
+            if (ProductCartonWeights.TryGetValue(_productId.Value, out var cc)) cw = cc;
+            else if (PackWeight > 0) cw = PackWeight;
+            // إذا كان وزن الكرتون معروف اعرض "كرتون (2 كجم)" بدل "كجم" فقط
+            if (cw > 0) return $"{u} ({cw:N1} كجم)";
+            return u;
+        }
+    }
     public Dictionary<int, double> PerProductAvailable { get; set; } = new();
     private bool _isChecked;
     public bool IsChecked
@@ -236,11 +250,36 @@ public class LotEditorRow : INotifyPropertyChanged
         var prod = _productId != null ? AllProducts.FirstOrDefault(p => p.Id == _productId) : null;
         // §v1.50.35: وزن العبوة وعدد القوالب من بطاقة الصنف التام (شاشة الأصناف)،
         // لا من أول عبوة عامة في جدول العبوات (كانت تُظهر 5.0 / 5 لكل الأصناف).
-        double packW = (prod != null && prod.CartonWeightKg > 0) ? prod.CartonWeightKg : (pack?.UnitWeightKg ?? 0);
+        // §1.50.66 FIX: بطاقة الصنف أولاً ثم العبوة — يمنع mismatch 0.5 vs 2 كجم
+        double packW = 0;
+        if (prod != null && prod.CartonWeightKg > 0) packW = prod.CartonWeightKg;
+        else if (prod != null && prod.MoldsCount > 0 && prod.MoldWeightKg > 0) packW = prod.MoldsCount * prod.MoldWeightKg;
+        else packW = pack?.UnitWeightKg ?? 0;
+
         PackWeight = packW;
         MoldsCount = (prod != null && prod.MoldsCount > 0) ? prod.MoldsCount : (pack?.MoldsCount ?? 0);
         ComputedKg = ctn > 0 && packW > 0 ? Math.Round(ctn * packW, 2) : 0;
         RawRequiredKg = ComputedKg;
+
+        // §1.50.66 — تحقق فوري من تطابق وزن العبوة بين بطاقة الصنف والعبوة المحددة
+        if (prod != null && pack != null && prod.CartonWeightKg > 0 && pack.UnitWeightKg > 0)
+        {
+            double diff = Math.Abs(prod.CartonWeightKg - pack.UnitWeightKg);
+            double tol = Math.Max(0.5, prod.CartonWeightKg * 0.05);
+            if (diff > tol)
+            {
+                QuantityError = $"⚠️ تنبيه: وزن الكرتون في بطاقة الصنف ({prod.CartonWeightKg:N1} كجم) يختلف عن وزن العبوة المحددة ({pack.UnitWeightKg:N1} كجم) للصنف «{prod.Name}». سيُستخدم وزن البطاقة ({packW:N1} كجم).";
+                OnChange(nameof(QuantityError));
+            }
+            else
+            {
+                if (QuantityError != null && QuantityError.Contains("وزن الكرتون في بطاقة الصنف"))
+                {
+                    QuantityError = null;
+                    OnChange(nameof(QuantityError));
+                }
+            }
+        }
 
         if (Ctx == null)
         {
@@ -251,12 +290,14 @@ public class LotEditorRow : INotifyPropertyChanged
         }
         else
         {
-            // اشتقاق التتبع: الوحدة من سطر الاستلام، والكمية = الإنتاج × وزن العبوة.
+            // اشتقاق التتبع: الوحدة من طريقة السحب المختارة، والكمية = الإنتاج × وزن العبوة.
             double uw = Ctx.UnitWeightKg;
-            SourceUnit = Ctx.ReceiptUnit;
-            SourceUnitWeightKg = uw;
+            // §1.50.66 — وحدة السحب الآن selectable: سلة/كرتون/كجم
+            bool byKg = string.Equals(SourceMode, "كجم", StringComparison.OrdinalIgnoreCase);
+            SourceUnit = byKg ? "كجم" : Ctx.ReceiptUnit;
+            SourceUnitWeightKg = byKg ? 1 : uw;
             SourceQtyKg = RawRequiredKg;
-            SourceQtyInUnit = uw > 0 ? Math.Round(RawRequiredKg / uw, 2) : 0;
+            SourceQtyInUnit = byKg ? RawRequiredKg : (uw > 0 ? Math.Round(RawRequiredKg / uw, 2) : 0);
 
             double availKg = Ctx.AvailableKg;
             var date = DateValue?.Date;
@@ -337,10 +378,6 @@ public class PlanRowUi : System.ComponentModel.INotifyPropertyChanged
 
     /// <summary>
     /// §B108 — معرّف بند الخطة المحفوظ (0 = صف جديد لم يُحفظ بعد).
-    ///
-    /// أُضيف عند حذف لوحة «بنود اليوم»: كان تعديل البند المحفوظ يمر حصراً عبر تلك اللوحة
-    /// لأنها وحدها تحمل <c>PlanRowDto.ItemId</c>. وبدونه كان حذف اللوحة سيُسقط
-    /// <c>UpdatePlanItem</c> من الواجهة كلياً — أي فقدان وظيفة لا تنظيفاً.
     /// </summary>
     public int ItemId { get; set; }
 
@@ -360,13 +397,26 @@ public class PlanRowUi : System.ComponentModel.INotifyPropertyChanged
     /// <summary>§B80: وحدة الصنف التام كما في بطاقته (شاشة الأصناف) — مثل «كرتون 5كجم».</summary>
     public string UnitDisplay { get; set; }
     private double _qtyKg;
-    public double QtyKg { get => _qtyKg; set { if (Math.Abs(_qtyKg - value) > 0.001) { _qtyKg = value; OnChanged(nameof(QtyKg)); OnChanged(nameof(RemainingAfterKg)); } } }
+    public double QtyKg 
+    { 
+        get => _qtyKg; 
+        set 
+        { 
+            if (Math.Abs(_qtyKg - value) > 0.001) 
+            { 
+                _qtyKg = value; 
+                OnChanged(nameof(QtyKg)); 
+                OnChanged(nameof(RemainingAfterKg));
+                ValidateCartonKgImmediate();
+            } 
+        } 
+    }
     /// <summary>§B58: وزن كرتون الصنف لاشتقاق الكيلو عند تعديل الكراتين داخل الجدول.</summary>
     public double CartonWeight { get; set; }
     private int _cartons;
-    public int Cartons { get => _cartons; set { if (_cartons != value) { GuardQuantity(value); _cartons = value; _cartonsText = value.ToString(); OnChanged(nameof(Cartons)); OnChanged(nameof(CartonsText)); } } }
+    public int Cartons { get => _cartons; set { if (_cartons != value) { GuardQuantity(value); _cartons = value; _cartonsText = value.ToString(); OnChanged(nameof(Cartons)); OnChanged(nameof(CartonsText)); ValidateCartonKgImmediate(); } } }
     private string _cartonsText = "0";
-    /// <summary>§B58: تحرير الكراتين داخل الجدول يعيد حساب الوزن المكافئ آلياً.</summary>
+    /// <summary>§1.50.66: تحرير الكراتين داخل الجدول يعيد حساب الوزن المكافئ آلياً + تحقق فوري.</summary>
     public string CartonsText
     {
         get => _cartonsText;
@@ -380,9 +430,35 @@ public class PlanRowUi : System.ComponentModel.INotifyPropertyChanged
             {
                 _cartons = c; OnChanged(nameof(Cartons));
                 if (CartonWeight > 0) { QtyKg = Math.Round(c * CartonWeight, 1); OnChanged(nameof(QtyKg)); }
+                ValidateCartonKgImmediate();
             }
         }
     }
+
+    private void ValidateCartonKgImmediate()
+    {
+        try
+        {
+            if (Cartons <= 0 || CartonWeight <= 0 || QtyKg <= 0) 
+            {
+                if (QuantityError != null && QuantityError.Contains("لا تطابق عدد الكراتين")) { QuantityError = null; OnChanged(nameof(QuantityError)); }
+                return;
+            }
+            double computed = Math.Round(Cartons * CartonWeight, 1);
+            double tol = Math.Max(1.0, QtyKg * 0.02);
+            if (Math.Abs(QtyKg - computed) > tol)
+            {
+                QuantityError = $"⛔ كمية الكيلو لا تطابق عدد الكراتين ووزن الكرتون للصنف «{ProductName}». المدخل: {QtyKg:N1} كجم ← {Cartons:N0} كرتون والمحسوب من وزن الكرتون ({CartonWeight:N1} كجم): {computed:N1} كجم. صحح الكمية.";
+                OnChanged(nameof(QuantityError));
+            }
+            else
+            {
+                if (QuantityError != null && QuantityError.Contains("لا تطابق عدد الكراتين")) { QuantityError = null; OnChanged(nameof(QuantityError)); }
+            }
+        }
+        catch { }
+    }
+
     private string _date;
     public string Date
     {
@@ -420,10 +496,67 @@ public class PlanRowUi : System.ComponentModel.INotifyPropertyChanged
     public double SourceQtyInUnit { get; set; }
     public double SourceUnitWeightKg { get; set; }
     private double _sourceQtyKg;
-    public double SourceQtyKg { get => _sourceQtyKg; set { _sourceQtyKg = value; OnChanged(nameof(SourceQtyKg)); OnChanged(nameof(RemainingAfterKg)); } }
+    public double SourceQtyKg { get => _sourceQtyKg; set { _sourceQtyKg = value; OnChanged(nameof(SourceQtyKg)); OnChanged(nameof(RemainingAfterKg)); OnChanged(nameof(AvailableDisplay)); OnChanged(nameof(SourceDisplay)); } }
+
+    // §1.50.66 — وحدة السحب selectable في الجدول الرئيسي + عرض المتاح بالوحدتين
+    public List<string> SourceModes { get; set; } = new();
+    private string _sourceMode = "كجم";
+    public string SourceMode 
+    { 
+        get => _sourceMode; 
+        set 
+        { 
+            if (_sourceMode == value) return; 
+            _sourceMode = value; 
+            OnChanged(nameof(SourceMode)); 
+            OnChanged(nameof(AvailableDisplay));
+            OnChanged(nameof(SourceDisplay));
+            // إعادة حساب SourceQtyInUnit حسب الوحدة الجديدة
+            RecalcSourceQtyFromMode();
+        } 
+    }
+    public string AvailableDisplay 
+    { 
+        get 
+        {
+            if (SourceQtyKg <= 0) return "—";
+            bool byKg = string.Equals(SourceMode, "كجم", StringComparison.OrdinalIgnoreCase);
+            if (byKg) return $"{SourceQtyKg:N0} كجم";
+            double units = SourceUnitWeightKg > 0 ? SourceQtyKg / SourceUnitWeightKg : SourceQtyInUnit;
+            return $"{Math.Floor(units):N0} {SourceUnit} / {SourceQtyKg:N0} كجم";
+        }
+    }
+    public string SourceDisplay
+    {
+        get
+        {
+            if (SourceQtyKg <= 0) return "—";
+            bool byKg = string.Equals(SourceMode, "كجم", StringComparison.OrdinalIgnoreCase);
+            if (byKg) return $"{SourceQtyKg:N0} كجم";
+            double units = SourceUnitWeightKg > 0 ? SourceQtyKg / SourceUnitWeightKg : SourceQtyInUnit;
+            return $"{Math.Floor(units):N0} {SourceUnit} ({SourceQtyKg:N0} كجم)";
+        }
+    }
+    private void RecalcSourceQtyFromMode()
+    {
+        if (SourceQtyKg <= 0) return;
+        bool byKg = string.Equals(SourceMode, "كجم", StringComparison.OrdinalIgnoreCase);
+        if (byKg)
+        {
+            SourceQtyInUnit = SourceQtyKg;
+            SourceUnitWeightKg = 1;
+        }
+        else
+        {
+            if (SourceUnitWeightKg > 0 && SourceUnitWeightKg != 1)
+            {
+                SourceQtyInUnit = Math.Round(SourceQtyKg / SourceUnitWeightKg, 2);
+            }
+        }
+        OnChanged(nameof(SourceQtyInUnit));
+    }
 
     // §1.50.57 — المتبقي بعد التخطيط: المتاح - المجدول — يجيب سؤال المستخدم "عند إضافة صنف جديد كم ستظهر كميته"
     public double RemainingAfterKg => Math.Max(0, SourceQtyKg - QtyKg);
     public bool IsInvalid => !string.IsNullOrEmpty(QuantityError) || Cartons <= 0;
 }
-

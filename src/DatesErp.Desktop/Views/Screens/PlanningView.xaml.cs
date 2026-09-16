@@ -51,7 +51,7 @@ public partial class PlanningView : UserControl
     // §1.50.60 — تحسينات عامة 7-ب/7-ج/7-هـ: حفظ تلقائي + تكرار صف + تنقل لوحة مفاتيح
     private System.Windows.Threading.DispatcherTimer _autoSaveTimer;
     private DateTime _lastAutoSave = DateTime.MinValue;
-    private string AutoSavePath => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"PlanningDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId : 0)}.json");
+    private string AutoSavePath => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"PlanningDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId ?? 0 : 0)}.json");
 
     // §B58: قوائم الخلاياEditable (وردية/خط/عبوة) — تُقرأ من قاعدة البيانات في Load
     public List<OptUi> ShiftOptions { get; } = new();
@@ -525,8 +525,9 @@ public partial class PlanningView : UserControl
 
             DatesErp.Core.Common.UiFormat.TryParseDate(wiz.FromDate, out var fairFrom);
             DatesErp.Core.Common.UiFormat.TryParseDate(wiz.ToDate, out var fairTo);
-            var fairUnits = products.ToDictionary(x => x.Id, x => string.IsNullOrWhiteSpace(x.UnitOfMeasure) ? "—" : x.UnitOfMeasure);
-            foreach (var er2 in editorRows) er2.ProductUnits = fairUnits;
+            var fairUnits = products.ToDictionary(x => x.Id, x => string.IsNullOrWhiteSpace(x.UnitOfMeasure) ? "كرتون" : x.UnitOfMeasure);
+            var fairCartonWeights = products.ToDictionary(x => x.Id, x => x.CartonWeightKg);
+            foreach (var er2 in editorRows) { er2.ProductUnits = fairUnits; er2.ProductCartonWeights = fairCartonWeights; }
             LoadEditorRowTreatment(editorRows, db); // §يثبّت حالة المعالجة (أحمر/قيد) على بنود التوزيع
             var win = new LotsEditorWindow(editorRows,
                 "⚖ بنود التوزيع العادل — راجع وعدّل (صنف كامل أو جزء، تاريخ ووردية) ثم أنزل للخطة", false, fairFrom, fairTo,
@@ -562,7 +563,7 @@ public partial class PlanningView : UserControl
                 ProductName = products.FirstOrDefault(p => p.Id == row.ProductId)?.ProductNameAr ?? "-",
                 PackId = row.PackId,
                 PackName = pack?.PackageNameAr ?? "-",
-                UnitDisplay = products.FirstOrDefault(p => p.Id == row.ProductId)?.UnitOfMeasure ?? "—",
+                UnitDisplay = products.FirstOrDefault(p => p.Id == row.ProductId) is var prod3 && prod3 != null && prod3.CartonWeightKg>0 ? $"{(prod3.UnitOfMeasure ?? "كرتون")} ({prod3.CartonWeightKg:N1} كجم)" : (products.FirstOrDefault(p => p.Id == row.ProductId)?.UnitOfMeasure ?? "كرتون"),
                 CartonWeight = products.FirstOrDefault(p => p.Id == row.ProductId)?.CartonWeightKg ?? pack?.UnitWeightKg ?? 0,
                 QtyKg = row.ComputedKg,
                 Cartons = int.TryParse(row.CartonsText, out var c) ? c : 0,
@@ -574,11 +575,13 @@ public partial class PlanningView : UserControl
                 ShiftName = db.Shifts.AsNoTracking().Where(x => x.Id == (row.ShiftId ?? shiftId)).Select(x => x.ShiftNameAr).FirstOrDefault() ?? "-",
                 LineId = lineId,
                 LineName = db.ProductionLines.AsNoTracking().Where(x => x.Id == lineId).Select(x => x.LineNameAr).FirstOrDefault() ?? "-",
-                // §تتبع سحب الخام — يُنقل من النافذة إلى البند
-                SourceUnit = row.Ctx?.ReceiptUnit,
+                // §1.50.66 — تتبع سحب الخام يُنقل من النافذة إلى البند مع وحدة السحب المختارة (سلة/كرتون/كجم)
+                SourceUnit = row.SourceUnit ?? row.Ctx?.ReceiptUnit ?? "كجم",
                 SourceQtyInUnit = row.SourceQtyInUnit,
-                SourceUnitWeightKg = row.Ctx?.UnitWeightKg ?? 0,
-                SourceQtyKg = row.SourceQtyKg
+                SourceUnitWeightKg = row.SourceUnitWeightKg > 0 ? row.SourceUnitWeightKg : (row.Ctx?.UnitWeightKg ?? 0),
+                SourceQtyKg = row.SourceQtyKg,
+                SourceModes = row.SourceModes ?? new List<string> { row.Ctx?.ReceiptUnit ?? "كجم", "كجم" }.Distinct().ToList(),
+                SourceMode = row.SourceMode ?? row.Ctx?.ReceiptUnit ?? "كجم"
             });
             if (!_planCustomers.Any(x => x.id == row.CustomerId))
                 _planCustomers.Add((row.CustomerId, row.CustomerName));
@@ -612,7 +615,8 @@ public partial class PlanningView : UserControl
             var row = new LotEditorRow { CustomerId = customer.Id, CustomerName = customer.CustomerName,
                 LotCode = "يدوي — دون دفعة", AllPacks = packs.Select(p => new PackOption { Id = p.Id, Name = p.PackageNameAr,
                     UnitWeightKg = p.UnitWeightKg, MoldsCount = p.MoldsCount, MoldWeightKg = p.MoldWeightKg }).ToList(),
-                ProductUnits = products.ToDictionary(p => p.Id, p => p.UnitOfMeasure ?? "كرتون") };
+                ProductUnits = products.ToDictionary(p => p.Id, p => p.UnitOfMeasure ?? "كرتون"),
+                ProductCartonWeights = products.ToDictionary(p => p.Id, p => p.CartonWeightKg) };
             ConfigureRawSelector(row, null, db, svc);
             var window = new LotsEditorWindow(new() { row }, "اختر الخام ثم الصنف التام المرتبط والكمية", true,
                 StartBox.SelectedDate ?? DateTime.Today, EndBox.SelectedDate ?? StartBox.SelectedDate ?? DateTime.Today,
@@ -719,7 +723,8 @@ public partial class PlanningView : UserControl
                 row.ProductId = p.Id;
                 row.ProductName = p.ProductNameAr;
                 row.UnitDisplay = p.UnitOfMeasure ?? "كرتون";
-                row.CartonWeight = p.CartonWeightKg > 0 ? p.CartonWeightKg : 5;
+                row.CartonWeight = p.CartonWeightKg > 0 ? p.CartonWeightKg : 0;
+                if (row.CartonWeight <= 0) { AppContainer.Get<DialogService>().Error($"وزن الكرتون غير معرف للصنف «{p.ProductNameAr}» — عرّفه في بطاقة الصنف قبل الإضافة."); return; }
                 RowsGrid.Items.Refresh();
                 EnsureEmptyRow();
             }
@@ -798,7 +803,8 @@ public partial class PlanningView : UserControl
     {
         if (e.PropertyName is nameof(PlanRowUi.CartonsText) or nameof(PlanRowUi.Date) or nameof(PlanRowUi.DateValue)
             or nameof(PlanRowUi.ShiftId) or nameof(PlanRowUi.LineId) or nameof(PlanRowUi.PackId) or nameof(PlanRowUi.QtyKg)
-            or nameof(PlanRowUi.QuantityError) or nameof(PlanRowUi.Cartons))
+            or nameof(PlanRowUi.QuantityError) or nameof(PlanRowUi.Cartons)
+            or nameof(PlanRowUi.SourceMode) or nameof(PlanRowUi.SourceQtyKg) or nameof(PlanRowUi.SourceDisplay))
         { UpdateCapacityBar(); UpdateTotals(); }
     }
 
@@ -830,7 +836,7 @@ public partial class PlanningView : UserControl
             var svc = scope.ServiceProvider.GetRequiredService<DatesErp.Core.Interfaces.Services.IPlanningService>();
             // Use PlanningService directly for template methods
             var ps = scope.ServiceProvider.GetRequiredService<DatesErp.Application.Services.PlanningService>();
-            var r = ps.SaveAsTemplate(_currentPlanId, dlg.Value);
+            var r = ps.SaveAsTemplate(_currentPlanId.Value, dlg.Value);
             if (!r.Ok) AppContainer.Get<DialogService>().Error(r.Message);
             else AppContainer.Get<DialogService>().Info(r.Message);
         }
@@ -853,7 +859,7 @@ public partial class PlanningView : UserControl
                 if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
                 AppContainer.Get<DialogService>().Info(r.Message);
                 // افتح الخطة الجديدة
-                OpenPlan(r.Id);
+                OpenPlan(r.Id.Value);
             }
             else
             {
@@ -862,7 +868,7 @@ public partial class PlanningView : UserControl
                 // تحميل بنود القالب إلى الجدول الحالي
                 RowsGrid.ItemsSource = null;
                 _rows.Clear();
-                // نحتاج إلى تحويل بنود القالب إلى LotEditorRow — نستخدم نفس منطق تحميل الخطة
+                // نحتاج إلى تحويل بنود القالب إلى PlanRowUi — نستخدم نفس منطق تحميل الخطة
                 using var scope2 = AppContainer.NewScope();
                 var db = scope2.ServiceProvider.GetRequiredService<DatesErp.Infrastructure.Persistence.DatesErpDbContext>();
                 var tplFull = db.ProductionPlans.Include(p => p.Items).First(p => p.Id == tpl.Id);
@@ -871,7 +877,7 @@ public partial class PlanningView : UserControl
                     // نستخدم نفس آلية إضافة صف يدوي مع تعبئة من المنتج/الدفعة
                     var prod = db.Products.AsNoTracking().FirstOrDefault(p => p.Id == it.ProductId);
                     if (prod == null) continue;
-                    var row = new PlanRowUi { No = _rows.Count + 1, ProductId = prod.Id, ProductName = prod.ProductNameAr, CartonsText = it.PlannedCartons.ToString(), QtyKg = it.PlannedQtyKg, LotId = it.LotId, CustomerId = it.CustomerId };
+                    var row = new Mvvm.PlanRowUi { No = _rows.Count + 1, ProductId = prod.Id, ProductName = prod.ProductNameAr, CartonsText = it.PlannedCartons.ToString(), QtyKg = it.PlannedQtyKg, LotId = it.LotId, CustomerId = it.CustomerId };
                     _rows.Add(row);
                 }
                 RowsGrid.ItemsSource = _rows;
@@ -891,8 +897,15 @@ public partial class PlanningView : UserControl
             UpdateCapacityBar();
             if (!_capacityValid) { AppContainer.Get<DialogService>().Error(RemainingBadge.Text); return; }
             if (string.IsNullOrWhiteSpace(TitleBox.Text)) { AppContainer.Get<DialogService>().Error("أدخل عنوان الخطة."); return; }
-            var validRows = _rows.Where(r => r.LotId != null || r.ProductId != 0).ToList();
-            if (validRows.Count == 0) { AppContainer.Get<DialogService>().Error("أضف بنداً واحداً على الأقل — اختر دفعة من الجدول مباشرة."); return; }
+            // §1.50.67 FIX2: عند الضغط على صنف جديد يتشفر الحفظ — تجاهل الصفوف غير المكتملة (كراتين 0) عند الحفظ
+            // مثل UpdateCapacityBar: فقط البنود المكتملة (هوية + كراتين>0) تُحفظ، الصف الجديد الفارغ لا يعطل الحفظ
+            var allValid = _rows.Where(r => r.LotId != null || r.ProductId != 0).ToList();
+            var validRows = allValid.Where(r => r.Cartons > 0 && int.TryParse(r.CartonsText, out var nn) && nn > 0).ToList();
+            if (validRows.Count == 0)
+            {
+                if (allValid.Count > 0) { AppContainer.Get<DialogService>().Error("أكمل كمية الكراتين للبند الجديد (يجب أن تكون >0) أو احذفه — الصفوف الفارغة لا تُحفظ."); return; }
+                AppContainer.Get<DialogService>().Error("أضف بنداً واحداً على الأقل — اختر دفعة من الجدول مباشرة."); return;
+            }
             // §B80: فرض تاريخ كل إنتاج — كل بند بتاريخ صالح داخل فترة الخطة (قبل الخلفية أيضاً)
             var perStart = (StartBox.SelectedDate ?? DateTime.Today).Date;
             var perEnd = (EndBox.SelectedDate ?? DateTime.Today).Date;
@@ -945,7 +958,6 @@ public partial class PlanningView : UserControl
                     SelectedShiftId(), SelectedLineId(), itemsDto, NotesBox.Text, scopeMode, singleCustId);
 
             if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
-            ClearAutoSaveDraft();
             _currentPlanId = r.Id;
             CodeBox.Text = r.DocumentNumber;
             FillPlanMeta();
@@ -1285,11 +1297,13 @@ public partial class PlanningView : UserControl
                     LineId = it.SuggestedLineId ?? 1,
                     LineName = db.ProductionLines.AsNoTracking().Where(x => x.Id == (it.SuggestedLineId ?? 1)).Select(x => x.LineNameAr).FirstOrDefault() ?? "-",
                     Priority = it.PriorityNo,
-                    // §تتبع سحب الخام — استعادة التتبع المحفوظ على البند
-                    SourceUnit = it.SourceUnit,
+                    // §1.50.66 — استعادة التتبع + بناء SourceModes من وحدة السحب المحفوظة
+                    SourceUnit = it.SourceUnit ?? "كجم",
                     SourceQtyInUnit = it.SourceQtyInUnit,
                     SourceUnitWeightKg = it.SourceUnitWeightKg,
-                    SourceQtyKg = it.SourceQtyKg
+                    SourceQtyKg = it.SourceQtyKg,
+                    SourceModes = new List<string> { it.SourceUnit ?? "كجم", "كجم" }.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToList(),
+                    SourceMode = it.SourceUnit ?? "كجم"
                 });
             }
             // نطاق الخطة: عميل واحد ← يُخفى عمود العميل (محفوظ في رأس النموذج) | عدة عملاء ← يظهر العمود
@@ -1601,35 +1615,15 @@ public partial class PlanningView : UserControl
         catch { }
     }
 
-    private void ClearAutoSaveDraft()
-    {
-        try
-        {
-            if (System.IO.File.Exists(AutoSavePath))
-            {
-                System.IO.File.Delete(AutoSavePath);
-            }
-        }
-        catch { }
-    }
-
     private void TryRestoreAutoSave()
     {
         try
         {
             if (!System.IO.File.Exists(AutoSavePath)) return;
             var fi = new System.IO.FileInfo(AutoSavePath);
-            if ((DateTime.Now - fi.LastWriteTime).TotalHours > 24)
-            {
-                ClearAutoSaveDraft();
-                return;
-            }
-            if (_rows.Count > 0) return;
-            if (!AppContainer.Get<DialogService>().Confirm($"يوجد حفظ تلقائي من {fi.LastWriteTime:dd/MM/yyyy HH:mm} — هل تريد استعادته؟"))
-            {
-                ClearAutoSaveDraft();
-                return;
-            }
+            if ((DateTime.Now - fi.LastWriteTime).TotalHours > 24) return; // قديم أكثر من يوم
+            if (_rows.Count > 0) return; // لا تستعد إن كان هناك بنود
+            if (!AppContainer.Get<DialogService>().Confirm($"يوجد حفظ تلقائي من {fi.LastWriteTime:dd/MM/yyyy HH:mm} — هل تريد استعادته؟")) return;
             var json = System.IO.File.ReadAllText(AutoSavePath);
             var list = System.Text.Json.JsonSerializer.Deserialize<List<AutoSaveRow>>(json);
             if (list == null) return;
@@ -1646,7 +1640,6 @@ public partial class PlanningView : UserControl
                     ShiftId = r.ShiftId ?? 1, LineId = r.LineId ?? 1
                 });
             }
-            ClearAutoSaveDraft();
         }
         catch { }
     }
@@ -1694,7 +1687,7 @@ public partial class PlanningView : UserControl
                         CustomerId = lot.CustomerId, CustomerName = db.Customers.Where(c => c.Id == lot.CustomerId).Select(c => c.CustomerName).FirstOrDefault() ?? "—",
                         ProductId = prod?.Id ?? 0, ProductName = prod?.ProductNameAr ?? "—",
                         Cartons = cartons > 0 ? cartons : 1,
-                        QtyKg = prod != null && prod.CartonWeightKg > 0 ? cartons * prod.CartonWeightKg : cartons * 5,
+                        QtyKg = prod != null && prod.CartonWeightKg > 0 ? cartons * prod.CartonWeightKg : 0,
                         DateValue = DatesErp.Core.Common.UiFormat.TryParseDate(dateStr, out var d) ? d : StartBox.SelectedDate
                     };
                     _rows.Add(row); added++;
@@ -1724,7 +1717,7 @@ public partial class PlanningView : UserControl
                         CustomerId = lot.CustomerId, CustomerName = db.Customers.Where(c => c.Id == lot.CustomerId).Select(c => c.CustomerName).FirstOrDefault() ?? "—",
                         ProductId = prod?.Id ?? 0, ProductName = prod?.ProductNameAr ?? "—",
                         Cartons = cartons > 0 ? cartons : 1,
-                        QtyKg = prod != null && prod.CartonWeightKg > 0 ? cartons * prod.CartonWeightKg : cartons * 5,
+                        QtyKg = prod != null && prod.CartonWeightKg > 0 ? cartons * prod.CartonWeightKg : 0,
                         DateValue = DatesErp.Core.Common.UiFormat.TryParseDate(dateStr, out var d) ? d : StartBox.SelectedDate
                     };
                     _rows.Add(row); added++;

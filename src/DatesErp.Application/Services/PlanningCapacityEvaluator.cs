@@ -48,6 +48,25 @@ public sealed class PlanningCapacityEvaluator
         {
             var item = items[index]; var row = new PlanCapacityRow { Index = index, Quantity = item.PlannedCartons };
             result.Rows.Add(row);
+
+            // §1.50.66 FIX: تحقق فوري من تطابق كجم/كرتون أثناء الإدخال — كان التحقق فقط عند الحفظ
+            if (item.PlannedCartons > 0 && item.PlannedQtyKg > 0)
+            {
+                double w = UnitsPolicy.CartonWeight(_db, item.ProductId, item.PackagingTypeId);
+                if (w > 0)
+                {
+                    double computed = Math.Round(item.PlannedCartons * w, 1);
+                    double tol = Math.Max(1.0, item.PlannedQtyKg * 0.02);
+                    if (Math.Abs(item.PlannedQtyKg - computed) > tol)
+                    {
+                        var prodName = _db.Products.AsNoTracking().Where(p => p.Id == item.ProductId).Select(p => p.ProductNameAr).FirstOrDefault() ?? $\"#{item.ProductId}\";
+                        row.Error = $"⛔ كمية الكيلو لا تطابق عدد الكراتين ووزن الكرتون للصنف «{prodName}». المدخل: {item.PlannedQtyKg:N1} كجم ← {item.PlannedCartons:N0} كرتون والمحسوب من وزن الكرتون ({w:N1} كجم): {computed:N1} كجم. صحح الكمية فوراً.";
+                        rowSlots.Add(null);
+                        continue;
+                    }
+                }
+            }
+
             int shift = item.SuggestedShiftId ?? defaultShiftId ?? 0, line = item.SuggestedLineId ?? defaultLineId ?? 1;
             if (!UiFormat.TryParseDate(item.ScheduledDate, out var day) || shift <= 0 ||
                 (hasFrom && day.Date < from.Date) || (hasTo && day.Date > to.Date))

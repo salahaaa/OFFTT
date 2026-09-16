@@ -173,26 +173,4 @@ public static class StoredPrintModels
 
         });
     }
-
-    public static PhaseDocModel Receiving(DatesErpDbContext db, int id)
-    {
-        return Snapshot(db, () =>
-        {
-            var d = db.Shipments.AsNoTracking().Include(x => x.Items).Single(x => x.Id == id);
-            var m = Model(db, d, "سند استلام التمور (Receiving Voucher)");
-            m.MainTitle = "بنود الشحنة الواردة والكميات المستلمة";
-            m.Info.Add(("العميل المورد", Customer(db, d.CustomerId)));
-            m.Info.Add(("تاريخ الوصول", UiFormat.D(d.ArrivalDate)));
-            m.Info.Add(("تاريخ الاستلام", UiFormat.D(d.ReceivedDate)));
-            m.Info.Add(("رقم الحاوية", d.ContainerNumber ?? "—"));
-            m.Columns = new[] { "م", "الصنف", "العبوة", "عدد العبوات", "وزن العبوة (كجم)", "الوزن (كجم)", "الوحدة" };
-            int n = 1;
-            foreach (var i in d.Items.OrderBy(i => i.Id))
-                m.Rows.Add(new object[] { n++, Product(db, i.ProductId), Pack(db, i.PackagingTypeId), i.PackageCount, i.UnitWeightKg, i.TotalWeightKg, i.ReceiptUnit ?? "كجم" });
-            m.Totals.Add(("عدد العبوات", N(d.Items.Sum(i => i.PackageCount))));
-            m.Totals.Add(("إجمالي الوزن (كجم)", N(d.Items.Sum(i => i.TotalWeightKg))));
-            m.Signatures.AddRange(new[] { "موظف الاستلام", "السائق الناقل", "أمين مخزن الخام WRM" });
-            return m;
-        });
-    }
 }

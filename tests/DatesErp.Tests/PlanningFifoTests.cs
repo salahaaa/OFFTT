@@ -57,7 +57,7 @@ public class PlanningFifoTests
             InitialQtyKg = 100,
             InStockQtyKg = 100,
             Status = "Approved",
-            LotDate = new DateTime(2026, 9, 3)
+            ProductionDate = new DateTime(2026, 9, 3)
         };
         var lot2 = new DatesErp.Core.Domain.Entities.Lot
         {
@@ -68,7 +68,7 @@ public class PlanningFifoTests
             InitialQtyKg = 100,
             InStockQtyKg = 100,
             Status = "Approved",
-            LotDate = new DateTime(2026, 9, 5)
+            ProductionDate = new DateTime(2026, 9, 5)
         };
         db.Lots.AddRange(lot1, lot2);
         db.SaveChanges();

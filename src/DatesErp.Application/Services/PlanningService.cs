@@ -256,7 +256,7 @@ public class PlanningService : ServiceBase, IPlanningService
                 return $"الدفعة {lot.LotCode} ليست معتمدة (حالتها: {DocStatuses.ToArabic(lot.Status)}) — لا يمكن اعتماد خطة عليها.";
             if (lot.InStockQtyKg <= 0.001)
                 return $"الدفعة {lot.LotCode} رصيدها صفر — لا يمكن اعتماد خطة إنتاج عليها.";
-            if (lot.Status == DocStatuses.Closed)
+            if (lot.IsClosed)
                 return $"الدفعة {lot.LotCode} مقفلة — لا يمكن اعتماد خطة عليها.";
             // المتاح بعد استبعاد حجوزات الخطط/الأوامر الأخرى (بدون هذه الخطة)
             double available = LotAvailableExcluding(lot.Id, plan.Id);

@@ -1,5 +1,6 @@
 import unittest
-from structural_checks import code_only, double_members, empty_handlers
+from pathlib import Path
+from structural_checks import code_only, direct_db_writes, double_members, empty_handlers
 
 
 class StructuralGuardTests(unittest.TestCase):
@@ -26,6 +27,17 @@ class StructuralGuardTests(unittest.TestCase):
         old = double_members('R.cs', 'class Lot { public double Qty {get;set;} }')
         new = double_members('R.cs', 'class Lot { public double Price {get;set;} }')
         self.assertEqual({'R.cs:Lot.Price'}, new - old)
+
+    def test_direct_save_changes_in_ui_is_detected(self):
+        text = 'var db = Get();\ndb.SaveChanges();\n'
+        self.assertEqual([2], direct_db_writes(Path('SomeView.cs'), text))
+
+    def test_save_changes_in_string_or_comment_is_not_a_write(self):
+        text = '// db.SaveChanges();\nvar s = "SaveChanges()";\n'
+        self.assertEqual([], direct_db_writes(Path('SomeView.cs'), text))
+
+    def test_bootstrapper_is_allowed_to_save(self):
+        self.assertEqual([], direct_db_writes(Path('Bootstrapper.cs'), 'db.SaveChanges();'))
 
 
 if __name__ == '__main__':

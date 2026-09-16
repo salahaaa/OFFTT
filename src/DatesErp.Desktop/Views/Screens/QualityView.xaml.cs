@@ -283,7 +283,7 @@ public partial class QualityView : UserControl
             var dto = new QualityDeliveryCheckDto
             {
                 OrderId = _current.OrderId,
-                CheckDate = DateTime.Now.ToString(DatesErp.Core.Common.UiFormat.DatePattern),
+                CheckDate = DateTime.Now.ToString(UiFormat.DatePattern),
                 Decision = DecisionRejected.IsChecked == true ? "Rejected" : DecisionQuarantine.IsChecked == true ? "Quarantine" : "Passed",
                 InspectorNotes = null,
                 Rows = _rows.SelectMany(r2 => r2.GradeQtys

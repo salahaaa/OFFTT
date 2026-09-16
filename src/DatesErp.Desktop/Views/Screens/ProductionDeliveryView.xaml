@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="DatesErp.Desktop.Views.Screens.ProductionDeliveryView"
+<UserControl x:Class="DatesErp.Desktop.Views.Screens.ProductionDeliveryView"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  FlowDirection="RightToLeft">
  <!-- §v1.50.38 — إعادة تصميم احترافية على هوية Onyx Classic الموحدة (كحلي/ذهبي/نخيلي):
@@ -10,7 +10,7 @@
    <RowDefinition Height="Auto"/>
    <RowDefinition Height="Auto"/>
    <RowDefinition Height="Auto"/>
-   <RowDefinition Height="*" MinHeight="260"/>
+   <RowDefinition Height="*" MinHeight="230"/>
    <RowDefinition Height="Auto"/>
    <RowDefinition Height="Auto"/>
   </Grid.RowDefinitions>
@@ -92,7 +92,7 @@
       <TextBlock Grid.Column="1" Text="نقرة واحدة تبدأ التحرير — الفعلي كراتين صحيحة لا تتجاوز المخطط" FontSize="10.5" Foreground="{StaticResource GrayTextBrush}" VerticalAlignment="Center"/>
      </Grid>
     </Border>
-    <DataGrid x:Name="ItemsGrid" MinHeight="260" RowHeight="32" AlternatingRowBackground="#FBFAF5" Background="White" RowBackground="White" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E8E4D8" BorderBrush="#D9D4C4" ColumnHeaderHeight="36"
+    <DataGrid x:Name="ItemsGrid" MinHeight="200"
               AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False"
               HeadersVisibility="Column" PreviewMouseLeftButtonDown="Grid_SingleClickEdit">
      <DataGrid.Columns>
@@ -125,7 +125,7 @@
             <Style.Triggers>
              <DataTrigger Binding="{Binding DiffState}" Value="match">
               <Setter Property="Foreground" Value="#15803D"/>
-              <Setter Property="Text" Value="✔ مطابق"/>
+              <Setter Property="Text" Value="مطابق"/>
              </DataTrigger>
              <DataTrigger Binding="{Binding DiffState}" Value="invalid">
               <Setter Property="Foreground" Value="#9CA3AF"/>
@@ -200,7 +200,7 @@
      </Grid>
      <DataGrid x:Name="SecondaryGrid" Margin="0,6,0,0" IsReadOnly="False"
                AutoGenerateColumns="False" CanUserAddRows="True" CanUserDeleteRows="True"
-               MinHeight="66" MaxHeight="96" RowHeight="30" HeadersVisibility="Column"
+               MinHeight="64" MaxHeight="104" HeadersVisibility="Column"
                PreviewMouseLeftButtonDown="Grid_SingleClickEdit" LoadingRow="Secondary_LoadingRow">
       <DataGrid.Columns>
        <DataGridTemplateColumn Header="المخرج من التعريفات" Width="*">

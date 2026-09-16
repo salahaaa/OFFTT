@@ -47,7 +47,7 @@ public class PrintingApprovedDesignTests
         Assert.True(PrintLayout.FontSize >= 13, "خط النماذج يجب ألا يقل عن 13px");
         Assert.Equal(20, PrintLayout.LineHeight);
         string renderer = Read("src/DatesErp.Desktop/Printing/PrintRenderer.cs");
-        Assert.True(renderer.Contains("#CBD5E1") || renderer.Contains("#8CA0AC"));          // مسطرة ظاهرة
+        Assert.Contains("#8CA0AC", renderer);          // مسطرة ظاهرة
         Assert.Contains("0.75", renderer);
         Assert.Contains("StatusBrush", renderer);      // الحالة بلونها
         Assert.Contains("مسودة", renderer);
