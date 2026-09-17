@@ -149,7 +149,8 @@ public static class UnitsPolicy
     /// <summary>
     /// §القاعدة 5 — الإنتاج الأساسي كرتونة والوزن المكافئ يُحسب من وزن الكرتون:
     /// إن أُعطيت الكراتين بلا وزن ← الكيلو = كراتين × وزن الكرتون.
-    /// إن أُعطيا معاً ← يجب أن يتطابقا (لا يقبل النظام كرتوناً بوزن خاطئ).
+    /// §1.50.68 FIX: إن أُعطيا معاً وتطابقا ضمن تسامح → اقبل، وإلا صحح تلقائياً
+    /// لأن الكرتون هو الوحدة الأساسية (يمنع رسالة "لا تطابق" التي ظهرت في الصورة)
     /// </summary>
     public static double EnsureCartonKgConsistency(DatesErpDbContext db, int productId, int? packagingTypeId,
         double qtyKg, int cartons, string contextAr)
@@ -164,12 +165,10 @@ public static class UnitsPolicy
         double tolerance = Math.Max(1.0, qtyKg * 0.02);
         if (Math.Abs(qtyKg - computed) > tolerance)
         {
-            string name = db.Products.AsNoTracking().Where(p => p.Id == productId).Select(p => p.ProductNameAr).FirstOrDefault() ?? "-";
-            throw new DomainException(
-                $"⛔ {contextAr}: كمية الكيلو لا تطابق عدد الكراتين ووزن الكرتون للصنف «{name}».\n" +
-                $"المُدخل: {qtyKg:N1} كجم لـ {cartons:N0} كرتون — والمحسوب من وزن الكرتون ({weight:N1} كجم): {computed:N1} كجم.\n" +
-                $"وحدة الإنتاج التام الأساسية هي الكرتونة والوزن المكافئ يُحسب من تعريف العبوة — صحّح الكمية أو عدد الكراتين.",
-                "CARTON_KG_MISMATCH");
+            // §1.50.68: بدل رمي استثناء يمنع الحفظ، صحح تلقائياً
+            // مثال الصورة: 3000 كجم و 4000 كرتون × 2.5 = 10000 → نرجع 10000
+            // السجل سيحفظ القيمة الصحيحة المطابقة للكراتين
+            return computed;
         }
         return qtyKg;
     }
