@@ -1,4 +1,4 @@
-<Window x:Class="DatesErp.Desktop.Views.LotPickerWindow"
+﻿<Window x:Class="DatesErp.Desktop.Views.LotPickerWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="اختيار دفعة خام للتخطيط — جميع الدفعات المتاحة معروضة فوراً" Width="1100" Height="600"
