@@ -467,7 +467,7 @@ public partial class PlanningView : UserControl
             if (_currentPlanId == null || _currentPlanId.Value == 0) { AppContainer.Get<DialogService>().Error("احفظ الخطة أولاً أو اختر خطة من السجل لفحصها."); return; }
             using var scope = AppContainer.NewScope();
             var svc = scope.ServiceProvider.GetRequiredService<IPlanningService>();
-            var result = svc.CheckPlan(_currentPlanId);
+            var result = svc.CheckPlan(_currentPlanId.Value);
             var win = new PlanCheckWindow(result) { Owner = Window.GetWindow(this) };
             win.ShowDialog();
         }
@@ -874,7 +874,7 @@ public partial class PlanningView : UserControl
                 if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
                 AppContainer.Get<DialogService>().Info(r.Message);
                 // افتح الخطة الجديدة
-                OpenPlan(r.Id.Value);
+                OpenPlan(r.Id);
             }
             else
             {
@@ -892,7 +892,7 @@ public partial class PlanningView : UserControl
                     // نستخدم نفس آلية إضافة صف يدوي مع تعبئة من المنتج/الدفعة
                     var prod = db.Products.AsNoTracking().FirstOrDefault(p => p.Id == it.ProductId);
                     if (prod == null) continue;
-                    var row = new Mvvm.PlanRowUi { No = _rows.Count + 1, ProductId = prod.Id, ProductName = prod.ProductNameAr, CartonsText = it.PlannedCartons.ToString(), QtyKg = it.PlannedQtyKg, LotId = it.LotId, CustomerId = it.CustomerId };
+                    var row = new PlanRowUi { No = _rows.Count + 1, ProductId = prod.Id, ProductName = prod.ProductNameAr, CartonsText = it.PlannedCartons.ToString(), QtyKg = it.PlannedQtyKg, LotId = it.LotId, CustomerId = it.CustomerId };
                     _rows.Add(row);
                 }
                 RowsGrid.ItemsSource = _rows;
@@ -963,7 +963,7 @@ public partial class PlanningView : UserControl
 
             // §تعديل خطة قائمة (مسودة) بدل إنشاء نسخة مكررة — الحفظ يعمل كحفظ وتحديث معاً
             OpResult r = _currentPlanId.HasValue && _currentPlanId.Value > 0
-                ? svc.UpdatePlan(_currentPlanId, TitleBox.Text, ptype,
+                ? svc.UpdatePlan(_currentPlanId.Value, TitleBox.Text, ptype,
                     (StartBox.SelectedDate ?? DateTime.Today).ToString("dd/MM/yyyy"),
                     (EndBox.SelectedDate ?? DateTime.Today).ToString("dd/MM/yyyy"),
                     SelectedShiftId(), SelectedLineId(), itemsDto, NotesBox.Text, scopeMode, singleCustId)
@@ -981,7 +981,7 @@ public partial class PlanningView : UserControl
             RefreshPlansList();
             // §B108: إعادة تحميل البنود من القاعدة بعد الحفظ — الحفظ يعيد بناء البنود،
             // فمعرفاتها في الذاكرة تصبح قديمة، و«تعديل البند» يعتمد عليها.
-            if (_currentPlanId.HasValue && _currentPlanId.Value > 0) OpenPlan(_currentPlanId);
+            if (_currentPlanId.HasValue && _currentPlanId.Value > 0) OpenPlan(_currentPlanId.Value);
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Planning.Save"); }
     }
@@ -991,7 +991,7 @@ public partial class PlanningView : UserControl
         if (_currentPlanId == null || _currentPlanId.Value == 0) { AppContainer.Get<DialogService>().Error("احفظ الخطة أولاً."); return; }
         using var scope = AppContainer.NewScope();
         var svc = (IPlanningService)scope.ServiceProvider.GetService(typeof(IPlanningService));
-        var r = svc.SubmitPlan(_currentPlanId);
+        var r = svc.SubmitPlan(_currentPlanId.Value);
         if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
         AppContainer.Get<DialogService>().Info(r.Message);
         SetStatusUI("UnderApproval");
@@ -1026,7 +1026,7 @@ public partial class PlanningView : UserControl
             if (!AppContainer.Get<DialogService>().Confirm("اعتماد الخطة رسمياً ونقلها لأوامر التشغيل؟")) return;
             using var scope = AppContainer.NewScope();
             var svc = (IPlanningService)scope.ServiceProvider.GetService(typeof(IPlanningService));
-            var r = svc.ApprovePlan(_currentPlanId);
+            var r = svc.ApprovePlan(_currentPlanId.Value);
             if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
             AppContainer.Get<DialogService>().Info(r.Message);
             SetLocked(true);
@@ -1043,7 +1043,7 @@ public partial class PlanningView : UserControl
         if (dlg.ShowDialog() != true) return;
         using var scope = AppContainer.NewScope();
         var svc = (IPlanningService)scope.ServiceProvider.GetService(typeof(IPlanningService));
-        var r = svc.ReturnPlan(_currentPlanId, dlg.Value);
+        var r = svc.ReturnPlan(_currentPlanId.Value, dlg.Value);
         if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
         AppContainer.Get<DialogService>().Info(r.Message);
         SetLocked(false);
@@ -1057,7 +1057,7 @@ public partial class PlanningView : UserControl
         if (!AppContainer.Get<DialogService>().Confirm("إلغاء الاعتماد وإعادة فتح الخطة للتعديل؟")) return;
         using var scope = AppContainer.NewScope();
         var svc = (IPlanningService)scope.ServiceProvider.GetService(typeof(IPlanningService));
-        var r = svc.UnapprovePlan(_currentPlanId);
+        var r = svc.UnapprovePlan(_currentPlanId.Value);
         if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
         AppContainer.Get<DialogService>().Info(r.Message);
         SetLocked(false);
@@ -1071,7 +1071,7 @@ public partial class PlanningView : UserControl
         if (!AppContainer.Get<DialogService>().Confirm("حذف الخطة (المسودة)؟")) return;
         using var scope = AppContainer.NewScope();
         var svc = (IPlanningService)scope.ServiceProvider.GetService(typeof(IPlanningService));
-        var r = svc.DeletePlan(_currentPlanId);
+        var r = svc.DeletePlan(_currentPlanId.Value);
         if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
         AppContainer.Get<DialogService>().Info(r.Message);
         NewPlan();
@@ -1086,7 +1086,7 @@ public partial class PlanningView : UserControl
     {
         if (_currentPlanId.HasValue && _currentPlanId.Value > 0)
         {
-            OpenPlan(_currentPlanId);   // استعادة آخر نسخة محفوظة
+            OpenPlan(_currentPlanId.Value);   // استعادة آخر نسخة محفوظة
             AppContainer.Get<DialogService>().Info("أُعيدت آخر نسخة محفوظة من الخطة.");
             return;
         }
@@ -1201,7 +1201,8 @@ public partial class PlanningView : UserControl
         {
             using var scope = AppContainer.NewScope();
             var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
-            var plan = db.ProductionPlans.AsNoTracking().FirstOrDefault(pl => pl.Id == _currentPlanId);
+            if (!_currentPlanId.HasValue) { PlanMetaBox.Text = "خطة جديدة — لم تُحفظ بعد · أنشأها: — · اعتمدها: —"; return; }
+            var plan = db.ProductionPlans.AsNoTracking().FirstOrDefault(pl => pl.Id == _currentPlanId.Value);
             if (plan == null) { PlanMetaBox.Text = "خطة جديدة — لم تُحفظ بعد · أنشأها: — · اعتمدها: —"; return; }
             string NameOf(int? uid) => uid == null ? "—"
                 : db.Users.AsNoTracking().Where(u => u.Id == uid).Select(u => u.FullName).FirstOrDefault() ?? "—";
@@ -1246,7 +1247,7 @@ public partial class PlanningView : UserControl
     private void Nav(int dir)
     {
         if (_planIds.Count == 0) return;
-        int idx = _planIds.IndexOf(_currentPlanId);
+        int idx = _currentPlanId.HasValue ? _planIds.IndexOf(_currentPlanId.Value) : -1;
         idx = dir switch { 0 => 0, int.MaxValue => _planIds.Count - 1, _ => Math.Clamp(idx + dir, 0, _planIds.Count - 1) };
         OpenPlan(_planIds[idx]);
     }
@@ -1482,7 +1483,7 @@ public partial class PlanningView : UserControl
 
             // §إعادة تحميل الخطة من القاعدة: التعديل تم في الخدمة، والجدول يجب أن يعكس
             // ما حُفظ فعلاً (الكراتين المشتقة قد تختلف عمّا أدخله المستخدم) لا ما ظنه.
-            if (_currentPlanId.HasValue && _currentPlanId.Value > 0) OpenPlan(_currentPlanId);
+            if (_currentPlanId.HasValue && _currentPlanId.Value > 0) OpenPlan(_currentPlanId.Value);
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Planning.EditRow"); }
     }
@@ -1513,7 +1514,7 @@ public partial class PlanningView : UserControl
             if (_currentPlanId == null || _currentPlanId.Value == 0) { AppContainer.Get<DialogService>().Error("احفظ الخطة أولاً قبل الطباعة."); return; }
             using var scope = AppContainer.NewScope();
             var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
-            var model = Views.PlanningPrintModel.Load(db, _currentPlanId);
+            var model = Views.PlanningPrintModel.Load(db, _currentPlanId.Value);
             if (model == null) { AppContainer.Get<DialogService>().Error("تعذر تحميل بيانات الخطة للطباعة."); return; }
             var doc = Views.PlanningPrintDocument.Build(model);
             var preview = new Views.PrintPreviewWindow(doc, $"خطة الإنتاج {model.PlanNumber} — {model.Title}")
