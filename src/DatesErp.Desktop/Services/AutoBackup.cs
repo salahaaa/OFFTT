@@ -128,7 +128,7 @@ public static class AutoBackup
             string msg = ex.Message.Contains("Access is denied") || ex.Message.Contains("Operating system error 5")
                 ? $"تعذّر إنشاء نسخة احتياطية في '{attemptedFile}' بسبب صلاحيات خدمة SQL Server (خطأ 5 Access is denied).\n" +
                   $"خدمة SQL Server تعمل بحساب لا يملك صلاحية الكتابة في مجلد المستندات.\n" +
-                  $"جرّب: 1) شغّل SSMS كمسؤول وأعطِ صلاحية للمجلد، أو 2) استخدم مجلد C:\SQLBackups، أو 3) اضغط نعم للمتابعة بدون نسخة (مخاطرة).\n\nالتفاصيل: {ex.Message}"
+                  $"جرّب: 1) شغّل SSMS كمسؤول وأعطِ صلاحية للمجلد، أو 2) استخدم مجلد C:\\SQLBackups، أو 3) اضغط نعم للمتابعة بدون نسخة (مخاطرة).\n\nالتفاصيل: {ex.Message}"
                 : $"تعذّر إنشاء نسخة احتياطية قبل ترحيل قاعدة البيانات:\n{ex.Message}";
             return System.Windows.MessageBox.Show(
                 msg +

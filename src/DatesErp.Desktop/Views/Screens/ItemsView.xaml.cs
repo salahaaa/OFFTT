@@ -190,10 +190,7 @@ public partial class ItemsView : UserControl
                             double tol = Math.Max(0.5, cw * 0.05);
                             if (diff > tol)
                             {
-                                if (!AppContainer.Get<DialogService>().Confirm($"⚠️ تنبيه: وزن الكرتون المدخل ({cw:N1} كجم) يختلف عن وزن العبوة «{pw.PackageNameAr}» ({pw.UnitWeightKg:N1} كجم) المرتبطة بهذا الصنف.
-هذا التناقض هو سبب خطأ «كمية الكيلو لا تطابق عدد الكراتين» في خطط الإنتاج.
-
-هل تريد المتابعة بالحفظ على أي حال؟"))
+                                if (!AppContainer.Get<DialogService>().Confirm($"⚠️ تنبيه: وزن الكرتون المدخل ({cw:N1} كجم) يختلف عن وزن العبوة «{pw.PackageNameAr}» ({pw.UnitWeightKg:N1} كجم) المرتبطة بهذا الصنف.\nهذا التناقض هو سبب خطأ «كمية الكيلو لا تطابق عدد الكراتين» في خطط الإنتاج.\n\nهل تريد المتابعة بالحفظ على أي حال؟"))
                                     return;
                                 break;
                             }
