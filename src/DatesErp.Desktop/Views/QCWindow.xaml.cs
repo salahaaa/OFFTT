@@ -260,6 +260,15 @@ public partial class QCWindow : Window
                 AppContainer.Get<DialogService>().Error("أدخل كمية مفحوصة (مقبول + مرفوض) لسطر واحد على الأقل.");
                 return;
             }
+            // §1.50.72 P4-4: سقف محلي واضح — كان إدخال أكبر من المتبقي يُرفض من الخدمة برسالة
+            // تغطية أقل بديهية.
+            var over = _inputRows.Where(r => r.AcceptedCtn + r.RejectedCtn > r.RemainingCtn).ToList();
+            if (over.Count > 0)
+            {
+                string detail = string.Join("؛ ", over.Select(r => $"«{r.ProductName}»: {r.AcceptedCtn + r.RejectedCtn} > المتبقي {r.RemainingCtn}"));
+                AppContainer.Get<DialogService>().Error($"الكمية المفحوصة تتجاوز المتبقي للسطر — {detail}\nلا يمكن فحص أكثر من ما لم يُفحص بعد.");
+                return;
+            }
             var lab = new QualityLabDto
             {
                 Decision = (CmbDecision.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Passed",
@@ -270,9 +279,15 @@ public partial class QCWindow : Window
                 SampleCartons = (int)P(TxtSample.Text),
                 InspectorNotes = string.IsNullOrWhiteSpace(TxtNotes.Text) ? null : TxtNotes.Text.Trim()
             };
+            // §1.50.72 P2-4: مرفوضات مع قرار «مطابق» — يُعرض في تأكيد الحفظ لا يمرّ بصمت
+            // (القرار هنا محدد مسبقاً على «مطابق» في القائمة، فلا يمكن التمييز بين الافتراضي والصريح).
+            double totalRej = items.Sum(i => i.RejectedQtyKg);
+            string decWarn = lab.Decision == "Passed" && totalRej > 0.001
+                ? $"⚠ المحضر يحتوي مرفوضات ({totalRej:N1} كجم) وقراره «مطابق» — تأكد أن هذا مقصود.\n"
+                : "";
             var confirm = AppContainer.Get<DialogService>().Confirm(
                 $"سيُحفظ الفحص {(_check.Items.Count > 0 ? "بالتعديل" : "جديداً")} بقرار: {DecisionAr(lab.Decision)}\n" +
-                $"مقبول: {items.Sum(i => i.AcceptedQtyKg):N1} كجم | مرفوض: {items.Sum(i => i.RejectedQtyKg):N1} كجم\nالمتابعة؟");
+                $"مقبول: {items.Sum(i => i.AcceptedQtyKg):N1} كجم | مرفوض: {items.Sum(i => i.RejectedQtyKg):N1} كجم\n{decWarn}المتابعة؟");
             if (!confirm) return;
 
             using var scope = AppContainer.NewScope();

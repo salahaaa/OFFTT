@@ -182,6 +182,9 @@ public partial class QualityView : UserControl
                     Value = savedStd.TryGetValue(st.Id, out var v) ? v : st.DefaultValue });
             BuildGradeColumns();
             Recalc();
+            // §1.50.72 P4-3: تمييز القيم المعبأة مسبقاً (كل المنتَج «مقبول») حتى لا تُحفظ دون تدقيق
+            if (_current.CheckId == null)
+                StatusLabel.Text += " — ⚠ القيم معبأة مسبقاً (كل الكمية المستلمة «مقبول» افتراضياً)؛ راجعها وعدّل المرفوض قبل الحفظ.";
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Quality.Source"); }
     }
@@ -278,6 +281,15 @@ public partial class QualityView : UserControl
             if (!_rows.All(IsRowBalanced))
             {
                 StatusLabel.Text = "⛔ الحفظ مرفوض: " + EqLabel.Text;
+                return;
+            }
+            // §1.50.72 P2-4: نتائج فيها مرفوضات ← القرار يجب أن يُحدد صراحةً —
+            // كان الحفظ بدون اختيار أي زر قرار يسجل «مطابق» بصمت رغم المرفوضات.
+            bool hasRejected = _rows.Any(r2 => r2.GradeQtys.Any(kv =>
+                kv.Value > 0 && r2.Grades.Any(g => g.ResultTypeId == kv.Key && g.ResultKind == InspectionResultType.KindRejected)));
+            if (hasRejected && DecisionRejected.IsChecked != true && DecisionQuarantine.IsChecked != true)
+            {
+                StatusLabel.Text = "⛔ هذا الفحص يحتوي كراتين مرفوضة — حدّد القرار صراحةً (مطابق / حجز / مرفوض) قبل الحفظ.";
                 return;
             }
             var dto = new QualityDeliveryCheckDto

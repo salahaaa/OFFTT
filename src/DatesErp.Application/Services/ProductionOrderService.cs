@@ -220,18 +220,25 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
             double cartons = item.PlannedCartons > 0
                 ? item.PlannedCartons
                 : (item.PlannedQtyKg / Math.Max(0.001, Db.Products.Where(p => p.Id == item.ProductId).Select(p => p.CartonWeightKg).FirstOrDefault()));
-            // §النظام القديم: ConsumptionFormula
-            var formulas = Db.ConsumptionFormulas.Where(f => f.ProductId == item.ProductId && f.IsActive
-                && (f.CustomerId == null || f.CustomerId == order.CustomerId)).ToList();
-            foreach (var f in formulas)
-            {
-                if (f.Mode == "Actual" || f.Mode == "PerHour" || f.Mode == "Unused") continue;
-                var matId = ResolveAuxMaterial(f, order.CustomerId);
-                aggOld.TryGetValue(matId, out var cur);
-                aggOld[matId] = cur + f.QtyPerUnit * cartons;
-            }
             // §1.50.63 — النظام الجديد: ProductAuxiliaryRequirement مع ربط كراتين العميل
             var bomReqs = Db.ProductAuxiliaryRequirements.Where(r => r.FinishedProductId == item.ProductId && r.IsActive).ToList();
+            // §1.50.72 P3-4: المسار القديم (ConsumptionFormula) كان يُكتب **بالتوازي** مع الجديد
+            // — صنفاً مسجلاً في النظامين (حالة انتقال شائعة) كان يُصْرَف مرتين عند تحرير الأمر.
+            // القاعدة الآن: إن وُجدت متطلبات جديدة للصنف فهي الوحيدة الحاكمة (النظام الأحدث)،
+            // ولا يُضاف شيء من المعادلات القديمة لنفس الصنف.
+            if (bomReqs.Count == 0)
+            {
+                // §النظام القديم: ConsumptionFormula
+                var formulas = Db.ConsumptionFormulas.Where(f => f.ProductId == item.ProductId && f.IsActive
+                    && (f.CustomerId == null || f.CustomerId == order.CustomerId)).ToList();
+                foreach (var f in formulas)
+                {
+                    if (f.Mode == "Actual" || f.Mode == "PerHour" || f.Mode == "Unused") continue;
+                    var matId = ResolveAuxMaterial(f, order.CustomerId);
+                    aggOld.TryGetValue(matId, out var cur);
+                    aggOld[matId] = cur + f.QtyPerUnit * cartons;
+                }
+            }
             foreach (var r in bomReqs)
             {
                 // تحقق هل الصنف المساعد يحتاج صرف عند الإصدار

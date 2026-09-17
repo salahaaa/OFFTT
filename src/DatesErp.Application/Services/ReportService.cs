@@ -364,9 +364,12 @@ public partial class ReportService : ServiceBase, IReportService
                 var orderIds = orderRefs.Select(x => x.Id).Distinct().ToList();
                 var planIds = orderRefs.Where(x => x.SourcePlanId != null).Select(x => x.SourcePlanId!.Value).Distinct().ToList();
                 var plans = Db.ProductionPlans.AsNoTracking().Where(x => planIds.Contains(x.Id)).ToDictionary(x => x.Id, x => x.DocumentNumber);
+                // §1.50.72 P2-2: نفس إصلاح DeliveryPickService — التطابق الصارم على "نهائي"
+                // لم ينطبق على القيم الفعلية ("نهائي — بعد التبريد …") فعمود الصفة كان فارغاً دائماً.
                 var decisions = Db.QualityChecks.AsNoTracking()
                     .Where(c => c.OrderId != null && orderIds.Contains(c.OrderId.Value)
-                                && c.Status == Core.Common.DocStatuses.Approved && c.CheckType == "نهائي")
+                                && c.IsApproved
+                                && (c.CheckType == null || c.CheckType.Contains("نهائي")))
                     .GroupBy(c => c.OrderId).Select(g => new { g.Key, Dec = g.Max(c => c.Decision) })
                     .ToList().ToDictionary(x => x.Key!.Value, x => x.Dec);
 

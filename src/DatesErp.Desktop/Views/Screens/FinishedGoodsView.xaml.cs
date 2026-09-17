@@ -146,12 +146,21 @@ public partial class FinishedGoodsView : UserControl
             _items.Clear();
             foreach (var oi in orderItems)
             {
+                // §1.50.72 P1-2: «المحجوز» = ما دخل مخزن التام فعلاً (ReceivedQtyKg) —
+                // كان يُجمع NetWeightKg لكل السندات (بلا فلتر حالة): السند المعكوس/الملغى
+                // يستمر بحجز كامل كميته، والكمية الظاهرة لا تطابق سقف الخدمة.
                 double delivered = db.FinishedGoodsReceiptItems
                     .Join(db.FinishedGoodsReceipts, i => i.ReceiptId, r => r.Id, (i, r) => new { i, r })
-                    .Where(x => x.r.OrderId == orderId && x.i.ProductId == oi.ProductId)
-                    .Sum(x => x.i.NetWeightKg);
+                    .Where(x => x.r.OrderId == orderId && x.i.ProductId == oi.ProductId
+                        && x.r.Status != DatesErp.Core.Common.DocStatuses.Cancelled)
+                    .Sum(x => x.i.ReceivedQtyKg);
                 double available = oi.ProducedQtyKg - delivered;
                 if (available <= 0.001 && oi.ProducedQtyKg <= 0) continue;
+                // §1.50.72 P1-2: الكراتين القابلة للتسليم تناسبياً مع الكجم المتبقي
+                // (كانت الدفعة الكاملة دائماً — انظر SaveAndIssue).
+                int availCtn = oi.ProducedQtyKg > 0.001
+                    ? (int)Math.Round(oi.ProducedCartons * Math.Max(0, available) / oi.ProducedQtyKg)
+                    : 0;
                 _items.Add(new FgItemUi
                 {
                     OrderItemId = oi.Id,
@@ -159,7 +168,7 @@ public partial class FinishedGoodsView : UserControl
                     LotId = oi.LotId,
                     ProductName = db.Products.Where(p => p.Id == oi.ProductId).Select(p => p.ProductNameAr).FirstOrDefault() ?? "-",
                     LotCode = db.Lots.Where(l => l.Id == oi.LotId).Select(l => l.LotCode).FirstOrDefault() ?? "—",
-                    Packages = oi.ProducedCartons,
+                    Packages = availCtn,
                     Weight = Math.Max(0, available),
                     DeliverQty = Math.Max(0, available),
                     Included = available > 0.001
@@ -193,14 +202,24 @@ public partial class FinishedGoodsView : UserControl
 
             using var scope = AppContainer.NewScope();
             var svc = (IFinishedGoodsService)scope.ServiceProvider.GetService(typeof(IFinishedGoodsService));
+            // §1.50.72 P1-2: الكراتين المرسلة تناسبية مع الكمية التي اختارها المستخدم.
+            // كان يُرسل الكراتين الكاملة دائماً مع كجم جزئي (نصف/يدوي)، فتنطبق قاعدة
+            // EnsureCartonKgConsistency (الكراتين هي الصحيحة §1.50.68) وتُستبدل الكمية
+            // المختارة بكامل المنتَج **بصمت** — اختيار «نصف» كان يصبح تسليماً كاملاً.
             var r = svc.SaveReceipt(_currentOrderId, _currentQcId,
                 (DateBox.SelectedDate ?? DateTime.Now).ToString("dd/MM/yyyy"),
-                selected.Select(i => new FinishedGoodsItemDto
+                selected.Select(i =>
                 {
-                    ProductId = i.ProductId,
-                    LotId = i.LotId,
-                    PackageCount = i.Packages,
-                    NetWeightKg = i.DeliverQty
+                    int ctn = i.Packages;
+                    if (i.Weight > 0.001 && i.DeliverQty < i.Weight - 0.001)
+                        ctn = (int)Math.Round(i.DeliverQty / i.Weight * i.Packages);
+                    return new FinishedGoodsItemDto
+                    {
+                        ProductId = i.ProductId,
+                        LotId = i.LotId,
+                        PackageCount = ctn,
+                        NetWeightKg = i.DeliverQty
+                    };
                 }).ToList());
             if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
             _currentReceiptId = r.Id;

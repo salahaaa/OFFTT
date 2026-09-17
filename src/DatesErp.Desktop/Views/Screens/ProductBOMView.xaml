@@ -29,12 +29,12 @@
                         <ComboBox x:Name="UnitBox" Width="90" IsEditable="True" Text="وحدة"/>
                     </StackPanel>
                     <StackPanel Margin="0,0,14,0">
-                        <TextBlock Text="الكمية لكل كرتون *:" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock x:Name="QtyLabel" Text="الكمية لكل كرتون *:" Style="{StaticResource FieldLabel}"/>
                         <TextBox x:Name="QtyBox" Width="110" Text="1"/>
                     </StackPanel>
                     <StackPanel Margin="0,0,14,0">
                         <TextBlock Text="طريقة الحساب:" Style="{StaticResource FieldLabel}"/>
-                        <ComboBox x:Name="CalcBox" Width="150" SelectedIndex="0">
+                        <ComboBox x:Name="CalcBox" Width="150" SelectedIndex="0" SelectionChanged="Calc_Changed">
                             <ComboBoxItem Content="لكل كرتون" Tag="PerCarton"/>
                             <ComboBoxItem Content="لكل كجم" Tag="PerKg"/>
                             <ComboBoxItem Content="حسب كمية الإنتاج" Tag="PerProduction"/>
@@ -56,7 +56,7 @@
                         <DataGridTextColumn Header="الصنف التام" Binding="{Binding FinishedProductName}" Width="160" IsReadOnly="True"/>
                         <DataGridTextColumn Header="الصنف المساعد" Binding="{Binding AuxiliaryProductName}" Width="*" IsReadOnly="True"/>
                         <DataGridTextColumn Header="الوحدة" Binding="{Binding Unit}" Width="80"/>
-                        <DataGridTextColumn Header="الكمية لكل كرتون" Binding="{Binding QtyPerCarton}" Width="130"/>
+                        <DataGridTextColumn Header="الكمية" Binding="{Binding QtyPerCarton}" Width="130"/>
                         <DataGridTextColumn Header="طريقة الحساب" Binding="{Binding CalculationMethodAr}" Width="130" IsReadOnly="True"/>
                         <DataGridTemplateColumn Header="حذف" Width="70">
                             <DataGridTemplateColumn.CellTemplate>

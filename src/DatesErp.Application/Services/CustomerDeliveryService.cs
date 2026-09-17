@@ -171,9 +171,14 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
             // كانت البوابة داخل if (dlv.OrderId is int) والواجهة تمرر null، فلم تُنفَّذ أبداً؛
             // وكانت تفحص IsApproved فقط لا Decision. أُثبت بالتشغيل أن دفعة «مرفوضة تماماً» سُلّمت للعميل.
             // §43: البوابة داخل المعاملة نفسها — لا نافذة زمنية بين فحص القرار وتنفيذ الأثر.
+            // §1.50.72 P1-1: البوابة لكل بند تُفحص على **أمر البند نفسه** المشتق من دفعته —
+            // كانت تمرر dlv.OrderId (أمر الرأس) لكل البنود، فسند يجمع أوامر متعددة (مسار
+            // «تسليم كامل المتاح») يمرّر بنود أوامر أخرى حتى لو كان فحصها مرفوضاً/غائباً.
+            // بند بلا دفعة يحتفظ بالسلوك الأصلي: أمر رأس السند.
             foreach (var item in dlv.Items)
             {
-                var (ok, reason) = QualityGate.CustomerDeliveryAllowed(Db, dlv.OrderId, item.LotId, item.ProductId);
+                int? gateOrderId = item.LotId != null ? null : dlv.OrderId;
+                var (ok, reason) = QualityGate.CustomerDeliveryAllowed(Db, gateOrderId, item.LotId, item.ProductId);
                 if (!ok) throw new DomainException(reason);
             }
 
@@ -254,16 +259,18 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
             // §B86/M5: التوزيع لكل بند تسليم (صنفه وعبوته) — لا كيلو إجمالي أعمى
             // §CD-FIX: النطاق = خطة السند فقط (من الأمر، أو من الدفعة عند غيابه كما في بوابة الجودة) —
             // التوزيع الواسع السابق كان يلوث خططاً أخرى ويُسقط الفائض بصمت.
+            // §1.50.72 P1-1: خطة البند من دفعته أولاً (سند متعدد الأوامر لا يلوّث خطة الرأس)،
+            // وخطة رأس السند بديلاً فقط عندما لا تشير دفعة البند إلى خطة.
             foreach (var sItem in dlv.Items)
             {
                 int? planId = null;
-                if (dlv.OrderId is int oid)
-                    planId = Db.ProductionOrders.Where(o => o.Id == oid).Select(o => o.SourcePlanId).FirstOrDefault();
-                if (planId == null && sItem.LotId is int slid)
+                if (sItem.LotId is int slid)
                     planId = (from oi in Db.ProductionOrderItems
                               join o in Db.ProductionOrders on oi.OrderId equals o.Id
                               where oi.LotId == slid
                               select o.SourcePlanId).FirstOrDefault();
+                if (planId == null && dlv.OrderId is int oid)
+                    planId = Db.ProductionOrders.Where(o => o.Id == oid).Select(o => o.SourcePlanId).FirstOrDefault();
                 if (planId == null)
                     throw new DomainException(
                         "لا يمكن توزيع المسلَّم على الخطة: السند غير مرتبط بأمر إنتاج ولا بدفعة مرتبطة بأمر — اربط السند أولاً.",
@@ -309,14 +316,16 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
                     if (lot != null) lot.DeliveredQtyKg -= item.QtyKg;
                 }
                 // §CD-FIX: عكس توزيع المسلَّم على خطة السند (نفس نطاق الاعتماد) حتى لا يبقى شبح في الخطة.
+                // §1.50.72 P1-1: نفس أولوية الاعتماد — خطة الدفعة أولاً ثم خطة الرأس —
+                // وإلا يبقى شبح في خطة الرأس بينما العكس من خطة أخرى.
                 int? uplanId = null;
-                if (dlv.OrderId is int uoid)
-                    uplanId = Db.ProductionOrders.Where(o => o.Id == uoid).Select(o => o.SourcePlanId).FirstOrDefault();
-                if (uplanId == null && item.LotId is int ulid)
+                if (item.LotId is int ulid)
                     uplanId = (from oi in Db.ProductionOrderItems
                                join o in Db.ProductionOrders on oi.OrderId equals o.Id
                                where oi.LotId == ulid
                                select o.SourcePlanId).FirstOrDefault();
+                if (uplanId == null && dlv.OrderId is int uoid)
+                    uplanId = Db.ProductionOrders.Where(o => o.Id == uoid).Select(o => o.SourcePlanId).FirstOrDefault();
                 if (uplanId != null)
                     PlanSync.UnsyncDeliveredForPlan(Db, uplanId.Value, dlv.CustomerId, item.ProductId, item.PackagingTypeId, item.QtyKg);
             }

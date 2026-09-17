@@ -167,6 +167,9 @@ public class ExecutionService : ServiceBase, IExecutionService
                 takeByLot[lastLot] += consumed - takeByLot.Values.Sum();
             }
             // §B88: حركة صرف واحدة لكل دفعة — بنود الدفعة الواحدة كانت تنشر حركات مكررة بنفس المرجع (DUPLICATE)
+            // §1.50.72 P3-6: عند غياب «الخام الفعلي» يُعتمد المخطط (سلوك موثق) — الحركة تُوسم بذلك
+            // حتى لا يتحول الانحراف في دفتر الخام إلى صمت.
+            string rawTag = consumedRawKg > 0 ? "" : " (بقيمة المخطط — لم يُدخل الفعلي)";
             foreach (var kvLot in takeByLot)
             {
                 ConsumeLot(kvLot.Key, kvLot.Value, "إقفال يوم الإنتاج");
@@ -180,7 +183,7 @@ public class ExecutionService : ServiceBase, IExecutionService
                     ReferenceDocType.ProductionExecution, order.DocumentNumber,
                     productId: Db.Lots.Where(l => l.Id == kvLot.Key).Select(l => l.ProductId).FirstOrDefault(),
                     lotId: kvLot.Key, customerId: custByLot.TryGetValue(kvLot.Key, out var cc) ? cc : order.CustomerId, orderId: order.Id,
-                    notes: "صرف خام فعلي عند إقفال يوم الإنتاج");
+                    notes: "صرف خام فعلي عند إقفال يوم الإنتاج" + rawTag);
             }
             // §المخرجات الثانوية: القائمة الديناميكية هي المرجع إن وُجدت. وإن غابت يُعتمد على
             // العمودين القديمين — ولا يُجمعان معاً أبداً، وإلا عُدّ المخرج مرتين
@@ -425,6 +428,19 @@ public class ExecutionService : ServiceBase, IExecutionService
                 }
                 else if (diff < -0.001)
                 {
+                    // §1.50.72 P2-3: حارس الرصيد السالب — كانت التسوية تكتب الرصيد مباشرة
+                    // (بلا حارس PostStockMovement) فيمكن للمستهلك > المصروف أن يسلب مخزن WAUX.
+                    var bal2 = Db.StockBalances.FirstOrDefault(s => s.WarehouseId == whAux && s.MaterialId == mat.MaterialId && s.ProductId == null && s.LotId == null && s.CustomerId == null && s.PackagingTypeId == null);
+                    double bal2Before = bal2?.QtyKg ?? 0;
+                    if (bal2Before + diff < -0.001)
+                    {
+                        string matName2 = Db.AuxiliaryMaterials.AsNoTracking().Where(m => m.Id == mat.MaterialId).Select(m => m.MaterialNameAr).FirstOrDefault() ?? $"#{mat.MaterialId}";
+                        throw new DomainException(
+                            $"⛔ تعذر إقفال اليوم: رصيد الصنف المساعد «{matName2}» في مخزن المساعدة ({bal2Before:N1}) لا يغطي الفارق التكميلي ({-diff:N1}).\nالمستهلك {consumedAux:N1} أكبر من المصروف {mat.ActualIssuedQty:N1} — قيّد صرفاً/تسوية تغطي الفرق أولاً ثم أقرِل اليوم.",
+                            "AUX_NEGATIVE_BALANCE");
+                    }
+                    if (bal2 == null) { bal2 = new StockBalance { WarehouseId = whAux, MaterialId = mat.MaterialId, LotId = null, CustomerId = null, PackagingTypeId = null }; Db.StockBalances.Add(bal2); }
+                    bal2.QtyKg += diff;
                     Db.InventoryTransactions.Add(new InventoryTransaction
                     {
                         TxnNumber = Numbering.Next("TXN"), WarehouseId = whAux, MaterialId = mat.MaterialId,
@@ -433,16 +449,23 @@ public class ExecutionService : ServiceBase, IExecutionService
                         OrderId = order.Id, IsApproved = true,
                         Notes = $"صرف تكميلي آلي عند إقفال يوم الإنتاج: مستهلك {consumedAux:N1} − مصروف {mat.ActualIssuedQty:N1}"
                     });
-                    var bal2 = Db.StockBalances.FirstOrDefault(s => s.WarehouseId == whAux && s.MaterialId == mat.MaterialId && s.ProductId == null && s.LotId == null && s.CustomerId == null && s.PackagingTypeId == null);
-                    if (bal2 == null) { bal2 = new StockBalance { WarehouseId = whAux, MaterialId = mat.MaterialId, LotId = null, CustomerId = null, PackagingTypeId = null }; Db.StockBalances.Add(bal2); }
-                    bal2.QtyKg += diff;
                 }
             }
             // §مواد الإدخال الفعلي غير المصروفة عند الاعتماد (ديزل/وقود): تُخصم من مخزن المساعدة عند الإقفال
             if (actualAux != null)
                 foreach (var aa in actualAux.Where(a => a.OrderId == order.Id && a.Qty > 0 && !order.Materials.Any(m => m.MaterialId == a.MaterialId)))
                 {
+                    // §1.50.72 P2-3: نفس حارس الرصيد السالب — الإدخال الفعلي غير المصروف
+                    // كان يخصم WAUX مباشرة ويمكن أن يسلبه.
                     var bb = Db.StockBalances.FirstOrDefault(s => s.WarehouseId == whAux && s.MaterialId == aa.MaterialId && s.ProductId == null && s.LotId == null && s.CustomerId == null && s.PackagingTypeId == null);
+                    double bbBefore = bb?.QtyKg ?? 0;
+                    if (bbBefore - aa.Qty < -0.001)
+                    {
+                        string aaName = Db.AuxiliaryMaterials.AsNoTracking().Where(m => m.Id == aa.MaterialId).Select(m => m.MaterialNameAr).FirstOrDefault() ?? $"#{aa.MaterialId}";
+                        throw new DomainException(
+                            $"⛔ تعذر إقفال اليوم: رصيد الصنف المساعد «{aaName}» في مخزن المساعدة ({bbBefore:N1}) لا يغطي الإدخال الفعلي ({aa.Qty:N1}).\nقيّد صرفه مسبقاً (أو تسوية) ثم أقرِل اليوم.",
+                            "AUX_NEGATIVE_BALANCE");
+                    }
                     if (bb == null) { bb = new StockBalance { WarehouseId = whAux, MaterialId = aa.MaterialId, LotId = null, CustomerId = null, PackagingTypeId = null }; Db.StockBalances.Add(bb); }
                     bb.QtyKg -= aa.Qty;
                     Db.InventoryTransactions.Add(new InventoryTransaction
@@ -540,6 +563,8 @@ public class ExecutionService : ServiceBase, IExecutionService
             string carryMsg = exe.CarryToNextDay
                 ? $"\n⏪ المتبقي في الصالة {remainingInHall:N1} كجم أُعيد لخام دفعته — أعد تخطيطه يدوياً في خطة اليوم التالي."
                 : (remainingInHall > 0 ? $"\nالمتبقي في الصالة: {remainingInHall:N1} كجم (أُعيد لخام الدفعة)." : "");
+            // §1.50.72 P3-6: تنبيه صريح في نتيجة الإقفال عندما أُسقط الخام «بالمخطط»
+            string rawMsg = consumedRawKg > 0 ? "" : "\n⚠ خام المستهلك رُحِّل بالقيمة المخططة (لم يُدخل الفعلي) — راجع دفتر الخام.";
             string qMsg = sendToQuality
                 ? $"\n🔬 أُرسل للجودة — الفحص متوقع {DateTime.Today.AddDays(2):dd/MM/yyyy} (فترة تبريد يومان)." +
                   "\nيُسمح بالتسليم لمخزن التام الآن؛ تسليم العميل بانتظار اعتماد الفحص."
@@ -547,7 +572,7 @@ public class ExecutionService : ServiceBase, IExecutionService
             return OpResult.Success(
                 $"🔒 أُقفل يوم الإنتاج للأمر {order.DocumentNumber}: المنتَج {producedKg:N1} كجم ({producedCartons:N0} كرتون)" +
                 $" | حشف {hashfKg:N1} | نوى {nawaKg:N1} | هالك {wastageKg:N1} | خام مستهلك {consumed:N1}." +
-                carryMsg + qMsg + planMsg + itemsMsg + yieldMsg, exe.Id, exe.DocumentNumber);
+                rawMsg + carryMsg + qMsg + planMsg + itemsMsg + yieldMsg, exe.Id, exe.DocumentNumber);
         });
     }
 

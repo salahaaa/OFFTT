@@ -51,9 +51,12 @@ public class DeliveryPickService
         var packs = _db.PackagingTypes.AsNoTracking().Where(p => packIds.Contains(p.Id)).ToDictionary(p => p.Id, p => p.PackageNameAr);
 
         // تاريخ استلام التام = تاريخ أقدم سند استلام إنتاج تام معتمد للدفعة×الصنف (تاريخ المستند لا تاريخ الحركة).
+        // §1.50.72 P2-1: السند المستلم يكون Status = "Completed" (لا "Approved" أبداً —
+        // كانت الشرطة القديمة لا تطابق شيئاً، فعمودا التاريخ/مدة البقاء دائماً «—» وFIFO مكسور).
+        // IsApproved هو العلم الفعلي الذي تضعه الخدمة عند الاستلام (ويعكسه الإلغاء).
         var fgIn = (from ri in _db.FinishedGoodsReceiptItems.AsNoTracking()
                     join r in _db.FinishedGoodsReceipts.AsNoTracking() on ri.ReceiptId equals r.Id
-                    where r.WarehouseId == whFg && r.Status == DocStatuses.Approved
+                    where r.WarehouseId == whFg && r.IsApproved
                           && ri.LotId != null && lotIds.Contains(ri.LotId.Value)
                     group r by new { ri.LotId, ri.ProductId } into g
                     select new { g.Key.LotId, g.Key.ProductId, First = g.Min(x => x.DeliveryDate) })
@@ -77,9 +80,13 @@ public class DeliveryPickService
             .Select(g => new { g.Key, First = g.Min(e => e.StartDateTime) })
             .ToList().ToDictionary(x => x.Key, x => x.First);
         // الصفة/الدرجة = قرار الفحص النهائي المعتمد للأمر (سليم/مقبول… ) — وإلا «بانتظار الفحص».
+        // §1.50.72 P2-2: التطابق الصارم CheckType == "نهائي" لم ينطبق على أي قيمة فعلية
+        // ("نهائي — بعد التبريد (يومان)" و"نهائي — بعد التبريد") فكانت الصفة «بانتظار الفحص»
+        // دائماً. الفلترة الآن بالاعتماد الفعلي + نوع يحتوي «نهائي» (يغطي كل المتغيرات).
         var decisions = _db.QualityChecks.AsNoTracking()
             .Where(c => c.OrderId != null && orderIds.Contains(c.OrderId.Value)
-                        && c.Status == DocStatuses.Approved && c.CheckType == "نهائي")
+                        && c.IsApproved
+                        && (c.CheckType == null || c.CheckType.Contains("نهائي")))
             .GroupBy(c => c.OrderId)
             .Select(g => new { g.Key, Dec = g.Max(c => c.Decision) })
             .ToList().ToDictionary(x => x.Key!.Value, x => x.Dec);

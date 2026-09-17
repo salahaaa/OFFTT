@@ -65,9 +65,6 @@ public partial class DeliveryView : UserControl
     private int _currentId, _currentCustomerId;
     private bool _locked;
     private Views.ErpToolbar _toolbar;
-    private System.Windows.Threading.DispatcherTimer _autoSaveTimer;
-    private DateTime _lastAutoSave = DateTime.MinValue;
-    private string AutoSavePath => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"DeliveryDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId : 0)}.json");
 
     public DeliveryView()
     {
@@ -85,11 +82,10 @@ public partial class DeliveryView : UserControl
                 ItemsGrid.Items.Refresh();
             }
         };
-        _autoSaveTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
-        _autoSaveTimer.Tick += (_, _) => AutoSaveDraft();
+        // §1.50.72 P4-1: الحفظ التلقائي (DeliveryDraft_*.json) أُزيل — النمط نفسه الذي أزيل من
+        // شاشة الخطط (مسودات تظهر بلا مصدر بعد انقطاع). السند المحفوظ وحده هو المرجع.
         ItemsGrid.PreviewKeyDown += ItemsGrid_PreviewKeyDown;
-        Loaded += (_, _) => { Services.ComboBoxAutoShowHelper.Apply(this); Load(); _autoSaveTimer.Start(); TryRestoreAutoSave(); };
-        Unloaded += (_, _) => _autoSaveTimer?.Stop();
+        Loaded += (_, _) => { Services.ComboBoxAutoShowHelper.Apply(this); Load(); };
     }
 
     public void AttachChrome(Views.ErpChrome chrome)
@@ -217,6 +213,11 @@ public partial class DeliveryView : UserControl
                 });
             }
             BalanceChip.Text = $"رصيد العميل: {rows.Sum(r => r.AvailableCartons)} كرتون / {rows.Sum(r => r.AvailableKg):N1} كجم";
+            // §1.50.72 P4-6: رصيد «كجم فقط» بلا كراتين (بلا وزن كرتون معرّف) لا يظهر في التسليم
+            // بالكرتون — كان يخفي كمية حقيقية بلا أثر. يُبلَّغ عنها في الشريحة نفسها (لا حوار عند كل تبديل).
+            double kgOnly = rows.Where(r => r.AvailableCartons <= 0 && r.AvailableKg > 0.001).Sum(r => r.AvailableKg);
+            if (kgOnly > 0.001)
+                BalanceChip.Text += $"   ⚠ كجم فقط (بلا وزن كرتون): {kgOnly:N1} كجم — عرّف وزن الكرتون ليصبح قابلًا للتسليم";
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Delivery.Balance"); }
     }
@@ -344,6 +345,14 @@ public partial class DeliveryView : UserControl
             if (_locked) { AppContainer.Get<DialogService>().Error("السند مقفل (معتمد)."); return; }
             if (_currentCustomerId == 0) { AppContainer.Get<DialogService>().Error("اختر العميل."); return; }
             // §1.50.67 FIX متوسط: تجاهل الصفوف الفارغة placeholder عند الحفظ — مثل إصلاح الخطط
+            // §1.50.72 P3-3: الصف غير الفارغ بلا كراتين صالحة لم يعد يُستبعد بصمت — يُبلَّغ عنه.
+            var broken = _items.Where(r => !r.IsEmptyRow && r.ProductId != 0 && r.Packages <= 0).ToList();
+            if (broken.Count > 0)
+            {
+                string detail = string.Join("؛ ", broken.Select(r => $"{r.ProductName} / {r.LotCode}"));
+                AppContainer.Get<DialogService>().Error($"لا يمكن حفظ السند — البنود التالية بلا كراتين صالحة: {detail}\nعدّل الكراتين (أكبر من 0) أو احذف الصف.");
+                return;
+            }
             var validItems = _items.Where(r => !r.IsEmptyRow && r.ProductId != 0 && r.Packages > 0).ToList();
             if (validItems.Count == 0) { AppContainer.Get<DialogService>().Error("أضف بنداً من رصيد العميل (نقر مزدوج أو زر تسليم الكامل)."); return; }
 
@@ -502,7 +511,11 @@ public partial class DeliveryView : UserControl
                 row.LotCode = batch.LotCode;
                 row.PackName = batch.PackName;
                 row.Unit = batch.Unit;
-                row.UnitWeight = 0; // §1.50.67 FIX: لا وزن ثابت 7.5 — سيُحدث من بطاقة الصنف عبر UnitsPolicy
+                                // §1.50.67 FIX: لا وزن ثابت 7.5. §1.50.72 P3-1: كان يُترك الوزن صفراً ولا أحد يحدّثه،
+                // فأي تعديل على «الكراتين» في هذا الصف يعيد حساب الوزن = كراتين × 0 = 0 بصمت
+                // (ثم رفض الحفظ برسالة غامضة). وزن الدفعة متوفر من القائمة نفسها — يُملأ الآن.
+                row.CartonWeight = batch.CartonWeight;
+                row.UnitWeight = batch.CartonWeight;
                 row.AvailableQty = batch.Qty;
                 row.AvailablePackages = batch.Packages;
                 row.Qty = batch.Qty;
@@ -557,6 +570,21 @@ public partial class DeliveryView : UserControl
             DateBox.SelectedDate = d.DeliveryDate;
             DocNoBox.Text = d.DocumentNumber;
             _items.Clear();
+            // §1.50.72 P4-2: فحص الأوزان **قبل** البناء — كان الاستثناء يرمي في منتصف الحلقة
+            // فتظهر رسالة خطأ عامة مع سند نصف محمّل (حالة الشاشة غير متسقة).
+            foreach (var it in d.Items)
+            {
+                var prod0 = db.Products.AsNoTracking().FirstOrDefault(p => p.Id == it.ProductId);
+                double w0 = it.PackagingTypeId != null
+                    ? db.PackagingTypes.Where(k => k.Id == it.PackagingTypeId).Select(k => k.UnitWeightKg).FirstOrDefault()
+                    : 0;
+                if (w0 <= 0) w0 = it.CartonWeightKg > 0 ? it.CartonWeightKg : (prod0?.CartonWeightKg > 0 ? prod0.CartonWeightKg : 0);
+                if (w0 <= 0)
+                {
+                    AppContainer.Get<DialogService>().Error($"لا يمكن فتح السند: وزن الكرتون غير معرف للصنف «{prod0?.ProductNameAr ?? it.ProductId.ToString()}» — عرّفه في بطاقة الصنف أولاً.");
+                    return;
+                }
+            }
             foreach (var it in d.Items)
             {
                 // §B105/P3 — العبوة ووزنها والوحدة تُعاد كما حُفظت (كانت تضيع فيُحسب الوزن بـ7.5 افتراضي)
@@ -565,7 +593,6 @@ public partial class DeliveryView : UserControl
                     ? db.PackagingTypes.Where(k => k.Id == it.PackagingTypeId).Select(k => k.UnitWeightKg).FirstOrDefault()
                     : 0;
                 if (unitW <= 0) unitW = it.CartonWeightKg > 0 ? it.CartonWeightKg : (prod?.CartonWeightKg > 0 ? prod.CartonWeightKg : 0);
-                if (unitW <= 0) throw new InvalidOperationException($"وزن الكرتون غير معرف للصنف {prod?.ProductNameAr ?? it.ProductId.ToString()} — عرّفه في بطاقة الصنف.");
                 _items.Add(new DelivBalanceRow
                 {
                     ProductId = it.ProductId,
@@ -693,49 +720,5 @@ public partial class DeliveryView : UserControl
         }
     }
 
-    private void AutoSaveDraft()
-    {
-        try
-        {
-            if (_locked) return;
-            var valid = _items.Where(r => !r.IsEmptyRow).ToList();
-            if (valid.Count == 0) return;
-            var dir = System.IO.Path.GetDirectoryName(AutoSavePath);
-            System.IO.Directory.CreateDirectory(dir);
-            var json = System.Text.Json.JsonSerializer.Serialize(valid.Select(r => new { r.ProductId, r.LotId, r.PackagingTypeId, r.Packages }).ToList());
-            System.IO.File.WriteAllText(AutoSavePath, json);
-            _lastAutoSave = DateTime.Now;
-        }
-        catch { }
-    }
-    private void TryRestoreAutoSave()
-    {
-        try
-        {
-            if (!System.IO.File.Exists(AutoSavePath)) return;
-            var fi = new System.IO.FileInfo(AutoSavePath);
-            if ((DateTime.Now - fi.LastWriteTime).TotalHours > 24) return;
-            if (_items.Count(x => !x.IsEmptyRow) > 0) return;
-            if (!AppContainer.Get<DialogService>().Confirm($"يوجد حفظ تلقائي من {fi.LastWriteTime:dd/MM/yyyy HH:mm} — استعادة؟")) return;
-            var json = System.IO.File.ReadAllText(AutoSavePath);
-            var list = System.Text.Json.JsonSerializer.Deserialize<List<AutoSaveRow>>(json);
-            if (list == null) return;
-            using var scope = AppContainer.NewScope();
-            var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
-            foreach (var r in list)
-            {
-                var lot = r.LotId != null ? db.Lots.AsNoTracking().FirstOrDefault(l => l.Id == r.LotId) : null;
-                var prod = db.Products.AsNoTracking().FirstOrDefault(p => p.Id == r.ProductId);
-                _items.Add(new DelivBalanceRow
-                {
-                    ProductId = r.ProductId, LotId = r.LotId, PackagingTypeId = r.PackagingTypeId,
-                    ProductName = prod?.ProductNameAr ?? "—", LotCode = lot?.LotCode ?? "—",
-                    Packages = r.Packages, Qty = r.Packages * (prod?.CartonWeightKg > 0 ? prod.CartonWeightKg : 0)
-                });
-            }
-        }
-        catch { }
-    }
-    private class AutoSaveRow { public int ProductId { get; set; } public int? LotId { get; set; } public int? PackagingTypeId { get; set; } public int Packages { get; set; } }
 }
 

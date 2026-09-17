@@ -95,7 +95,7 @@ public partial class ProductBOMView : UserControl
         }
         if (!double.TryParse(QtyBox.Text, out var qty) || qty <= 0)
         {
-            AppContainer.Get<DialogService>().Error("أدخل كمية صحيحة لكل كرتون.");
+            AppContainer.Get<DialogService>().Error($"أدخل كمية صحيحة {QtyLabel.Text.TrimStart(" *")} (أكبر من صفر).");
             return;
         }
         string calc = (CalcBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "PerCarton";
@@ -137,6 +137,19 @@ public partial class ProductBOMView : UserControl
             }
             catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "BOM.Delete"); }
         }
+    }
+
+    // §1.50.72 P3-5: وسم حقل الكمية يتبع طريقة الحساب — كان ثابتاً «لكل كرتون» حتى عند
+    // اختيار «لكل كجم»، فادخل المستخدم قيمة لكل كرتون فيُصرف مضروباً في الكجم (×8 لكرتون 8كجم).
+    private void Calc_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        string calc = (CalcBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "PerCarton";
+        (QtyLabel.Text, CalcHint.Text) = calc switch
+        {
+            "PerKg" => ("الكمية لكل كجم *:", "الكمية لكل **كجم** من المنتج — مثال: 7500 كجم × 0.020 = 150 كجم سكري (لا تُدخل قيمة الكرتون)."),
+            "PerProduction" => ("الكمية حسب كمية الإنتاج *:", "الكمية تُحسب على **الكراتين المنتجة** لهذا البند — مثال: 3500 كرتون × 0.005 = 17.5."),
+            _ => ("الكمية لكل كرتون *:", "الكمية مرتبطة بمواصفة الصنف التام — مثال: 3500 كرتون × 1 = 3500 ملصق، 3500 × 0.020 = 70 كجم")
+        };
     }
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => Load();

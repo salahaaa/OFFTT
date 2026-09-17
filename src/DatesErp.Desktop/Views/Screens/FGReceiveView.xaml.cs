@@ -165,12 +165,19 @@ public partial class FGReceiveView : UserControl
                 _currentOrderId = orderId;
                 foreach (var oi in db.ProductionOrderItems.Where(i => i.OrderId == orderId).ToList())
                 {
+                    // §1.50.72 P1-2: «المحجوز» = المستلَم فعلاً (ReceivedQtyKg) لا NetWeightKg
+                    // الخام — السند المعكس/الملغى كان يستمر بحجز كامل كميته.
                     double delivered = db.FinishedGoodsReceiptItems
                         .Join(db.FinishedGoodsReceipts, i => i.ReceiptId, r => r.Id, (i, r) => new { i, r })
-                        .Where(x => x.r.OrderId == orderId && x.i.ProductId == oi.ProductId)
-                        .Sum(x => x.i.NetWeightKg);
+                        .Where(x => x.r.OrderId == orderId && x.i.ProductId == oi.ProductId
+                            && x.r.Status != DatesErp.Core.Common.DocStatuses.Cancelled)
+                        .Sum(x => x.i.ReceivedQtyKg);
                     double available = oi.ProducedQtyKg - delivered;
                     if (available <= 0.001 && oi.ProducedQtyKg <= 0) continue;
+                    // §1.50.72 P1-2: كراتين متبقية تناسبية مع الكجم المتبقي (كانت الدفعة الكاملة).
+                    int availCtn = oi.ProducedQtyKg > 0.001
+                        ? (int)Math.Round(oi.ProducedCartons * Math.Max(0, available) / oi.ProducedQtyKg)
+                        : 0;
                     _lines.Add(new FrLineUi
                     {
                         ProductId = oi.ProductId,
@@ -180,7 +187,7 @@ public partial class FGReceiveView : UserControl
                         CustomerId = oi.CustomerId,
                         CustomerName = db.Customers.Where(c => c.Id == oi.CustomerId).Select(c => c.CustomerName).FirstOrDefault() ?? "—",
                         Remaining = Math.Max(0, Math.Round(available, 1)),
-                        Packages = oi.ProducedCartons,
+                        Packages = availCtn,
                         Qty = Math.Max(0, Math.Round(available, 1)),
                         Included = available > 0.001
                     });
@@ -203,16 +210,25 @@ public partial class FGReceiveView : UserControl
             var svc = scope.ServiceProvider.GetRequiredService<IFinishedGoodsService>();
             int? qc = null;
             if (!FromDelivery() && PickBox.SelectedIndex >= 0) qc = _eligible[PickBox.SelectedIndex].QcId;
+            // §1.50.72 P1-2: كراتين تناسبية مع «كمية السند» التي كتبها المستخدم —
+            // إرسال الكراتين الكاملة مع كجم جزئي كان يُستبدل الكيلو بكامل المنتَج بصمت
+            // (قاعدة EnsureCartonKgConsistency: الكراتين هي الصحيحة).
             var r = svc.SaveReceipt(_currentOrderId, qc,
                 (DateBox.SelectedDate ?? DateTime.Now).ToString("dd/MM/yyyy"),
-                selected.Select(l => new FinishedGoodsItemDto
+                selected.Select(l =>
                 {
-                    ProductId = l.ProductId,
-                    LotId = l.LotId,
-                    PackageCount = l.Packages,
-                    NetWeightKg = l.Qty,
-                    CustomerId = l.CustomerId,
-                    DeliveryItemId = l.DeliveryItemId
+                    int ctn = l.Packages;
+                    if (!FromDelivery() && l.Remaining > 0.001 && l.Qty < l.Remaining - 0.001)
+                        ctn = (int)Math.Round(l.Qty / l.Remaining * l.Packages);
+                    return new FinishedGoodsItemDto
+                    {
+                        ProductId = l.ProductId,
+                        LotId = l.LotId,
+                        PackageCount = ctn,
+                        NetWeightKg = l.Qty,
+                        CustomerId = l.CustomerId,
+                        DeliveryItemId = l.DeliveryItemId
+                    };
                 }).ToList(),
                 FromDelivery() ? _currentDeliveryId : null);
             if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }

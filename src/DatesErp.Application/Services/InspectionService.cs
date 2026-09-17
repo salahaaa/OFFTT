@@ -668,7 +668,10 @@ public class InspectionService : ServiceBase, IInspectionService
         }
 
         // المعايير المعتمدة: قيمها تُحفظ سجلات، وتغذي حقول المواصفة القياسية بالمحضر
-        var lab = new QualityLabDto { Decision = input.Decision is "Passed" or "Quarantine" or "Rejected" ? input.Decision : "Passed", InspectorNotes = input.InspectorNotes };
+        // §1.50.72 P2-4: القرار قيمة صالحة أو رفض — كان أي قرار غير صالح يُسقط «Passed» بصمت.
+        if (input.Decision is not ("Passed" or "Quarantine" or "Rejected"))
+            return OpResult.Fail("قرار الفحص غير صالح — اختر: مطابق (Passed) | حجز (Quarantine) | مرفوض (Rejected).");
+        var lab = new QualityLabDto { Decision = input.Decision, InspectorNotes = input.InspectorNotes };
         var stdById = Db.QualityStandards.AsNoTracking().Where(x => x.IsActive).ToList();
         foreach (var st in input.Standards ?? new())
         {
@@ -708,7 +711,12 @@ public class InspectionService : ServiceBase, IInspectionService
             if (stdById.Any(x => x.Id == st.StandardId))
                 Db.QualityStandardRecords.Add(new QualityStandardRecord { CheckId = r.Id, StandardId = st.StandardId, Value = st.Value });
         Db.SaveChanges();
-        return OpResult.Success($"تم حفظ فحص الجودة {r.DocumentNumber} — مجموع الصفات يطابق الكمية المستلمة للفحص.", r.Id, r.DocumentNumber);
+        // §1.50.72 P2-4: محضر بقرار «مطابق» رغم وجود مرفوضات — يُحفظ (قرار الفاحص) لكنه لا يمرّ بصمت.
+        double totalRejected = items.Sum(i => i.RejectedCartons);
+        string decWarn = input.Decision == "Passed" && totalRejected > 0
+            ? $"\n⚠ تنبيه: سُجّل في المحضر {totalRejected:N0} كرتون مرفوضة وقراره «مطابق» — إن كان المقصود «مرفوض/حجز» فصحّحه بتصحيح معتمد."
+            : "";
+        return OpResult.Success($"تم حفظ فحص الجودة {r.DocumentNumber} — مجموع الصفات يطابق الكمية المستلمة للفحص.{decWarn}", r.Id, r.DocumentNumber);
     }
 
     public string UnitName(int unitId)

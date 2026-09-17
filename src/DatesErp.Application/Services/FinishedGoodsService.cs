@@ -178,11 +178,16 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
             Db.SaveChanges();
             // §1.50.66.10 — Production → Quality → Finished Goods Available مع سجل المستخدم والتاريخ
             rcpt.CreatedBy = Session?.UserId;
-            string coolingNote = ""; // لا تسليم قبل اعتماد الجودة، فلا رسالة تبريد هنا
+            // §1.50.72 P3-2: الرسالة السابقة قالت دائماً «تم اعتماد الجودة» — غير صحيحة عندما يكون
+            // الفحص معلّقاً (فترة التبريد يومان، والتسليم للتام مسموح بالتصميم). المتغير coolingNote
+            // كان يُعلن ولا يُستخدم؛ اكتمل الآن.
+            string coolingNote = coolingPending
+                ? " — ⚠ فحص الجودة لم يُعتمد بعد (فترة التبريد) — التسليم لمخزن التام مسموح، أما تسليم العميل فينتظر اعتماد الفحص."
+                : "";
             string boxMsg = boxWarnings.Count > 0 ? "\n" + string.Join("\n", boxWarnings) : "";
             if (delivery != null)
                 return OpResult.Success($"تم إنشاء سند الاستلام {rcpt.DocumentNumber} من أمر التسليم {delivery.DocumentNumber} — أصدره ثم نفّذ الاستلام (Production→Quality→WFG موثق — المستخدم: {Session?.UserName} — التاريخ: {DateTime.Now:dd/MM/yyyy}).", rcpt.Id, rcpt.DocumentNumber);
-            return OpResult.Success($"تم إنشاء أمر تسليم الإنتاج {rcpt.DocumentNumber} — تم اعتماد الجودة، جاهز للاستلام في مخزن التام (WFG) مع رصيد بيع (المستخدم: {Session?.UserName} — {DateTime.Now:dd/MM/yyyy})." + boxMsg, rcpt.Id, rcpt.DocumentNumber);
+            return OpResult.Success($"تم إنشاء أمر تسليم الإنتاج {rcpt.DocumentNumber} — جاهز للاستلام في مخزن التام (WFG) مع رصيد بيع{coolingNote} (المستخدم: {Session?.UserName} — {DateTime.Now:dd/MM/yyyy})." + boxMsg, rcpt.Id, rcpt.DocumentNumber);
         });
     }
 

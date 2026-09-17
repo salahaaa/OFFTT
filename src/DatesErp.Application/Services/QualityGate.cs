@@ -101,12 +101,14 @@ public static class QualityGate
         DatesErpDbContext db, CustomerDelivery dlv, CustomerDeliveryItem item)
     {
         // اشتقاق الأوامر كما في بوابة القرار (معرّف الأمر أو الدفعة/الصنف — لا تجاوز بالـnull)
+        // §1.50.72 P1-1: أمر البند من دفعته أولاً — سقف «المطابق المعتمد» يُقاس على فحوصات
+        // أمر البند نفسه لا على أمر رأس السند (سند يجمع أوامر متعددة لا يقاس على واحد).
         var orderIds = new List<int>();
-        if (dlv.OrderId != null) orderIds.Add(dlv.OrderId.Value);
-        if (orderIds.Count == 0 && item.LotId != null)
+        if (item.LotId != null)
             orderIds = db.ProductionOrderItems.AsNoTracking()
                 .Where(i => i.LotId == item.LotId && i.ProductId == item.ProductId)
                 .Select(i => i.OrderId).Distinct().ToList();
+        if (orderIds.Count == 0 && dlv.OrderId != null) orderIds.Add(dlv.OrderId.Value);
         if (orderIds.Count == 0) return (true, null); // بوابة القرار رفضت أصلاً — لا رسالة مكررة
 
         var checkIds = db.QualityChecks.AsNoTracking()

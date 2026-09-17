@@ -409,8 +409,13 @@ public class PlanProgressService : ServiceBase, IPlanProgressService
         double remainingBillable = d.TotalQtyKg - d.InvoicedQtyKg;
         if (qty > remainingBillable + 0.001)
             return OpResult.Fail($"الكمية أكبر من المتاح للفوترة — المتبقي غير المفوتر: {remainingBillable:N1} كجم (ممنوع تكرار الفوترة لنفس الكمية).");
-        d.InvoicedQtyKg += qty;
-        Db.SaveChanges();
-        return OpResult.Success($"تم تسجيل فوترة {qty:N1} كجم من {d.DocumentNumber}. المتبقي القابل للفوترة: {d.TotalQtyKg - d.InvoicedQtyKg:N1} كجم.");
+        // §1.50.72 P4-5: القراءة+الزيادة+الحفظ داخل معاملة واحدة (قابلة للقفل Serializable) —
+        // كان مسار قراءة-ثم-كتابة بلا معاملة: تنافس على نفس السند كان يمرّر فوترة مكررة.
+        return RunInTransaction(() =>
+        {
+            d.InvoicedQtyKg += qty;
+            Db.SaveChanges();
+            return OpResult.Success($"تم تسجيل فوترة {qty:N1} كجم من {d.DocumentNumber}. المتبقي القابل للفوترة: {d.TotalQtyKg - d.InvoicedQtyKg:N1} كجم.");
+        });
     }
 }
