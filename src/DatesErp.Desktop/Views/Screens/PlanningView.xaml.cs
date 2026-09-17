@@ -74,9 +74,10 @@ public partial class PlanningView : UserControl
             if (e.OldItems != null)
                 foreach (PlanRowUi row in e.OldItems) { row.PropertyChanged -= RowUi_Changed; row.QuantityGuard = null; }
         };
-        // §1.50.60 7-ب: حفظ تلقائي كل 60 ثانية
-        _autoSaveTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
-        _autoSaveTimer.Tick += (_, _) => AutoSaveDraft();
+        // §1.50.67 FIX: إلغاء الحفظ التلقائي — كان يحفظ خطط وهمية (بناءً على طلب المستخدم)
+        // _autoSaveTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
+        // _autoSaveTimer.Tick += (_, _) => AutoSaveDraft();
+        _autoSaveTimer = null;
         // §1.50.60 7-هـ: تنقل لوحة مفاتيح مثل Excel
         RowsGrid.PreviewKeyDown += RowsGrid_PreviewKeyDown;
         Loaded += (_, _) =>
@@ -85,9 +86,9 @@ public partial class PlanningView : UserControl
             Load();
             // §إصلاح: قائمة الخطط المحفوظة تُحمّل فور فتح الشاشة لتظهر مباشرة في شبكة السجل
             RefreshPlansList();
-            // §1.50.60: حاول استعادة مسودة تلقائية إن وجدت
-            TryRestoreAutoSave();
-            _autoSaveTimer.Start();
+            // §1.50.67 FIX: إلغاء استعادة مسودة تلقائية — يسبب خطط وهمية
+            // TryRestoreAutoSave();
+            // _autoSaveTimer?.Start();
             // §فتح خطة محددة طُلبت من شاشة أخرى (لوحة التحكم) ثم تصفير الطلب
             if (MainWindow.PendingPlanIdToOpen is int pid)
             {
@@ -95,7 +96,7 @@ public partial class PlanningView : UserControl
                 OpenPlan(pid);
             }
         };
-        Unloaded += (_, _) => _autoSaveTimer?.Stop();
+        Unloaded += (_, _) => { /* §1.50.67 FIX: لا حفظ تلقائي */ };
     }
 
     public void AttachChrome(Views.ErpChrome chrome)
@@ -1598,50 +1599,19 @@ public partial class PlanningView : UserControl
         catch { }
     }
 
-    private void AutoSaveDraft()
+        private void AutoSaveDraft()
     {
-        try
-        {
-            if (_locked) return;
-            var valid = _rows.Where(r => r.LotId != null || r.ProductId != 0).ToList();
-            if (valid.Count == 0) return;
-            var dir = System.IO.Path.GetDirectoryName(AutoSavePath);
-            System.IO.Directory.CreateDirectory(dir);
-            var json = System.Text.Json.JsonSerializer.Serialize(valid.Select(r => new { r.CustomerId, r.CustomerName, r.LotId, r.LotCode, r.ProductId, r.ProductName, r.PackId, r.PackName, r.QtyKg, r.Cartons, r.Date, r.ShiftId, r.LineId }).ToList());
-            System.IO.File.WriteAllText(AutoSavePath, json);
-            _lastAutoSave = DateTime.Now;
-            if (StatusText != null) StatusText.ToolTip = $"تم الحفظ التلقائي {_lastAutoSave:HH:mm:ss} — مسودة محفوظة";
+        // §1.50.67 FIX: إلغاء الحفظ التلقائي — كان يحفظ خطط وهمية (بناءً على طلب المستخدم)
+        return;
+    } — مسودة محفوظة";
         }
         catch { }
     }
 
     private void TryRestoreAutoSave()
     {
-        try
-        {
-            if (!System.IO.File.Exists(AutoSavePath)) return;
-            var fi = new System.IO.FileInfo(AutoSavePath);
-            if ((DateTime.Now - fi.LastWriteTime).TotalHours > 24) return; // قديم أكثر من يوم
-            if (_rows.Count > 0) return; // لا تستعد إن كان هناك بنود
-            if (!AppContainer.Get<DialogService>().Confirm($"يوجد حفظ تلقائي من {fi.LastWriteTime:dd/MM/yyyy HH:mm} — هل تريد استعادته؟")) return;
-            var json = System.IO.File.ReadAllText(AutoSavePath);
-            var list = System.Text.Json.JsonSerializer.Deserialize<List<AutoSaveRow>>(json);
-            if (list == null) return;
-            foreach (var r in list)
-            {
-                _rows.Add(new PlanRowUi
-                {
-                    CustomerId = r.CustomerId, CustomerName = r.CustomerName ?? "—",
-                    LotId = r.LotId, LotCode = r.LotCode ?? "—",
-                    ProductId = r.ProductId, ProductName = r.ProductName ?? "—",
-                    PackId = r.PackId, PackName = r.PackName ?? "-",
-                    QtyKg = r.QtyKg, Cartons = r.Cartons,
-                    DateValue = DatesErp.Core.Common.UiFormat.TryParseDate(r.Date, out var d) ? d : null,
-                    ShiftId = r.ShiftId ?? 1, LineId = r.LineId ?? 1
-                });
-            }
-        }
-        catch { }
+        // §1.50.67 FIX: إلغاء استعادة مسودة تلقائية — يسبب خطط وهمية
+        return;
     }
 
     private class AutoSaveRow
