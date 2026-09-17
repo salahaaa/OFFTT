@@ -1232,12 +1232,16 @@ public partial class PlanningView : UserControl
         if (ApproveRadio != null) ApproveRadio.IsEnabled = !locked;
         if (_toolbar != null)
         {
-            if (_toolbar.SaveBtn != null) _toolbar.SaveBtn.IsEnabled = !locked && _capacityValid;
+            // §FIX 1.50.70: زر الحفظ يتشفر — فك الارتباط بـ _capacityValid، يبقى مفعلاً ما دام هناك صفوف
+            bool hasAnyRow = _rows.Any(r => r.LotId != null || r.ProductId != 0);
+            if (_toolbar.SaveBtn != null) _toolbar.SaveBtn.IsEnabled = !locked && hasAnyRow;
             if (_toolbar.NewBtn != null) _toolbar.NewBtn.IsEnabled = true; // خطة جديدة دائماً متاحة
             if (_toolbar.ApproveBtn != null) _toolbar.ApproveBtn.IsEnabled = !locked;
             if (_toolbar.DeleteBtn != null) _toolbar.DeleteBtn.IsEnabled = !locked;
         }
-        if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !locked && _capacityValid;
+        // §FIX 1.50.70: نفس الإصلاح لزر الحفظ الرئيسي في الشاشة
+        bool hasAny = _rows.Any(r => r.LotId != null || r.ProductId != 0);
+        if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !locked && hasAny;
         if (ApproveActionBtn != null) ApproveActionBtn.IsEnabled = !locked;
         if (SubmitBtn != null) SubmitBtn.IsEnabled = !locked;
     }
