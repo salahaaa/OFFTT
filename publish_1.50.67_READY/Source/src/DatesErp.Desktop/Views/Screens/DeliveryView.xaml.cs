@@ -67,7 +67,7 @@ public partial class DeliveryView : UserControl
     private Views.ErpToolbar _toolbar;
     private System.Windows.Threading.DispatcherTimer _autoSaveTimer;
     private DateTime _lastAutoSave = DateTime.MinValue;
-    private string AutoSavePath => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"DeliveryDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId ?? 0 : 0)}.json");
+    private string AutoSavePath => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"DeliveryDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId : 0)}.json");
 
     public DeliveryView()
     {

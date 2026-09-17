@@ -35,7 +35,7 @@ public partial class ReceivingView : UserControl
     // §1.50.60 7-ب/7-ج/7-هـ
     private System.Windows.Threading.DispatcherTimer _autoSaveTimer2;
     private DateTime _lastAutoSave2 = DateTime.MinValue;
-    private string AutoSavePath2 => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"ReceivingDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId ?? 0 : 0)}.json");
+    private string AutoSavePath2 => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"ReceivingDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId : 0)}.json");
 
     public ReceivingView()
     {
@@ -128,16 +128,46 @@ public partial class ReceivingView : UserControl
     {
         try
         {
-            var w = new DocSearchWindow("بحث سندات الاستلام", _ship_all.Cast<dynamic>().Select(s => new DocSearchWindow.DocRow
-            {
-                Id = s.Id,
-                DocNo = s.DocNo,
-                Customer = s.Customer,
-                Date = s.Date,
-                Weight = s.Weight,
-                StatusAr = s.StatusAr
-            }).ToList());
-            if (w.ShowDialog() == true && w.SelectedId is int id) OpenShipment(id);
+            var win = new DocSearchWindow("بحث سندات الاستلام",
+                new List<SearchFieldDef>
+                {
+                    new() { Key = "doc", LabelAr = "رقم السند" },
+                    new() { Key = "customer", LabelAr = "العميل" },
+                    new() { Key = "container", LabelAr = "الحاوية" }
+                },
+                cond =>
+                {
+                    using var scope = AppContainer.NewScope();
+                    var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
+                    var q = db.Shipments.AsNoTracking().AsQueryable();
+                    if (!string.IsNullOrWhiteSpace(cond.GetValueOrDefault("doc")))
+                        q = q.Where(s => s.DocumentNumber.Contains(cond["doc"].Trim()));
+                    if (!string.IsNullOrWhiteSpace(cond.GetValueOrDefault("container")))
+                        q = q.Where(s => s.ContainerNumber.Contains(cond["container"].Trim()));
+                    var list = q.OrderByDescending(s => s.Id).ToList();
+                    var custDict = db.Customers.AsNoTracking().ToDictionary(c => c.Id, c => c.CustomerName);
+                    if (!string.IsNullOrWhiteSpace(cond.GetValueOrDefault("customer")))
+                    {
+                        var term = cond["customer"].Trim().ToLower();
+                        list = list.Where(s => custDict.TryGetValue(s.CustomerId, out var nm) && nm.ToLower().Contains(term)).ToList();
+                    }
+                    var res = new SearchResult { Columns = new List<string> { "رقم السند", "العميل", "التاريخ", "الوزن كجم", "الحالة" } };
+                    foreach (var s in list)
+                    {
+                        string custName = custDict.TryGetValue(s.CustomerId, out var cn) ? cn : "—";
+                        res.Rows.Add((s.Id, new object[]
+                        {
+                            s.DocumentNumber,
+                            custName,
+                            Core.Common.UiFormat.D(s.ReceivedDate),
+                            s.TotalWeightKg,
+                            s.IsApproved ? "معتمد 🟢" : "مسودة 🟡"
+                        }));
+                    }
+                    return res;
+                });
+            win.Owner = Window.GetWindow(this);
+            if (win.ShowDialog() == true && win.SelectedId is int id) OpenShipment(id);
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Receiving.Search"); }
     }
@@ -615,7 +645,8 @@ public partial class ReceivingView : UserControl
             using var scope = AppContainer.NewScope();
             var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
             var model = Views.ReceivingPrintModel.Load(db, _currentId);
-            var doc = new Views.PrintRenderer().Render(model);
+            if (model == null) { AppContainer.Get<DialogService>().Error("تعذر تحميل بيانات السند للطباعة."); return; }
+            var doc = Views.ReceivingPrintDocument.Build(model);
             var preview = new Views.PrintPreviewWindow(doc, $"سند استلام {model.DocumentNumber}") { Owner = Window.GetWindow(this) };
             preview.ShowDialog();
         }
