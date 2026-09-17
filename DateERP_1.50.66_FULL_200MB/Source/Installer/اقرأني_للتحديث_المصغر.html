@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>اقرأني — التحديث الفوري DateERP 1.50.38</title>
+<style>
+ body{font-family:'Segoe UI',Tahoma,Arial;background:#ECE9D8;color:#1F2937;margin:0;padding:24px}
+ .card{max-width:860px;margin:auto;background:#fff;border:1.5px solid #7F9DB9;border-radius:6px;box-shadow:0 2px 8px rgba(10,36,106,.15);overflow:hidden}
+ header{background:linear-gradient(#0A246A,#2B4C8C);color:#fff;padding:16px 22px}
+ header h1{margin:0;font-size:20px}
+ header .sub{color:#C9A227;font-weight:bold;font-size:12px;margin-top:4px}
+ section{padding:14px 22px;border-bottom:1px solid #E2DFCE}
+ h2{font-size:15px;color:#0A246A;border-right:4px solid #C9A227;padding-right:8px;margin:6px 0 10px}
+ li{margin:5px 0;line-height:1.7}
+ code{background:#F1EEDF;border:1px solid #D8D2BC;border-radius:3px;padding:1px 6px;font-family:Consolas,monospace}
+ table{border-collapse:collapse;width:100%;font-size:12.5px}
+ th{background:#0A246A;color:#fff;padding:6px 10px;text-align:right}
+ td{border:1px solid #D8D2BC;padding:5px 10px;background:#FBFAF3}
+ .ok{color:#15803D;font-weight:bold}.warn{color:#B91C1C;font-weight:bold}
+ footer{padding:12px 22px;font-size:11.5px;color:#5F6368;background:#F7F5EC}
+</style>
+</head>
+<body>
+<div class="card">
+ <header>
+  <h1>التحديث الفوري المصغّر — نظام التصنيع 1.50.50</h1>
+  <div class="sub">تاريخ الحزمة: 2026-09-11 · لا يمس قاعدة البيانات ولا ملفات الإعداد · يُطبق خلال دقيقة</div>
+ </header>
+
+ <section>
+  <h2>ما الجديد في هذه الحزمة</h2>
+  <ul>
+   <li><span class="ok">إعادة تصميم احترافية</span> لشاشة «تسليم الإنتاج — تسجيل الفعلي» على الهوية البصرية الموحدة (كحلي/ذهبي/نخيلي): ترويسة بشريط توكيد ذهبي، بطاقات أقسام بترويسات موحدة، جدول البنود على معيار الجداول الموحد، وشريط إجراء سفلي واضح — بلا رموز تعبيرية.</li>
+   <li><span class="ok">إحصاءات حية</span> في شريط السياق: المخطط (كرتون)، المنتج فعليًا (كرتون)، وعدد البنود — تتحدث فورياً مع كل كتابة في عمود «المنتج فعليًا».</li>
+   <li><span class="ok">إصلاح وظيفي:</span> جدول «المخلفات / المخرجات الثانوية» كان مقفلاً للقراءة فقط بسبب النمط الافتراضي للجداول — أصبح الإدخال فيه يعمل (اختيار المخرج والكمية بنقرة واحدة).</li>
+   <li>تنظيف رسائل الحالة والتنبيهات من الرموز التعبيرية وصياغتها بلغة نظامية موحدة.</li>
+   <li><span class="ok">تحصين 43-أ:</span> إقفال الخطة لم يعد يمر على بند كان أمره الوحيد ملغياً بلا سبب موثق — الإلغاء غير الموثق صار مانع إقفال («وثّق سبب الإلغاء أو أصدر أمراً بديلاً»).</li>
+   <li><span class="ok">تحصين 43-ب:</span> عكس صرف المواد المساعدة عند الإلغاء صار بقيد عكسي (وارد مرتجع مرجعه #REV-AUX) بدل حذف حركات الصرف من دفتر الأستاذ — أثر الصرف والعكس يبقى كاملاً للتدقيق.</li>
+   <li><span class="ok">تحصين 43-ج:</span> بوابة قرار الجودة عند اعتماد تسليم العميل تُفحص الآن داخل معاملة الاعتماد نفسها — لا نافذة زمنية بين الفحص والأثر.</li>
+   <li><span class="ok">أسهل:</span> سكربت جديد <code>Installer\نسخ_فوق_مجلد_التثبيت.bat</code> — اسحب مجلد التثبيت وأفلته فوقه فينسخ الملفات المجمّعة الأحد عشر فوق القديمة بعد حفظ نسخة احتياطية منها في مجلد فرعي.</li>
+   <li><span class="ok">الأسهل (بلا Visual Studio):</span> <code>تحديث_43_بناء_ونسخ.bat</code> في جذر المشروع — يبني ويثبّت أداة .NET 8 مرة واحدة تلقائياً إن لزم، ثم ينسخ فوق مجلد التثبيت مباشرة (يحفظ المسار للمرات القادمة).</li>
+   <li><span class="warn">لا تغييرات على قاعدة البيانات</span> في هذا التحديث — لا حاجة لأي ترحيل أو إجراء على الخادم.</li>
+  </ul>
+ </section>
+
+ <section>
+  <h2>محتويات الحزمة</h2>
+  <table>
+   <tr><th>الملف</th><th>الدور</th></tr>
+   <tr><td>MfgSystem.exe / .dll / .pdb / .deps.json / .runtimeconfig.json</td><td>التطبيق المحدَّث وبصماته</td></tr>
+   <tr><td>DatesErp.Core / Application / Infrastructure (.dll + .pdb)</td><td>طبقات النظام المحدَّثَة</td></tr>
+   <tr><td>SHA256.txt</td><td>بصمات التحقق من سلامة الملفات</td></tr>
+   <tr><td>1-حدّث_وشغل.bat / 2-تنصيب.bat</td><td>سكربتا التحديث/التشغيل المعتادان</td></tr>
+  </table>
+ </section>
+
+ <section>
+  <h2>خطوات التحديث الفوري على جهاز العميل</h2>
+  <ul>
+   <li><b>1)</b> أغلق DateERP تماماً على الجهاز (أيقونة الإشعارات إن وجدت).</li>
+   <li><b>2)</b> انسخ الملفات الأحد عشر المجمّعة إلى مجلد النسخة (بجوار <code>MfgSystem.exe</code>) ووافق على الاستبدال.</li>
+   <li><b>3)</b> شغّل النظام من اختصاره المعتاد، أو انقر <code>1-حدّث_وشغل.bat</code> من داخل مجلد النسخة.</li>
+   <li><b>4)</b> للتحقق الاختياري: قارن بصمة أي ملف مع <code>SHA256.txt</code> بأمر <code>certutil -hashfile MfgSystem.dll SHA256</code>.</li>
+  </ul>
+ </section>
+
+ <section>
+  <h2>لبناء هذه الحزمة على جهاز المطوّر</h2>
+  <ul>
+   <li><b>1)</b> حدّث المصدر: <code>git pull</code> (أو انقر UPDATE-AND-RUN.bat).</li>
+   <li><b>2)</b> انقر نقراً مزدوجاً <code>Installer\بناء_التحديث_الفوري.bat</code> — يبني Release ويجمّع مجلد <code>DateERP_1.50.38_Update</code> بنفس هذا الشكل.</li>
+  </ul>
+ </section>
+
+ <footer>جميع العمليات تُسجل تلقائياً في سجل التدقيق · نظام إدارة وتصنيع التمور — الشركة اليمنية لتعبئة وتصنيع التمور</footer>
+</div>
+</body>
+</html>
