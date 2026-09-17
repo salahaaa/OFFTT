@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="DatesErp.Desktop.Views.Screens.PlanningView"
+<UserControl x:Class="DatesErp.Desktop.Views.Screens.PlanningView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              FlowDirection="RightToLeft">
@@ -256,10 +256,26 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="الدفعة والشحنة 📦 *" Width="1*" MinWidth="120">
+                            <!-- §1.50.69 FIX: الدفعة/الشحنة برقم سند استلام الشحنات (ShipmentNo = DocumentNumber) بدل LotCode الداخلي -->
+                            <DataGridTemplateColumn Header="الدفعة / سند الاستلام 📦 *" Width="1.2*" MinWidth="140">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Button Content="{Binding LotCode}" Click="LotCode_Click" Tag="{Binding}" Style="{StaticResource PickCellButton}" ToolTip="جميع الدفعات المتاحة معروضة فوراً مرتبة FIFO"/>
+                                        <Button Click="LotCode_Click" Tag="{Binding}" Style="{StaticResource PickCellButton}">
+                                            <Button.Content>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding ShipmentNo}" FontWeight="Bold" Foreground="#1F2937"/>
+                                                    <TextBlock Text=" - " Foreground="#9A9782" Margin="2,0"/>
+                                                    <TextBlock Text="{Binding LotCode}" FontSize="10" Foreground="#6B7280" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button.Content>
+                                            <Button.ToolTip>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding ShipmentNo, StringFormat=سند الاستلام: {0}}" FontWeight="Bold"/>
+                                                    <TextBlock Text="{Binding LotCode, StringFormat=الدفعة: {0}}"/>
+                                                    <TextBlock Text="جميع الدفعات معروضة FIFO - رقم السند هو رقم سند استلام الشحنات"/>
+                                                </StackPanel>
+                                            </Button.ToolTip>
+                                        </Button>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>

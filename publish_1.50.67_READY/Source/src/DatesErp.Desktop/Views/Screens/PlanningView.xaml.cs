@@ -87,6 +87,20 @@ public partial class PlanningView : UserControl
             // §إصلاح: قائمة الخطط المحفوظة تُحمّل فور فتح الشاشة لتظهر مباشرة في شبكة السجل
             RefreshPlansList();
             // §1.50.67 FIX: إلغاء استعادة مسودة تلقائية — يسبب خطط وهمية
+            // §1.50.69 FIX: حذف ملفات الحفظ التلقائي القديمة التي تسبب خطط وهمية + الدفعة برقم السند
+            try
+            {
+                if (System.IO.File.Exists(AutoSavePath)) System.IO.File.Delete(AutoSavePath);
+                var draftsDir = System.IO.Path.GetDirectoryName(AutoSavePath);
+                if (System.IO.Directory.Exists(draftsDir))
+                {
+                    foreach (var f in System.IO.Directory.GetFiles(draftsDir, "PlanningDraft_*.json"))
+                    {
+                        try { System.IO.File.Delete(f); } catch { }
+                    }
+                }
+            }
+            catch { }
             // TryRestoreAutoSave();
             // _autoSaveTimer?.Start();
             // §فتح خطة محددة طُلبت من شاشة أخرى (لوحة التحكم) ثم تصفير الطلب
@@ -96,7 +110,7 @@ public partial class PlanningView : UserControl
                 OpenPlan(pid);
             }
         };
-        Unloaded += (_, _) => { /* §1.50.67 FIX: لا حفظ تلقائي */ };
+        Unloaded += (_, _) => { /* §1.50.69 FIX: لا حفظ تلقائي نهائياً + حذف المسودات */ try { if (System.IO.File.Exists(AutoSavePath)) System.IO.File.Delete(AutoSavePath); } catch { } };
     }
 
     public void AttachChrome(Views.ErpChrome chrome)
@@ -1600,17 +1614,16 @@ public partial class PlanningView : UserControl
     }
 
         private void AutoSaveDraft()
-    {
-        // §1.50.67 FIX: إلغاء الحفظ التلقائي — كان يحفظ خطط وهمية (بناءً على طلب المستخدم)
-        return;
-    } — مسودة محفوظة";
+        {
+            // §1.50.69 FIX: إلغاء الحفظ التلقائي نهائياً — حذف أي مسودات قديمة
+            try { if (System.IO.File.Exists(AutoSavePath)) System.IO.File.Delete(AutoSavePath); } catch { }
+            return;
         }
-        catch { }
-    }
 
     private void TryRestoreAutoSave()
     {
-        // §1.50.67 FIX: إلغاء استعادة مسودة تلقائية — يسبب خطط وهمية
+        // §1.50.69 FIX: إلغاء استعادة مسودة تلقائية نهائياً + حذف الملف
+        try { if (System.IO.File.Exists(AutoSavePath)) System.IO.File.Delete(AutoSavePath); } catch { }
         return;
     }
 
