@@ -24,25 +24,41 @@ where dotnet >nul 2>nul || (
 )
 
 echo ============================================================
-echo   [1/4] بناء DateERP.sln (يتضمن audit/UnitRuleAudit) - Release
+echo   [1/5] فحص سلامة المصدر (VERIFY-SOURCE-1.50.72.bat)
 echo ============================================================
-dotnet build DateERP.sln -c Release --nologo -v minimal
+if not exist "VERIFY-SOURCE-1.50.72.bat" (
+  echo [FAILED] VERIFY-SOURCE-1.50.72.bat غير موجود — فك حزمة UPDATE_1.50.72_FIXED2 كاملة.
+  exit /b 1
+)
+call "VERIFY-SOURCE-1.50.72.bat"
+if errorlevel 1 (
+  echo [FAILED] المصدر ليس كاملًا/حديثًا — راجع الفشل أعلاه قبل أي بناء.
+  exit /b 1
+)
+
+echo ============================================================
+echo   [2/5] بناء DateERP.sln (يتضمن audit/UnitRuleAudit) - Release
+echo ============================================================
+REM حذف وسيطات مشروع الواجهة القديمة (obj/bin) — يمنع بقاء كود XAML مولَّد قديم
+if exist "src\DatesErp.Desktop\obj" rmdir /s /q "src\DatesErp.Desktop\obj"
+if exist "src\DatesErp.Desktop\bin" rmdir /s /q "src\DatesErp.Desktop\bin"
+dotnet build DateERP.sln -c Release --nologo -v minimal --no-incremental
 if errorlevel 1 (
   echo [FAILED] بناء DateERP.sln فشل — أخطاء أعلاه. لا يوجد publish.
   exit /b 1
 )
 
 echo ============================================================
-echo   [2/4] بناء DatesErp.sln - Release
+echo   [3/5] بناء DatesErp.sln - Release
 echo ============================================================
-dotnet build DatesErp.sln -c Release --nologo -v minimal
+dotnet build DatesErp.sln -c Release --nologo -v minimal --no-incremental
 if errorlevel 1 (
   echo [FAILED] بناء DatesErp.sln فشل — أخطاء أعلاه. لا يوجد publish.
   exit /b 1
 )
 
 echo ============================================================
-echo   [3/4] نشر MfgSystem (win-x64 self-contained) -> %OUT%\
+echo   [4/5] نشر MfgSystem (win-x64 self-contained) -> %OUT%\
 echo ============================================================
 if exist "%OUT%" rmdir /s /q "%OUT%"
 dotnet publish src\DatesErp.Desktop\DatesErp.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o "%OUT%" --nologo
@@ -52,7 +68,7 @@ if errorlevel 1 (
 )
 
 echo ============================================================
-echo   [4/4] فحص سلامة الحزمة + تجهيز تحديث بضغطة واحدة
+echo   [5/5] فحص سلامة الحزمة + تجهيز تحديث بضغطة واحدة
 echo ============================================================
 if not exist "%OUT%\MfgSystem.exe" (
   echo [FAILED] MfgSystem.exe غير موجود في المخرجات — هذه ليست حزمة حقيقية.
