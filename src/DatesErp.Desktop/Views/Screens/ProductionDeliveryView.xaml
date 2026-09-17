@@ -1,0 +1,240 @@
+﻿<UserControl x:Class="DatesErp.Desktop.Views.Screens.ProductionDeliveryView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ FlowDirection="RightToLeft">
+ <!-- §v1.50.38 — إعادة تصميم احترافية على هوية Onyx Classic الموحدة (كحلي/ذهبي/نخيلي):
+      بلا رموز تعبيرية، أقسام ببطاقات وترويسات ذهبية، شرائح سياق + إحصاءات حية،
+      جدول البنود يرث معيار الجداول الموحد، ولوحة الإدخال تظهر فقط للأمر القابل للتسجيل.
+      شاشة واحدة ثابتة بلا تمرير عمودي — جدول البنود يأخذ المساحة المتبقية. -->
+ <Grid Margin="14">
+  <Grid.RowDefinitions>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="*" MinHeight="260"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+  </Grid.RowDefinitions>
+
+  <!-- ١) الترويسة: عنوان بشريط ذهبي + منتقي الأمر في الطرف المقابل -->
+  <Grid Grid.Row="0" Margin="0,0,0,10">
+   <Grid.ColumnDefinitions>
+    <ColumnDefinition Width="*"/>
+    <ColumnDefinition Width="Auto"/>
+   </Grid.ColumnDefinitions>
+   <Grid VerticalAlignment="Center">
+    <Grid.ColumnDefinitions>
+     <ColumnDefinition Width="Auto"/>
+     <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+    <Border Width="5" Margin="0,0,10,0" Background="{StaticResource AccentBrush}"/>
+    <StackPanel Grid.Column="1">
+     <TextBlock Text="تسليم الإنتاج — تسجيل الفعلي" FontSize="19" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
+     <TextBlock Text="لمن كانت الخطة؟ ماذا خططنا؟ ماذا أنتجنا؟ كم توقفنا؟ وما المخلفات؟" FontSize="11.5" Foreground="{StaticResource GrayTextBrush}" Margin="0,2,0,0"/>
+    </StackPanel>
+   </Grid>
+   <StackPanel Grid.Column="1" VerticalAlignment="Center" MinWidth="430">
+    <TextBlock Text="أمر الإنتاج — من خطة اليوم المعتمدة" Style="{StaticResource FieldLabel}" Margin="0,0,0,3"/>
+    <ComboBox x:Name="OrderBox" DisplayMemberPath="Label" SelectionChanged="Order_Changed"/>
+   </StackPanel>
+  </Grid>
+
+  <!-- ٢) شريط السياق: شرائح هوية الأمر + إحصاءات حية (المخطط/الفعلي/البنود) -->
+  <Border Grid.Row="1" Background="#FBFAF3" BorderBrush="#CBD5E1" BorderThickness="1" Padding="10,7" Margin="0,0,0,8">
+   <WrapPanel VerticalAlignment="Center">
+    <Border Background="White" BorderBrush="#9FB3CC" BorderThickness="1" CornerRadius="3" Padding="9,4" Margin="0,0,8,0">
+     <TextBlock x:Name="CustChip" Text="العميل: —" FontSize="11.5" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/>
+    </Border>
+    <Border Background="White" BorderBrush="#D9C27A" BorderThickness="1" CornerRadius="3" Padding="9,4" Margin="0,0,8,0">
+     <TextBlock x:Name="PlanChip" Text="الخطة: —" FontSize="11.5" FontWeight="Bold" Foreground="#8A6A00"/>
+    </Border>
+    <Border Background="White" BorderBrush="#9FB3CC" BorderThickness="1" CornerRadius="3" Padding="9,4" Margin="0,0,8,0">
+     <TextBlock x:Name="ShiftChip" Text="الوردية: —" FontSize="11.5" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
+    </Border>
+    <Border Width="1" Height="26" Background="#D8D2BC" Margin="8,0,16,0" VerticalAlignment="Center"/>
+    <StackPanel Margin="0,0,18,0" VerticalAlignment="Center">
+     <TextBlock x:Name="StatPlanned" Text="0" FontSize="15" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
+     <TextBlock Text="المخطط — كرتون" FontSize="10" Foreground="{StaticResource GrayTextBrush}"/>
+    </StackPanel>
+    <StackPanel Margin="0,0,18,0" VerticalAlignment="Center">
+     <TextBlock x:Name="StatActual" Text="0" FontSize="15" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/>
+     <TextBlock Text="المنتج فعليًا — كرتون" FontSize="10" Foreground="{StaticResource GrayTextBrush}"/>
+    </StackPanel>
+    <StackPanel VerticalAlignment="Center">
+     <TextBlock x:Name="StatItems" Text="0" FontSize="15" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
+     <TextBlock Text="عدد البنود" FontSize="10" Foreground="{StaticResource GrayTextBrush}"/>
+    </StackPanel>
+   </WrapPanel>
+  </Border>
+
+  <!-- ٣) شريط الحالة: بطاقة بيضاء بلسان ذهبي — أخطاء الحفظ وسندات ما بعد الحفظ تظهر هنا -->
+  <Border Grid.Row="2" Background="White" BorderBrush="#CBD5E1" BorderThickness="1" Margin="0,0,0,8">
+   <Grid>
+    <Grid.ColumnDefinitions>
+     <ColumnDefinition Width="4"/>
+     <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+    <Border Background="{StaticResource AccentBrush}"/>
+    <TextBlock x:Name="StatusLabel" Grid.Column="1" TextWrapping="Wrap" Padding="10,7"
+               Text="اختر أمراً من الأعلى لتظهر بنوده." FontWeight="SemiBold" Foreground="#1F2937"/>
+   </Grid>
+  </Border>
+
+  <!-- ٤) بطاقة بنود الأمر — ترث معيار الجداول الموحد (رؤوس كحلية، تظليل متدرج، إبراز التحديد) -->
+  <Border Grid.Row="3" Style="{StaticResource WhiteCard}" Padding="0" Margin="0,0,0,8">
+   <DockPanel>
+    <Border DockPanel.Dock="Top" Style="{StaticResource SecHeader}">
+     <Grid>
+      <Grid.ColumnDefinitions>
+       <ColumnDefinition Width="*"/>
+       <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <TextBlock Text="بنود الأمر — المنتج فعليًا مقابل المخطط" FontSize="13" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
+      <TextBlock Grid.Column="1" Text="نقرة واحدة تبدأ التحرير — الفعلي كراتين صحيحة لا تتجاوز المخطط" FontSize="10.5" Foreground="{StaticResource GrayTextBrush}" VerticalAlignment="Center"/>
+     </Grid>
+    </Border>
+    <DataGrid x:Name="ItemsGrid" MinHeight="260" RowHeight="32" AlternatingRowBackground="#FBFAF5" Background="White" RowBackground="White" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E8E4D8" BorderBrush="#D9D4C4" ColumnHeaderHeight="36"
+              AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False"
+              HeadersVisibility="Column" PreviewMouseLeftButtonDown="Grid_SingleClickEdit">
+     <DataGrid.Columns>
+      <DataGridTextColumn Header="العميل" Binding="{Binding Customer}" IsReadOnly="True" Width="*"/>
+      <DataGridTextColumn Header="الصنف من الخطة" Binding="{Binding Product}" IsReadOnly="True" Width="1.6*"/>
+      <DataGridTextColumn Header="المخطط" Binding="{Binding Planned}" IsReadOnly="True" Width="80">
+       <DataGridTextColumn.ElementStyle>
+        <Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Center"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+       </DataGridTextColumn.ElementStyle>
+      </DataGridTextColumn>
+      <DataGridTextColumn Header="الوحدة" Binding="{Binding Unit}" IsReadOnly="True" Width="70">
+       <DataGridTextColumn.ElementStyle>
+        <Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Center"/></Style>
+       </DataGridTextColumn.ElementStyle>
+      </DataGridTextColumn>
+      <DataGridTextColumn Header="المنتج فعليًا" Width="110"
+                          Binding="{Binding Actual, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}">
+       <DataGridTextColumn.ElementStyle>
+        <Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Center"/><Setter Property="FontWeight" Value="Bold"/></Style>
+       </DataGridTextColumn.ElementStyle>
+      </DataGridTextColumn>
+      <DataGridTemplateColumn Header="الفرق عن المخطط" Width="100" IsReadOnly="True">
+       <DataGridTemplateColumn.CellTemplate>
+        <DataTemplate>
+         <TextBlock Text="{Binding Difference}" HorizontalAlignment="Center" FontWeight="Bold"
+                    ToolTip="عدد الكراتين الناقصة عن المخطط — «مطابق» يعني اكتمال البند.">
+          <TextBlock.Style>
+           <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#B91C1C"/>
+            <Style.Triggers>
+             <DataTrigger Binding="{Binding DiffState}" Value="match">
+              <Setter Property="Foreground" Value="#15803D"/>
+              <Setter Property="Text" Value="✔ مطابق"/>
+             </DataTrigger>
+             <DataTrigger Binding="{Binding DiffState}" Value="invalid">
+              <Setter Property="Foreground" Value="#9CA3AF"/>
+              <Setter Property="FontWeight" Value="Normal"/>
+             </DataTrigger>
+            </Style.Triggers>
+           </Style>
+          </TextBlock.Style>
+         </TextBlock>
+        </DataTemplate>
+       </DataGridTemplateColumn.CellTemplate>
+      </DataGridTemplateColumn>
+     </DataGrid.Columns>
+    </DataGrid>
+   </DockPanel>
+  </Border>
+
+  <!-- إرشاد بديل لوحة الإدخال حين لا يكون الأمر قابلاً للتسجيل -->
+  <Border x:Name="EmptyGuide" Grid.Row="4" Visibility="Collapsed" Background="#FFF9E6" BorderBrush="#E3C86B" BorderThickness="1" Margin="0,0,0,8">
+   <Grid>
+    <Grid.ColumnDefinitions>
+     <ColumnDefinition Width="4"/>
+     <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+    <Border Background="{StaticResource AccentBrush}"/>
+    <TextBlock Grid.Column="1" TextWrapping="Wrap" Padding="10,7" Foreground="#7A5A00" FontWeight="SemiBold"
+      Text="هذا الأمر إما سُجّل فعليه سابقاً (شاهد سند الاستلام ورقم الفحص في شريط الحالة أعلاه) أو غير معتمد بعد — لا حقول إدخال هنا."/>
+   </Grid>
+  </Border>
+
+  <!-- ٥) بطاقة القياسات الفعلية: الخام والتوقف، المخلفات، والملاحظات -->
+  <Border x:Name="ActualFieldsOuter" Grid.Row="4" Style="{StaticResource WhiteCard}" Padding="0" Margin="0,0,0,8">
+   <StackPanel>
+    <Border Style="{StaticResource SecHeader}">
+     <Grid>
+      <Grid.ColumnDefinitions>
+       <ColumnDefinition Width="*"/>
+       <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <TextBlock Text="القياسات الفعلية — الخام والتوقف والمخلفات" FontSize="13" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
+      <TextBlock Grid.Column="1" Text="المخطط ثابت من خطة اليوم — يُدخل الفعلي فقط" FontSize="10.5" Foreground="{StaticResource GrayTextBrush}" VerticalAlignment="Center"/>
+     </Grid>
+    </Border>
+    <StackPanel Margin="12,6,12,10">
+     <Grid>
+      <Grid.ColumnDefinitions>
+       <ColumnDefinition Width="Auto"/>
+       <ColumnDefinition Width="Auto"/>
+       <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+      <StackPanel Grid.Column="0" Margin="0,0,22,0">
+       <TextBlock Style="{StaticResource FieldLabel}"><Run Text="الخام المستهلك فعليًا — كجم"/><Run Text=" *" Foreground="#DC2626"/></TextBlock>
+       <TextBox x:Name="RawBox" Width="220" ToolTip="صافي استهلاك الخام المقاس، لا تقدير من المخطط أو الإنتاج."/>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Margin="0,0,22,0">
+       <TextBlock Text="التوقف — ساعة" Style="{StaticResource FieldLabel}"/>
+       <TextBox x:Name="DowntimeBox" Width="120" Text="0"/>
+      </StackPanel>
+      <StackPanel Grid.Column="2">
+       <TextBlock Text="سبب التوقف — سبب واحد للعملية" Style="{StaticResource FieldLabel}"/>
+       <TextBox x:Name="ReasonBox"/>
+      </StackPanel>
+     </Grid>
+
+     <Grid Margin="0,10,0,0">
+      <Grid.ColumnDefinitions>
+       <ColumnDefinition Width="*"/>
+       <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <TextBlock Text="المخلفات / المخرجات الثانوية" FontSize="12.5" FontWeight="Bold" Foreground="{StaticResource NavyBrush}" VerticalAlignment="Center"/>
+      <TextBlock Grid.Column="1" Text="اختر المخرج من التعريفات — السطر الفارغ للإضافة، وDelete للحذف" FontSize="10.5" Foreground="{StaticResource GrayTextBrush}" VerticalAlignment="Center"/>
+     </Grid>
+     <DataGrid x:Name="SecondaryGrid" Margin="0,6,0,0" IsReadOnly="False"
+               AutoGenerateColumns="False" CanUserAddRows="True" CanUserDeleteRows="True"
+               MinHeight="66" MaxHeight="96" RowHeight="30" HeadersVisibility="Column"
+               PreviewMouseLeftButtonDown="Grid_SingleClickEdit" LoadingRow="Secondary_LoadingRow">
+      <DataGrid.Columns>
+       <DataGridTemplateColumn Header="المخرج من التعريفات" Width="*">
+        <DataGridTemplateColumn.CellTemplate>
+         <DataTemplate>
+          <ComboBox ItemsSource="{Binding ByProductDefinitions, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    SelectedItem="{Binding Definition, UpdateSourceTrigger=PropertyChanged}" DisplayMemberPath="Name" MinWidth="220"/>
+         </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+       </DataGridTemplateColumn>
+       <DataGridTextColumn Header="الكمية — كجم" Binding="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}" Width="120"/>
+       <DataGridTextColumn Header="الوحدة من التعريف" Binding="{Binding Unit}" IsReadOnly="True" Width="140"/>
+      </DataGrid.Columns>
+     </DataGrid>
+
+     <TextBlock Text="ملاحظات — اختياري" Style="{StaticResource FieldLabel}" Margin="0,10,0,0"/>
+     <TextBox x:Name="NotesBox" MinHeight="30" AcceptsReturn="True" TextWrapping="Wrap"/>
+    </StackPanel>
+   </StackPanel>
+  </Border>
+
+  <!-- ٦) شريط الإجراء: زر الاعتماد الأخضر + تذكير بالأثر المحاسبي للحفظ -->
+  <Border Grid.Row="5" BorderBrush="#CBD5E1" BorderThickness="0,1,0,0" Padding="0,10,0,0">
+   <Grid>
+    <Grid.ColumnDefinitions>
+     <ColumnDefinition Width="Auto"/>
+     <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+    <Button x:Name="SaveButton" Content="حفظ الفعلي واستلام الإنتاج وإرساله للفحص"
+            Style="{StaticResource ErpApproveButton}" Click="Save_Click" MinWidth="360" FontSize="12.5" Padding="16,7"/>
+    <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="14,0,0,0" TextWrapping="Wrap"
+               FontSize="11" Foreground="{StaticResource GrayTextBrush}"
+               Text="الحفظ يسجل الفعلي، ويصرف الخام المدخل، ويستلم التام في المخزون ويرسله للفحص — لا اعتماد جودة أو بيع أو فاتورة."/>
+   </Grid>
+  </Border>
+ </Grid>
+</UserControl>
