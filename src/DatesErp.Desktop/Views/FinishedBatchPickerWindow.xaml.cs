@@ -32,6 +32,7 @@ public partial class FinishedBatchPickerWindow : Window
         public DateTime? ProductionDate { get; set; }
         public DateTime? FgReceiptDate { get; set; }
         public int StorageDays { get; set; }
+        public double CartonWeight { get; set; }
         public object Entity { get; set; }
     }
 
@@ -95,9 +96,10 @@ public partial class FinishedBatchPickerWindow : Window
                     Unit = prod?.UnitOfMeasure ?? "كجم",
                     PackName = pack?.PackageNameAr ?? "—",
                     Grade = "سليم",
-                    ProductionDate = lot?.ProductionDate ?? DateTime.Now,
+                    ProductionDate = lot?.LotDate ?? DateTime.Now,
                     FgReceiptDate = DateTime.Now,
                     StorageDays = 0,
+                    CartonWeight = pack?.UnitWeightKg ?? (b.QtyKg > 0 && b.PackageCount > 0 ? b.QtyKg / b.PackageCount : 0),
                     Entity = b
                 };
             })

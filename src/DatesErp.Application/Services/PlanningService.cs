@@ -256,7 +256,7 @@ public class PlanningService : ServiceBase, IPlanningService
                 return $"الدفعة {lot.LotCode} ليست معتمدة (حالتها: {DocStatuses.ToArabic(lot.Status)}) — لا يمكن اعتماد خطة عليها.";
             if (lot.InStockQtyKg <= 0.001)
                 return $"الدفعة {lot.LotCode} رصيدها صفر — لا يمكن اعتماد خطة إنتاج عليها.";
-            if (lot.IsClosed)
+            if (lot.Status == DocStatuses.Closed)
                 return $"الدفعة {lot.LotCode} مقفلة — لا يمكن اعتماد خطة عليها.";
             // المتاح بعد استبعاد حجوزات الخطط/الأوامر الأخرى (بدون هذه الخطة)
             double available = LotAvailableExcluding(lot.Id, plan.Id);
@@ -1008,12 +1008,15 @@ public class PlanningService : ServiceBase, IPlanningService
             + (priorPlanRes.TryGetValue(lotId, out var pr) ? pr : 0);
         // §المعالجة: بعد التاريخ تُحتسب الكمية التي ستكتمل (تُضاف للمتاح) — لا يُعامل الخام قيد
         // المعالجة كمستحيل طوال الوقت. قبل التاريخ فإن المتاح يعكس فقط المفرَج فعلياً.
+        // §FIX 1.50.70: Math.Max داخل Sum لا يُترجم في EF Core → نحول لتقييم عميل (ToList ثم Sum مع Math.Max)
         if (item.ScheduledDate != null)
         {
             var end = item.ScheduledDate.Value.Date.AddDays(1).AddTicks(-1);
             var maturing = Db.RawTreatments.AsNoTracking()
                 .Where(t => t.LotId == lotId && t.Status == TreatmentStatuses.InProgress && t.ExpectedReadyAt <= end)
-                .Sum(t => Math.Max(0, t.QtyKg - t.ReleasedQtyKg - t.RejectedQtyKg));
+                .Select(t => t.QtyKg - t.ReleasedQtyKg - t.RejectedQtyKg)
+                .ToList()
+                .Sum(v => Math.Max(0, v));
             avail += maturing;
         }
         double usedSoFar = usedPerLot.TryGetValue(lotId, out var u) ? u : 0;

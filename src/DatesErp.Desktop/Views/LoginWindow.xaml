@@ -1,4 +1,4 @@
-<Window x:Class="DatesErp.Desktop.Views.LoginWindow"
+﻿<Window x:Class="DatesErp.Desktop.Views.LoginWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="تسجيل الدخول — نظام التصنيع" Height="560" Width="880"

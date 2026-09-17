@@ -10,7 +10,7 @@
     <AssemblyName>MfgSystem</AssemblyName>
     <RootNamespace>DatesErp.Desktop</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.50.67</Version>
+    <Version>1.50.71</Version>
     <Authors>شركة التمور</Authors>
     <Product>نظام التصنيع — النظام المتكامل لإدارة عمليات التصنيع</Product>
     <Description>نظام سطح مكتب احترافي متعدد المستخدمين لإدارة وتصنيع التمور</Description>

@@ -27,9 +27,10 @@
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="تاريخ الوصول" Binding="{Binding ArrivalDate, StringFormat=dd/MM/yyyy}" Width="100"/>
                     <DataGridTextColumn Header="العميل" Binding="{Binding CustomerName}" Width="*"/>
-                    <DataGridTextColumn Header="الدفعة" Binding="{Binding LotCode}" Width="110"/>
+                    <!-- §1.50.69 FIX: الدفعة/الشحنة برقم سند استلام الشحنات (ShipmentNo = DocumentNumber) -->
+                    <DataGridTextColumn Header="رقم سند الاستلام 📦" Binding="{Binding ShipmentNo}" Width="140"/>
+                    <DataGridTextColumn Header="الدفعة (داخلي)" Binding="{Binding LotCode}" Width="110"/>
                     <DataGridTextColumn Header="الصنف الخام" Binding="{Binding ProductName}" Width="140"/>
-                    <DataGridTextColumn Header="الشحنة" Binding="{Binding ShipmentNo}" Width="110"/>
                     <DataGridTextColumn Header="المتبقي كجم" Binding="{Binding RemainingKg, StringFormat=N1}" Width="110"/>
                     <DataGridTextColumn Header="المتاح للتخطيط" Binding="{Binding AvailableForDateKg, StringFormat=N1}" Width="120"/>
                     <DataGridTextColumn Header="الوحدة" Binding="{Binding ReceiptUnit}" Width="70"/>

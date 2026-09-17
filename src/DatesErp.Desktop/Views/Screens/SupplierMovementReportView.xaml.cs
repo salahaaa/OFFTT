@@ -94,8 +94,8 @@ public partial class SupplierMovementReportView : UserControl
         SmGrid.ItemsSource = flat;
         int rows = flat.Count;
         RowsCount.Text = rows == 0
-            ? $"لا توجد حركات موردين من {UiFormat.D(from)} إلى {UiFormat.D(to)}."
-            : $"{groups.Count} مورداً · {rows} سطراً · من {UiFormat.D(from)} إلى {UiFormat.D(to)}";
+            ? $"لا توجد حركات موردين من {DatesErp.Core.Common.UiFormat.D(from)} إلى {DatesErp.Core.Common.UiFormat.D(to)}."
+            : $"{groups.Count} مورداً · {rows} سطراً · من {DatesErp.Core.Common.UiFormat.D(from)} إلى {DatesErp.Core.Common.UiFormat.D(to)}";
     }
 
     private static string CurrentUser()
@@ -129,7 +129,7 @@ public partial class SupplierMovementReportView : UserControl
         try
         {
             if (_groups.Count == 0) Run_Click(this, new RoutedEventArgs());
-            var rr = new ReportResult { TitleAr = "تقرير حركة الموردين حسب الاصناف تحليلي كميات", PeriodLabel = _meta == null ? "" : $"من {UiFormat.D(_meta.From)} إلى {UiFormat.D(_meta.To)}" };
+            var rr = new ReportResult { TitleAr = "تقرير حركة الموردين حسب الاصناف تحليلي كميات", PeriodLabel = _meta == null ? "" : $"من {DatesErp.Core.Common.UiFormat.D(_meta.From)} إلى {DatesErp.Core.Common.UiFormat.D(_meta.To)}" };
             rr.Columns.AddRange(new[] { "رقم المورد", "اسم المورد", "رقم الصنف", "اسم الصنف", "الوحدة", "الرصيد الإفتتاح", "المشتريات", "توريد مخزني", "مردود المشتريات", "صرف مخزني", "المبيعات", "مردود المبيعات", "الكمية المتبقية" });
             foreach (var g in _groups)
             {

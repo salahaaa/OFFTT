@@ -11,21 +11,26 @@ public static class SqlConnectionSettings
     {
         if (string.IsNullOrWhiteSpace(server)) throw new ArgumentException("اسم الخادم مطلوب.", nameof(server));
         if (string.IsNullOrWhiteSpace(database)) throw new ArgumentException("اسم قاعدة البيانات مطلوب.", nameof(database));
-        if (authMode != "Windows" && authMode != "Sql")
+
+        var normalizedMode = authMode?.Trim().ToLowerInvariant();
+        bool isSql = normalizedMode == "sql" || normalizedMode == "sqlserver";
+        bool isWindows = normalizedMode == "windows";
+
+        if (!isSql && !isWindows)
             throw new ArgumentException("طريقة مصادقة SQL غير صالحة.", nameof(authMode));
 
         var builder = new SqlConnectionStringBuilder
         {
             DataSource = server,
             InitialCatalog = database,
-            IntegratedSecurity = authMode == "Windows",
+            IntegratedSecurity = isWindows,
             Encrypt = SqlConnectionEncryptOption.Mandatory,
             TrustServerCertificate = trustServerCertificate,
             PersistSecurityInfo = false,
             MultipleActiveResultSets = true,
             ConnectTimeout = timeout
         };
-        if (authMode == "Sql")
+        if (isSql)
         {
             builder.UserID = uid ?? "";
             builder.Password = password ?? "";

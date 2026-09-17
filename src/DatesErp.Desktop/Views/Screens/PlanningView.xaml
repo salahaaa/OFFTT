@@ -154,7 +154,7 @@
                         <RadioButton x:Name="ApproveRadio" Content="اعتماد" IsChecked="True" FontWeight="Bold" GroupName="planact" VerticalAlignment="Center"/>
                         <RadioButton x:Name="HoldRadio" Content="تعليق" FontWeight="Bold" GroupName="planact" VerticalAlignment="Center" Margin="8,0,0,0"/>
                     </StackPanel>
-                    <Button x:Name="ApproveActionBtn" Content="✅ اعتماد الخطة (F10)" Style="{StaticResource ErpApproveButton}" Click="ApproveAction_Click" Margin="0,0,6,0"/>
+                    <Button x:Name="ApproveActionBtn" Content="✅ اعتماد الخطة" Style="{StaticResource ErpApproveButton}" Click="ApproveAction_Click" Margin="0,0,6,0"/>
                     <Button x:Name="SaveActionBtn" Content="💾 حفظ الخطة" Style="{StaticResource ErpPrimaryButton}" Click="Save_Click" Margin="0,0,6,0"/>
                     <Button x:Name="CustLotsBtn" Content="👤 أصناف العميل (F4)" Style="{StaticResource ErpButton}" Foreground="#14532D" Click="PickLot_Click" Margin="0,0,6,0"/>
                     <Button Content="👥 أصناف العملاء (F6)" Style="{StaticResource ErpButton}" Foreground="#1F2937" Click="MultiCustomers_Click" Margin="0,0,6,0"/>
@@ -256,14 +256,23 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="رقم الاستلام 📦 *" Width="90" MinWidth="85">
+                            <!-- §1.50.69 FIX: الدفعة/الشحنة برقم سند استلام الشحنات (ShipmentNo = DocumentNumber) بدل LotCode الداخلي -->
+                            <DataGridTemplateColumn Header="الدفعة / سند الاستلام 📦 *" Width="1.2*" MinWidth="140">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Button Content="{Binding ShipmentNo}" Click="LotCode_Click" Tag="{Binding}" Style="{StaticResource PickCellButton}">
+                                        <Button Click="LotCode_Click" Tag="{Binding}" Style="{StaticResource PickCellButton}">
+                                            <Button.Content>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding ShipmentNo}" FontWeight="Bold" Foreground="#1F2937"/>
+                                                    <TextBlock Text=" - " Foreground="#9A9782" Margin="2,0"/>
+                                                    <TextBlock Text="{Binding LotCode}" FontSize="10" Foreground="#6B7280" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button.Content>
                                             <Button.ToolTip>
                                                 <StackPanel>
-                                                    <TextBlock Text="{Binding ShipmentNo, StringFormat=رقم الاستلام: {0}}" FontWeight="Bold"/>
+                                                    <TextBlock Text="{Binding ShipmentNo, StringFormat=سند الاستلام: {0}}" FontWeight="Bold"/>
                                                     <TextBlock Text="{Binding LotCode, StringFormat=الدفعة: {0}}"/>
+                                                    <TextBlock Text="جميع الدفعات معروضة FIFO - رقم السند هو رقم سند استلام الشحنات"/>
                                                 </StackPanel>
                                             </Button.ToolTip>
                                         </Button>
@@ -277,6 +286,7 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
+                            <!-- §1.50.67 PREVIOUS DESIGN + FIX: الوحدة بوحدتين + المتاح بوحدتين — تصميم سابق متفق عليه -->
                             <DataGridTextColumn Header="الوحدة" Binding="{Binding UnitDisplay}" Width="110" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
@@ -286,14 +296,6 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <!-- §1.50.66 — طريقة السحب selectable: سلة/كرتون/كجم + المتاح بالوحدتين -->
-                            <DataGridTemplateColumn Header="طريقة السحب" Width="95">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <ComboBox ItemsSource="{Binding SourceModes}" SelectedItem="{Binding SourceMode, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2,0" ToolTip="اختر وحدة السحب: سلة/كرتون/كجم — تُحسب تلقائياً من وحدة الاستلام"/>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="المتاح" Binding="{Binding AvailableDisplay}" Width="130" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
@@ -312,31 +314,11 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTemplateColumn Header="الوزن كجم ⚖️" Width="110">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding QtyKg, StringFormat=N1}" HorizontalAlignment="Right" FontWeight="Bold">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding QuantityError}" Value="{x:Null}">
-                                                            <Setter Property="Foreground" Value="#14532D"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                    <Setter Property="Foreground" Value="#DC2626"/>
-                                                    <Setter Property="ToolTip" Value="{Binding QuantityError}"/>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="المسحوب" Binding="{Binding SourceDisplay}" Width="110" IsReadOnly="True">
+                            <DataGridTextColumn Header="الوزن كجم ⚖️" Binding="{Binding QtyKg, StringFormat=N1}" Width="85" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="HorizontalAlignment" Value="Right"/>
-                                        <Setter Property="FontSize" Value="11"/>
-                                        <Setter Property="ToolTip" Value="{Binding SourceDisplay}"/>
+                                        <Setter Property="FontWeight" Value="Bold"/>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>

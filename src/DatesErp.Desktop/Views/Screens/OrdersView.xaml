@@ -1,4 +1,4 @@
-<UserControl x:Class="DatesErp.Desktop.Views.Screens.OrdersView"
+﻿<UserControl x:Class="DatesErp.Desktop.Views.Screens.OrdersView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              FlowDirection="RightToLeft">

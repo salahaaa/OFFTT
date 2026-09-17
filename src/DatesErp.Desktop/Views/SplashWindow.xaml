@@ -1,4 +1,4 @@
-<Window x:Class="DatesErp.Desktop.Views.SplashWindow"
+﻿<Window x:Class="DatesErp.Desktop.Views.SplashWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="نظام التصنيع" Height="340" Width="600"

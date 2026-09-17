@@ -40,7 +40,7 @@ public static class CsvExport
             {
                 foreach (var col in grid.Columns)
                 {
-                    var path = (col as System.Windows.Controls.DataGridBoundColumn)?.Binding?.Path?.Path;
+                    var path = ((col as System.Windows.Controls.DataGridBoundColumn)?.Binding as System.Windows.Data.Binding)?.Path?.Path;
                     object v = path != null && drv.Row.Table.Columns.Contains(path) ? drv.Row[path] : null;
                     cells.Add(Csv(v?.ToString() ?? ""));
                 }
@@ -49,7 +49,7 @@ public static class CsvExport
             {
                 foreach (var col in grid.Columns)
                 {
-                    var path = (col as System.Windows.Controls.DataGridBoundColumn)?.Binding?.Path?.Path;
+                    var path = ((col as System.Windows.Controls.DataGridBoundColumn)?.Binding as System.Windows.Data.Binding)?.Path?.Path;
                     object v = path != null ? item?.GetType().GetProperty(path)?.GetValue(item) : null;
                     cells.Add(Csv(v?.ToString() ?? ""));
                 }

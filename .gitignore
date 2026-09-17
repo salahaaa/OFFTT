@@ -8,6 +8,8 @@
 .vs/
 DateERP_Publish/
 publish/
+publish_1.50.71/
+UPDATE_1.50.71_PACKAGE/
 TestResults/
 *.trx
 *.log

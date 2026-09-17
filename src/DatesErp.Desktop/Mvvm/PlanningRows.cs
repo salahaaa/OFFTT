@@ -404,6 +404,19 @@ public class PlanRowUi : System.ComponentModel.INotifyPropertyChanged
         { 
             if (Math.Abs(_qtyKg - value) > 0.001) 
             { 
+                // §1.50.68 FIX: إذا غيّر المستخدم الكيلو يدوياً، أعد حساب الكراتين تلقائياً
+                // لأن الكرتون هو الوحدة الأساسية - يمنع خطأ "لا تطابق عدد الكراتين"
+                if (CartonWeight > 0 && value > 0)
+                {
+                    int newCartons = (int)Math.Round(value / CartonWeight);
+                    if (newCartons > 0 && newCartons != _cartons)
+                    {
+                        _cartons = newCartons;
+                        _cartonsText = newCartons.ToString();
+                        OnChanged(nameof(Cartons));
+                        OnChanged(nameof(CartonsText));
+                    }
+                }
                 _qtyKg = value; 
                 OnChanged(nameof(QtyKg)); 
                 OnChanged(nameof(RemainingAfterKg));
@@ -448,7 +461,14 @@ public class PlanRowUi : System.ComponentModel.INotifyPropertyChanged
             double tol = Math.Max(1.0, QtyKg * 0.02);
             if (Math.Abs(QtyKg - computed) > tol)
             {
-                QuantityError = $"⛔ كمية الكيلو لا تطابق عدد الكراتين ووزن الكرتون للصنف «{ProductName}». المدخل: {QtyKg:N1} كجم ← {Cartons:N0} كرتون والمحسوب من وزن الكرتون ({CartonWeight:N1} كجم): {computed:N1} كجم. صحح الكمية.";
+                // §1.50.68 FIX: بدل منع الحفظ، صحح تلقائياً لأن الكرتون هو الأساس
+                // في الصورة: 3000 كجم و 4000 كرتون × 2.5 = 10000 كجم → نصحح الكيلو إلى 10000
+                // أو إذا المستخدم أدخل كيلو، نكون قد صححنا الكراتين في setter أعلاه
+                // هنا نصحح الكيلو ليطابق الكراتين (الوحدة الأساسية)
+                _qtyKg = computed;
+                OnChanged(nameof(QtyKg));
+                OnChanged(nameof(RemainingAfterKg));
+                QuantityError = null;
                 OnChanged(nameof(QuantityError));
             }
             else

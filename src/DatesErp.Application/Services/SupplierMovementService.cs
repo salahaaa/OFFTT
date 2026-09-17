@@ -62,7 +62,7 @@ public class SupplierMovementService
         // §1.50.66 — إصلاح Tuple داخل Expression Tree: AsEnumerable قبل إنشاء ValueTuple
         var customers = _db.Customers.AsNoTracking().Where(c => partyIds.Contains(c.Id))
             .AsEnumerable()
-            .ToDictionary(c => c.Id, c => (c.CustomerCode, c.CustomerName));
+            .ToDictionary(c => c.Id, c => (CustomerCode: c.CustomerCode, CustomerName: c.CustomerName));
         var prodIds = txns.Where(t => t.ProductId != null).Select(t => t.ProductId!.Value).Distinct().ToList();
         var products = _db.Products.AsNoTracking().Where(p => prodIds.Contains(p.Id))
             .AsEnumerable()
@@ -139,7 +139,7 @@ public class SupplierMovementService
             var totals = new double[8];
             for (int i = 0; i < 7; i++) totals[i] = rows.Sum(r => i switch { 0 => r.Open, 1 => r.Purch, 2 => r.SupIn, 3 => r.PurchRet, 4 => r.Issue, 5 => r.Sales, _ => r.SalesRet });
             totals[7] = rows.Sum(r => r.Remain);
-            var cc = customers.TryGetValue(pid, out var cu) ? cu : ("?", "?");
+            var cc = customers.TryGetValue(pid, out var cu) ? cu : (CustomerCode: "?", CustomerName: "?");
             groups.Add(new SmGroup(cc.CustomerCode ?? "?", cc.CustomerName ?? "?", rows, totals));
         }
         return groups;

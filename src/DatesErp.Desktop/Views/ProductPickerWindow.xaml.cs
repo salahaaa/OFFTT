@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using DatesErp.Core.Domain.Entities;
 using DatesErp.Desktop.Services;
 using DatesErp.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DatesErp.Desktop.Views;

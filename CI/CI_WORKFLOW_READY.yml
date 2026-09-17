@@ -102,3 +102,5 @@ jobs:
         run: python -m unittest discover -s tools/ci -p 'test_*.py'
       - name: RTL, empty handlers and legacy double policy
         run: python tools/ci/structural_checks.py
+      - name: XAML element names vs C# references (0 errors required)
+        run: python tools/ci/verify_xaml_names.py

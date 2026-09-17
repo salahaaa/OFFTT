@@ -59,7 +59,7 @@ public sealed class ToastWindow : Window
 
     public static void Show(string msg, string kind = "ok")
     {
-        var app = Application.Current;
+        var app = System.Windows.Application.Current;
         if (app == null) return;
         app.Dispatcher.Invoke(() =>
         {
@@ -68,3 +68,9 @@ public sealed class ToastWindow : Window
         });
     }
 }
+
+public static class UiToast
+{
+    public static void Show(string msg, string kind = "ok") => ToastWindow.Show(msg, kind);
+}
+

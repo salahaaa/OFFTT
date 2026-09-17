@@ -1,4 +1,4 @@
-<Window x:Class="DatesErp.Desktop.Views.ShipmentPickerWindow"
+﻿<Window x:Class="DatesErp.Desktop.Views.ShipmentPickerWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="اختيار إيصال سابق للنسخ" Height="420" Width="640" FlowDirection="RightToLeft" WindowStartupLocation="CenterOwner">
