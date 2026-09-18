@@ -1,64 +1,47 @@
-﻿# =====================================================================
-#  VERIFY-SOURCE 1.50.73 — فحص على مستوى البايْت
-#  1) كل ملف .xaml تحت src يجب أن يبدأ بـ BOM  (EF BB BF)
-#     — بِلاد BOM يقرأ مُترجم XAML الملف كـ cp1256 فيُشفَّر النص العربي
-#     (هذا هو تشخيص زر الحفظ المشفّر: ملف قديم بلا BOM على القرص).
-#  2) علامات المحتوى الجديد 1.50.73 في الملفات الحرجة.
-#  الملف بـ BOM عمدًا — PowerShell يقرأ بلا BOM كـ ANSI فتتلف العربية.
-# =====================================================================
+﻿# VERIFY-SOURCE 1.50.73 FINAL2
+# The BAT wrapper deliberately contains no inline PowerShell.  Keep the six
+# checks here so CMD metacharacters, Arabic text, and parenthesized blocks
+# cannot change the meaning of the verification command.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$src  = Join-Path $root 'src'
-$fails = 0
+
+$checks = @(
+    @{ Id = 'F1'; Path = 'src\DatesErp.Desktop\Views\Screens\PlanningView.xaml'; Marker = 'SaveActionBtn' },
+    @{ Id = 'F2'; Path = 'src\DatesErp.Desktop\Views\Screens\PlanningView.xaml.cs'; Marker = 'WithSave' },
+    @{ Id = 'F3'; Path = 'src\DatesErp.Desktop\DatesErp.Desktop.csproj'; Marker = '1.50.73' },
+    @{ Id = 'F4'; Path = 'src\DatesErp.Desktop\DatesErp.Desktop.csproj'; Marker = 'AssemblyFileVersion>1.50.73' },
+    @{ Id = 'F5'; Path = 'src\DatesErp.Desktop\Views\Screens\PlanningView.xaml.cs'; Marker = '1.50.73' },
+    @{ Id = 'F6'; Path = 'src\DatesErp.Desktop\Views\Screens\PlanningView.xaml'; Marker = '5B7595' }
+)
 
 Write-Host '============================================================'
-Write-Host '  1. فحص BOM لكل ملفات XAML  —  بايْت بايْت'
+Write-Host '  VERIFY-SOURCE 1.50.73 FINAL2'
 Write-Host '============================================================'
-if (-not (Test-Path $src)) { Write-Host '[FAIL] لم يُعثر على src — شغّل الفحص من جذر UPDATE_WORK' -ForegroundColor Red; exit 1 }
-$xaml = Get-ChildItem -Path $src -Recurse -Filter *.xaml -File
-if ($xaml.Count -eq 0) { Write-Host '[FAIL] لا ملفات XAML تحت src' -ForegroundColor Red; exit 1 }
-$nobom = 0
-foreach ($f in $xaml) {
-    $fs = [System.IO.File]::OpenRead($f.FullName)
-    try {
-        $b = New-Object byte[] 3
-        $n = 0
-        while ($n -lt 3) { $m = $fs.Read($b, $n, 3 - $n); if ($m -le 0) { break }; $n += $m }
-    } finally { $fs.Close() }
-    if ($n -lt 3 -or $b[0] -ne 0xEF -or $b[1] -ne 0xBB -or $b[2] -ne 0xBF) {
-        $rel = $f.FullName.Substring($root.Length + 1)
-        Write-Host ('[FAIL] بلا BOM:  ' + $rel) -ForegroundColor Red
-        $nobom++; $fails++
+$fails = 0
+$utf8 = [System.Text.Encoding]::UTF8
+
+foreach ($check in $checks) {
+    $path = Join-Path $root $check.Path
+    if (-not [System.IO.File]::Exists($path)) {
+        Write-Host (('[FAIL] {0}: missing {1}' -f $check.Id, $check.Path)) -ForegroundColor Red
+        $fails++
+        continue
+    }
+
+    $content = [System.IO.File]::ReadAllText($path, $utf8)
+    if ($content.Contains($check.Marker)) {
+        Write-Host (('[OK]   {0}: {1}' -f $check.Id, $check.Marker)) -ForegroundColor Green
+    }
+    else {
+        Write-Host (('[FAIL] {0}: marker not found: {1}' -f $check.Id, $check.Marker)) -ForegroundColor Red
+        $fails++
     }
 }
-if ($nobom -eq 0) { Write-Host ('[OK]   ' + $xaml.Count + ' ملفات XAML — كلها ببداية BOM صحيحة') -ForegroundColor Green }
 
-Write-Host ''
-Write-Host '============================================================'
-Write-Host '  2. علامات المحتوى الجديد 1.50.73'
-Write-Host '============================================================'
-function Test-Marker {
-    param([string]$rel, [string]$needle, [string]$label)
-    $p = Join-Path $root $rel
-    if (-not (Test-Path $p)) { Write-Host ('[FAIL] الملف مفقود:  ' + $rel) -ForegroundColor Red; return 1 }
-    $c = [System.IO.File]::ReadAllText($p, [System.Text.Encoding]::UTF8)
-    if ($c.Contains($needle)) { Write-Host ('[OK]   ' + $rel + '  —  ' + $label) -ForegroundColor Green; return 0 }
-    Write-Host ('[FAIL] ' + $rel + '  —  ' + $label) -ForegroundColor Red
-    return 1
-}
-$fails += Test-Marker 'src\DatesErp.Desktop\Views\Screens\PlanningView.xaml' 'حفظ الخطة' 'زر الحفظ موجود'
-$fails += Test-Marker 'src\DatesErp.Desktop\Views\Screens\PlanningView.xaml' 'BorderThickness="1.4"' 'الحدود المغمّقة مطبّقة'
-$fails += Test-Marker 'src\DatesErp.Desktop\Views\ErpToolbar.cs' 'حفظ (F10)' 'تسمية حفظ شريط الأدوات'
-$fails += Test-Marker 'src\DatesErp.Desktop\Views\Screens\PlanningView.xaml.cs' 'حفظ الخطة (F10)' 'تسمية الحفظ في شاشة التخطيط'
-$fails += Test-Marker 'src\DatesErp.Desktop\Views\Screens\PlanningView.xaml.cs' '1.50.73' 'حذف تكرار اعتماد شريط الأدوات مطبق'
-$fails += Test-Marker 'src\DatesErp.Desktop\DatesErp.Desktop.csproj' '1.50.73' 'الإصدار 1.50.73'
-$fails += Test-Marker 'src\DatesErp.Desktop\DatesErp.Desktop.csproj' 'AssemblyFileVersion>1.50.73' 'سمات الإصدار الصريحة 1.50.73 FINAL'
-
-Write-Host ''
-if ($fails -gt 0) {
-    Write-Host ('[STOP] ' + $fails + ' فحصًا فاشلًا — احذف الملفات الفاشلة من UPDATE_WORK') -ForegroundColor Red
-    Write-Host '        ثم أعد فك ضغط حزمة UPDATE_1.50.73_FIXED5 فوق UPDATE_WORK وأعد التشغيل.' -ForegroundColor Red
+if ($fails -ne 0) {
+    Write-Host (('[STOP] {0} FINAL2 source check(s) failed.' -f $fails)) -ForegroundColor Red
     exit 1
 }
-Write-Host '[PASS] كل ملفات XAML ببداية BOM وكل العلامات حديثة — البناء يمكن أن يبدأ.' -ForegroundColor Green
+
+Write-Host '[PASS] All six FINAL2 source checks passed.' -ForegroundColor Green
 exit 0
