@@ -95,6 +95,30 @@ public class UiWiringTests
     }
 
     /// <summary>
+    /// مسار الحفظ في التخطيط: الزر العلوي يطلب Edit من PermissionGate،
+    /// وF10 والزر المرئي ينتهيان إلى Save_Click نفسه.
+    /// </summary>
+    [Fact]
+    public void Planning_Save_Uses_Edit_Gate_And_Save_Click_For_F10()
+    {
+        var root = RepoRoot();
+        var planningCs = File.ReadAllText(Path.Combine(root, "src", "DatesErp.Desktop", "Views", "Screens", "PlanningView.xaml.cs"));
+        var planningXaml = File.ReadAllText(Path.Combine(root, "src", "DatesErp.Desktop", "Views", "Screens", "PlanningView.xaml"));
+        var toolbar = File.ReadAllText(Path.Combine(root, "src", "DatesErp.Desktop", "Views", "ErpToolbar.cs"));
+        var catalog = File.ReadAllText(Path.Combine(root, "src", "DatesErp.Desktop", "Screens", "ScreenCatalog.cs"));
+
+        Assert.Contains(".WithSave((_, _) => Save_Click(null, null), \"حفظ الخطة (F10)\")", planningCs);
+        Assert.Contains("Key.F10", planningCs);
+        Assert.Contains("private void Save_Click", planningCs);
+        Assert.Contains("Click=\"Save_Click\"", planningXaml);
+        Assert.DoesNotContain("SaveActionBtn.Visibility = Visibility.Visible", planningCs);
+        Assert.Contains("AddBtn(label, \"ErpPrimaryButton\", h, \"حفظ (F10)\", \"Edit\")", toolbar);
+        Assert.Contains("PermissionGate.Can(Module, kv.Value)", toolbar);
+        Assert.Contains("kv.Key.Visibility = ok ? Visibility.Visible : Visibility.Collapsed", toolbar);
+        Assert.Contains("new(\"planning\", \"الإنتاج\", \"خطط الإنتاج (MPS)\", \"planning\"", catalog);
+    }
+
+    /// <summary>
     /// عمليات دورة العمل الحرجة يجب أن تكون قابلة للوصول من الواجهات —
     /// وإلا كانت «خدمة بلا واجهة» (نمط وقع فعلاً: MarkInvoiced وApprove وUnitsAndPacksWindow).
     /// </summary>

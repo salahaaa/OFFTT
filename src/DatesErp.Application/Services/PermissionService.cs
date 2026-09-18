@@ -112,6 +112,10 @@ public class PermissionService
             if (added) _db.SaveChanges();
         }
 
+        // §التخطيط: ترقية القواعد القائمة التي أُنشئت قبل إضافة planning/Edit إلى مصفوفة
+        // المورد×العملية. هذا إصلاح لدور الإنتاج المحدد، لا فتح عام ولا تجاوزاً للبوابة.
+        EnsureProductionPlanningEdit();
+
         // §B84/S1: منح إعادة الفتح لمن يملك الاعتماد (تفعيل صلاحية Reopen الميتة سابقاً).
         GrantReopenToApprovers();
         // §B95: منح «تعديل بعد الاعتماد» لمعتمدي الجودة — التصحيح المعتمد على المحاضر المعتمدة.
@@ -120,6 +124,62 @@ public class PermissionService
         BackfillNewlyGatedModules();
         // §3: الإشراف على كل المهام لمن يدير الصلاحيات — والمصنع يوسّعه من الشاشة.
         GrantTaskOversightToSystemAdmins();
+    }
+
+    /// <summary>
+    /// §التخطيط — إصلاح ترقية مصفوفة الصلاحيات للأدوار الوظيفية المقصودة فقط.
+    ///
+    /// DbSeeder يمنح Production صلاحية Edit على planning، وManagement يملك المصفوفة
+    /// الكاملة. لكن القواعد القائمة التي كوّنت RoleResourcePermissions قبل اكتمال هذا
+    /// الربط ظلّت تحمل صفاً مرفوضاً/ناقصاً، ولذلك كان BuildEffectiveCache يعيد false
+    /// ويخفي ErpToolbar.WithSave رغم صحة Save_Click وF10.
+    ///
+    /// هذا ترحيل لمرة واحدة: يضمن planning/Edit لدوري Production وManagement فقط.
+    /// لا يمنحها لـ Administrator كحل التفافي ولا لكل الأدوار، ولا يلمس Approve؛ فهما
+    /// عمليتان مستقلتان. بعد وضع علامة الترحيل، أي سحب يدوي لاحق من شاشة الصلاحيات يُحترم.
+    /// </summary>
+    public void EnsureProductionPlanningEdit()
+    {
+        const string markerKey = "PermissionUpgrade_PlanningEdit_ProductionManagement";
+        if (_db.SystemSettings.Any(s => s.SettingKey == markerKey)) return;
+
+        var resource = _db.PermissionResources.FirstOrDefault(r => r.IsActive && r.Code == PermissionModules.Planning);
+        var operation = _db.PermissionOperations.FirstOrDefault(o => o.Code == "Edit");
+        if (resource == null || operation == null) return;
+
+        var roleCodes = new[] { SystemRoles.Production, SystemRoles.Management };
+        var roles = _db.Roles.Where(r => r.IsActive && roleCodes.Contains(r.RoleCode)).ToList();
+        if (roles.Count == 0) return;
+
+        foreach (var role in roles)
+        {
+            var row = _db.RoleResourcePermissions.FirstOrDefault(x => x.RoleId == role.Id
+                && x.ResourceId == resource.Id && x.OperationId == operation.Id);
+            if (row == null)
+            {
+                _db.RoleResourcePermissions.Add(new RoleResourcePermission
+                {
+                    RoleId = role.Id,
+                    ResourceId = resource.Id,
+                    OperationId = operation.Id,
+                    IsAllowed = true
+                });
+            }
+            else
+            {
+                // صف الرفض هنا هو أثر المصفوفة القديمة، لا استثناء مستخدم؛ أصلحه مرة واحدة.
+                row.IsAllowed = true;
+            }
+        }
+
+        _db.SystemSettings.Add(new SystemSetting
+        {
+            SettingKey = markerKey,
+            SettingValue = "1.50.73",
+            Category = "Permissions",
+            Description = "إصلاح planning/Edit لدوري الإنتاج والإدارة في مصفوفة الصلاحيات الهرمية"
+        });
+        _db.SaveChanges();
     }
 
     /// <summary>

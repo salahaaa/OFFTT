@@ -158,6 +158,7 @@ public class PermissionGatingTests
         var session = LoginAsRole(host, "production");
 
         Assert.True(session.Can("planning", "Create"));
+        Assert.True(session.Can("planning", "Edit"));
         Assert.True(session.Can("planning", "Approve"));
         Assert.True(session.Can("production", "Edit"));
         Assert.True(session.Can("execution", "Edit"));
@@ -214,6 +215,90 @@ public class PermissionGatingTests
         Assert.True(session.Can("products", "Edit"));
         Assert.True(session.Can("cartons", "Edit"));
         Assert.True(session.Can("employees", "View"));
+    }
+
+    /// <summary>
+    /// مشكلة زر حفظ الخطة: Production هو دور التخطيط التشغيلي، وManagement هو دور
+    /// الإدارة العاملة في التصميم الحالي؛ وEdit لا يساوي Approve.
+    /// لا تُمنح Edit للجودة أو للمخازن، لذلك تبقى بوابة الشريط هي الحكم.
+    /// </summary>
+    [Fact]
+    public void Planning_Edit_Is_Granted_To_Designated_Workflow_Roles_Only()
+    {
+        using var host = new TestHost();
+
+        var production = host.LoginAs("production");
+        Assert.True(production.Can("planning", "Edit"));
+        Assert.True(production.Can("planning", "Approve"));
+
+        var quality = host.LoginAs("quality");
+        Assert.False(quality.Can("planning", "Edit"));
+        Assert.False(quality.Can("planning", "Approve"));
+
+        var warehouse = host.LoginAs("warehouse");
+        Assert.False(warehouse.Can("planning", "Edit"));
+        Assert.False(warehouse.Can("planning", "Approve"));
+
+        using var db = Db(host);
+        var managementRole = db.Roles.Single(r => r.RoleCode == "Management");
+        var planning = db.PermissionResources.Single(r => r.Code == "planning");
+        var edit = db.PermissionOperations.Single(o => o.Code == "Edit");
+        Assert.True(db.RoleResourcePermissions.Any(x => x.RoleId == managementRole.Id
+            && x.ResourceId == planning.Id && x.OperationId == edit.Id && x.IsAllowed));
+    }
+
+    /// <summary>
+    /// يحاكي قاعدة قديمة فيها صف planning/Edit مرفوض في RoleResourcePermissions.
+    /// الترحيل يصلح Production وManagement فقط، ويحترم Approve كعملية مستقلة.
+    /// </summary>
+    [Fact]
+    public void Existing_Matrix_Is_Upgraded_For_Designated_Planning_Edit_Roles()
+    {
+        using var host = new TestHost();
+        host.LoginAsAdmin();
+        using var db = Db(host);
+        var svc = new PermissionService(db, host.Services.GetRequiredService<ICurrentSession>());
+
+        var productionRole = db.Roles.Single(r => r.RoleCode == "Production");
+        var managementRole = db.Roles.Single(r => r.RoleCode == "Management");
+        var qualityRole = db.Roles.Single(r => r.RoleCode == "Quality");
+        var planning = db.PermissionResources.Single(r => r.Code == "planning");
+        var edit = db.PermissionOperations.Single(o => o.Code == "Edit");
+        var approve = db.PermissionOperations.Single(o => o.Code == "Approve");
+        var productionEdit = db.RoleResourcePermissions.Single(x => x.RoleId == productionRole.Id
+            && x.ResourceId == planning.Id && x.OperationId == edit.Id);
+        productionEdit.IsAllowed = false;
+        var managementEdit = db.RoleResourcePermissions.Single(x => x.RoleId == managementRole.Id
+            && x.ResourceId == planning.Id && x.OperationId == edit.Id);
+        managementEdit.IsAllowed = false;
+        var marker = db.SystemSettings.SingleOrDefault(x => x.SettingKey == "PermissionUpgrade_PlanningEdit_ProductionManagement");
+        if (marker != null) db.SystemSettings.Remove(marker);
+        db.SaveChanges();
+
+        svc.EnsureCatalog();
+
+        Assert.True(db.RoleResourcePermissions.Single(x => x.RoleId == productionRole.Id
+            && x.ResourceId == planning.Id && x.OperationId == edit.Id).IsAllowed);
+        Assert.True(db.RoleResourcePermissions.Single(x => x.RoleId == managementRole.Id
+            && x.ResourceId == planning.Id && x.OperationId == edit.Id).IsAllowed);
+        Assert.True(db.RoleResourcePermissions.Single(x => x.RoleId == productionRole.Id
+            && x.ResourceId == planning.Id && x.OperationId == approve.Id).IsAllowed);
+        Assert.False(db.RoleResourcePermissions.Single(x => x.RoleId == qualityRole.Id
+            && x.ResourceId == planning.Id && x.OperationId == edit.Id).IsAllowed);
+    }
+
+    /// <summary>حتى مع تجاوز الواجهة، مستخدم بلا planning/Edit لا يستطيع تحديث خطة.</summary>
+    [Fact]
+    public void Planning_Update_Is_Server_Denied_Without_Edit_Permission()
+    {
+        using var host = new TestHost();
+        var session = host.LoginAs("quality");
+        Assert.False(session.Can("planning", "Edit"));
+
+        var planning = host.Get<IPlanningService>();
+        Assert.Throws<PermissionDeniedException>(() => planning.UpdatePlan(
+            1, "خطة غير مصرح بها", "Daily", "2026-09-18", "2026-09-18", 1, 1,
+            new List<PlanItemDto>()));
     }
 
     // ═══════════ 4) مسار الترقية — قاعدة قائمة لا تُقفل على مستخدميها ═══════════
