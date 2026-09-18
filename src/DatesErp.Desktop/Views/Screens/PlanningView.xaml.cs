@@ -1208,8 +1208,10 @@ public partial class PlanningView : UserControl
         if (_toolbar != null && _toolbar.UnapproveBtn != null)
             _toolbar.UnapproveBtn.Visibility = status == "Approved" ? Visibility.Visible : Visibility.Collapsed;
         // §إصلاح: زر الاعتماد يظهر ما دامت الخطة غير معتمدة — كان مخفياً دائماً فلا اعتماد من الشاشة
-        if (_toolbar != null && _toolbar.ApproveBtn != null)
-            _toolbar.ApproveBtn.Visibility = status == "Approved" ? Visibility.Collapsed : Visibility.Visible;
+        // §1.50.73: زر الاعتماد في شريط الأدوات يبقى مخفياً دائماً — الاعتماد فعل واحد
+        // في مكان واحد: زر «اعتماد الخطة» في بطاقة الأزرار (يدير مساري اعتماد/تعليق
+        // عبر الراديو + الحارس). شريط الأدوات كان يعرض نسخة ثانية منه = زران متكرران.
+
         if (_toolbar != null && _toolbar.DeleteBtn != null)
             _toolbar.DeleteBtn.Visibility = status == "Approved" ? Visibility.Collapsed : Visibility.Visible;
     }

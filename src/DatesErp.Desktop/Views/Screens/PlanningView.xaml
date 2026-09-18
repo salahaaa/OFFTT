@@ -20,7 +20,7 @@
             </Grid.RowDefinitions>
 
             <!-- ١) المسار + الحالة -->
-            <Border Grid.Row="0" Background="#F8FAFC" BorderBrush="#9A9782" BorderThickness="1" CornerRadius="4" Padding="10,6" Margin="0,0,0,6">
+            <Border Grid.Row="0" Background="#F8FAFC" BorderBrush="#5F5C48" BorderThickness="1.4" CornerRadius="4" Padding="10,6" Margin="0,0,0,6">
                 <DockPanel>
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
                         <TextBlock Text="مسار المعاملة:" FontWeight="Bold" Foreground="#1F2937" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -50,7 +50,7 @@
                     </StackPanel>
                 </DockPanel>
             </Border>
-            <Border x:Name="StatusBanner" Grid.Row="1" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8,5" Margin="0,6,0,6">
+            <Border x:Name="StatusBanner" Grid.Row="1" Background="#F8FAFC" BorderBrush="#5B7595" BorderThickness="1.4" Padding="8,5" Margin="0,6,0,6">
                 <!-- §التخطيط الأفقي: الحالة يميناً وشرائح السياق يساراً في سطر واحد -->
                 <DockPanel>
                     <WrapPanel DockPanel.Dock="Left" VerticalAlignment="Center">
@@ -73,7 +73,7 @@
             </Border>
 
             <!-- ٢) محددات الخطة -->
-            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,6">
+            <Border Grid.Row="2" Style="{StaticResource Card}" BorderBrush="#5B7595" BorderThickness="1.4" Margin="0,0,0,6">
                 <StackPanel>
                     <!-- صف 1: المحددات الأساسية — كود + عنوان + نوع + تاريخ/فترة + وردية + خط -->
                     <Grid>
@@ -148,14 +148,14 @@
             </Border>
 
             <!-- ٣) أزرار الإدراج والاعتماد -->
-            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,6">
+            <Border Grid.Row="3" Style="{StaticResource Card}" BorderBrush="#5B7595" BorderThickness="1.4" Margin="0,0,0,6">
                 <WrapPanel x:Name="InsertActionsPanel">
                     <StackPanel Orientation="Horizontal" Margin="0,0,12,0" VerticalAlignment="Center">
                         <RadioButton x:Name="ApproveRadio" Content="اعتماد" IsChecked="True" FontWeight="Bold" GroupName="planact" VerticalAlignment="Center"/>
                         <RadioButton x:Name="HoldRadio" Content="تعليق" FontWeight="Bold" GroupName="planact" VerticalAlignment="Center" Margin="8,0,0,0"/>
                     </StackPanel>
                     <Button x:Name="ApproveActionBtn" Content="✅ اعتماد الخطة" Style="{StaticResource ErpApproveButton}" Click="ApproveAction_Click" Margin="0,0,6,0"/>
-                    <Button x:Name="SaveActionBtn" Content="💾 حفظ الخطة" Style="{StaticResource ErpPrimaryButton}" Click="Save_Click" Margin="0,0,6,0"/>
+                    <Button x:Name="SaveActionBtn" Content="💾 حفظ الخطة" Style="{StaticResource ErpPrimaryButton}" Click="Save_Click" Visibility="Collapsed" Margin="0,0,6,0"/>
                     <Button x:Name="CustLotsBtn" Content="👤 أصناف العميل (F4)" Style="{StaticResource ErpButton}" Foreground="#14532D" Click="PickLot_Click" Margin="0,0,6,0"/>
                     <Button Content="👥 أصناف العملاء (F6)" Style="{StaticResource ErpButton}" Foreground="#1F2937" Click="MultiCustomers_Click" Margin="0,0,6,0"/>
                     <Button Content="📥 من استلام مباشر" Style="{StaticResource ErpButton}" Foreground="#B45309" Click="DirectReceipt_Click" Margin="0,0,6,0"/>
@@ -171,7 +171,7 @@
             </Border>
 
             <!-- ٤) شريط الطاقة والعدادات -->
-            <Border Grid.Row="4" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8,4" Margin="0,0,0,6">
+            <Border Grid.Row="4" Background="#F8FAFC" BorderBrush="#5B7595" BorderThickness="1.4" Padding="8,4" Margin="0,0,0,6">
                 <DockPanel>
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                         <TextBlock Text="⏱️ حالة طاقة الوردية:" FontWeight="Bold" Foreground="#14532D" VerticalAlignment="Center" Margin="0,0,6,0"/>
@@ -211,7 +211,7 @@
                     <DataGrid x:Name="RowsGrid" MinHeight="280" RowHeight="38" FontSize="13" ColumnHeaderHeight="38" AutoGenerateColumns="False" CanUserAddRows="False"
                               AlternatingRowBackground="#FBFAF5" Background="White" RowBackground="White"
                               GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E8E4D8"
-                              HeadersVisibility="Column" BorderBrush="#D9D4C4"
+                              HeadersVisibility="Column" BorderBrush="#7C7660"
                               LoadingRow="RowsGrid_LoadingRow">
                         <DataGrid.RowStyle>
                             <Style TargetType="DataGridRow">
