@@ -31,6 +31,14 @@ set "F4=src\DatesErp.Desktop\DatesErp.Desktop.csproj"
 findstr /m "AssemblyFileVersion>1.50.73" "%F4%" >nul 2>nul
 if errorlevel 1 (echo [FAIL] %F4% - نسخة قديمة بلا سمات الإصدار الصريحة & set /a FAILS+=1) else (echo [OK]   %F4%)
 
+set "F5=src\DatesErp.Desktop\Views\Screens\PlanningView.xaml.cs"
+findstr /m "1.50.73" "%F5%" >nul 2>nul
+if errorlevel 1 (echo [FAIL] %F5% - نسخة قديمة: زر اعتماد شريط الأدوات لم يُحذف بعد & set /a FAILS+=1) else (echo [OK]   %F5%)
+
+set "F6=src\DatesErp.Desktop\Views\Screens\PlanningView.xaml"
+findstr /m "5B7595" "%F6%" >nul 2>nul
+if errorlevel 1 (echo [FAIL] %F6% - نسخة قديمة: الحدود المغمّقة غير مطبقة & set /a FAILS+=1) else (echo [OK]   %F6%)
+
 echo.
 if %FAILS% gtr 0 (
   echo ============================================================
