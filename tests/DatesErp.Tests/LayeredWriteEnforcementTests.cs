@@ -3,6 +3,7 @@ using DatesErp.Core.Domain.Entities;
 using DatesErp.Core.Exceptions;
 using DatesErp.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace DatesErp.Tests;
