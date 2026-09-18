@@ -48,7 +48,8 @@ function Test-Marker {
 }
 $fails += Test-Marker 'src\DatesErp.Desktop\Views\Screens\PlanningView.xaml' 'حفظ الخطة' 'زر الحفظ موجود'
 $fails += Test-Marker 'src\DatesErp.Desktop\Views\Screens\PlanningView.xaml' 'BorderThickness="1.4"' 'الحدود المغمّقة مطبّقة'
-$fails += Test-Marker 'src\DatesErp.Desktop\Views\ErpToolbar.cs' 'حفظ الخطة (F10)' 'تسمية حفظ شريط الأدوات'
+$fails += Test-Marker 'src\DatesErp.Desktop\Views\ErpToolbar.cs' 'حفظ (F10)' 'تسمية حفظ شريط الأدوات'
+$fails += Test-Marker 'src\DatesErp.Desktop\Views\Screens\PlanningView.xaml.cs' 'حفظ الخطة (F10)' 'تسمية الحفظ في شاشة التخطيط'
 $fails += Test-Marker 'src\DatesErp.Desktop\DatesErp.Desktop.csproj' '1.50.73' 'الإصدار 1.50.73'
 
 Write-Host ''

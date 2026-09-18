@@ -19,7 +19,7 @@ set "F1=src\DatesErp.Desktop\Views\Screens\PlanningView.xaml"
 findstr /m "حفظ الخطة" "%F1%" >nul 2>nul
 if errorlevel 1 (echo [FAIL] %F1% - نسخة قديمة بلا زر الحفظ & set /a FAILS+=1) else (echo [OK]   %F1%)
 
-set "F2=src\DatesErp.Desktop\Views\ErpToolbar.cs"
+set "F2=src\DatesErp.Desktop\Views\Screens\PlanningView.xaml.cs"
 findstr /m "حفظ الخطة" "%F2%" >nul 2>nul
 if errorlevel 1 (echo [FAIL] %F2% - نسخة قديمة بلا تسمية الحفظ & set /a FAILS+=1) else (echo [OK]   %F2%)
 
