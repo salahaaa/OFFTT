@@ -27,6 +27,10 @@ set "F3=src\DatesErp.Desktop\DatesErp.Desktop.csproj"
 findstr /m "1.50.73" "%F3%" >nul 2>nul
 if errorlevel 1 (echo [FAIL] %F3% - الإصدار ليس 1.50.73 & set /a FAILS+=1) else (echo [OK]   %F3%)
 
+set "F4=src\DatesErp.Desktop\DatesErp.Desktop.csproj"
+findstr /m "AssemblyFileVersion>1.50.73" "%F4%" >nul 2>nul
+if errorlevel 1 (echo [FAIL] %F4% - نسخة قديمة بلا سمات الإصدار الصريحة & set /a FAILS+=1) else (echo [OK]   %F4%)
+
 echo.
 if %FAILS% gtr 0 (
   echo ============================================================

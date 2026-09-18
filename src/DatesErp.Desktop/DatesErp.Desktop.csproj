@@ -11,6 +11,12 @@
     <RootNamespace>DatesErp.Desktop</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Version>1.50.73</Version>
+    <!-- §1.50.73 FINAL: السمات صريحة (لا اعتماد على افتراضات SDK) —
+         FileVersion=1.50.73.0 · ProductVersion=1.50.73 · AssemblyVersion=1.50.73.0
+         (SystemInfoView تقرأ GetName().Version = AssemblyVersion) -->
+    <AssemblyVersion>1.50.73.0</AssemblyVersion>
+    <AssemblyFileVersion>1.50.73.0</AssemblyFileVersion>
+    <InformationalVersion>1.50.73</InformationalVersion>
     <Authors>شركة التمور</Authors>
     <Product>نظام التصنيع — النظام المتكامل لإدارة عمليات التصنيع</Product>
     <Description>نظام سطح مكتب احترافي متعدد المستخدمين لإدارة وتصنيع التمور</Description>
