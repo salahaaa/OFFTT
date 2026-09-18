@@ -188,5 +188,9 @@ public static class ActualDeliveryScenarios
     {
         public int UserId => 1; public string UserName { get; set; } = "test-deny-warehouse"; public string MachineName => "acceptance";
         public bool IsInRole(string role) => false; public bool Can(string module, string action) => module != "finishedgoods";
+        // §R2 — أعضاء المصفوفة الحية (نفس دلالة الرفض: لا صلاحيات مخزنة)
+        public System.Collections.Generic.Dictionary<(string module, string action), bool> PermissionCache => new();
+        public System.Collections.Generic.HashSet<string> Roles => new();
+        public DateTime CacheBuiltAt { get; set; } = DateTime.Now;
     }
 }

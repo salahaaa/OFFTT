@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 REM =====================================================================
 REM  BUILD + PUBLISH 1.50.72 (ONE CLICK) - Windows

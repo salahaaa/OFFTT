@@ -95,7 +95,7 @@ public partial class ProductBOMView : UserControl
         }
         if (!double.TryParse(QtyBox.Text, out var qty) || qty <= 0)
         {
-            AppContainer.Get<DialogService>().Error($"أدخل كمية صحيحة {QtyLabel.Text.TrimStart(" *")} (أكبر من صفر).");
+            AppContainer.Get<DialogService>().Error($"أدخل كمية صحيحة {QtyLabel.Text.TrimStart(' ', '*')} (أكبر من صفر).");
             return;
         }
         string calc = (CalcBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "PerCarton";

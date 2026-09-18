@@ -203,7 +203,7 @@ public class PlanClosureTests
 
     // §43: إلغاء بلا سبب موثق ليس تسوية — بند الخطة الذي لم يُنتج يبقى مانع إقفال.
     [Fact]
-    public void T09_Undocumented_Cancellation_Blocks_Closure()
+    public void T08_Undocumented_Cancellation_Blocks_Closure()
     {
         using var host = new TestHost();
         var e = Setup(host, e => new List<PlanItemDto>
@@ -221,6 +221,11 @@ public class PlanClosureTests
         Assert.False(svc.ClosePlanFinal(e.PlanId).Ok);
         // الحالة الموثقة (بسبب إلغاء) لا تمنع الإقفال — يغطيها T07.
     }
+
+    // §v1.50.24: إعادة إقفال خطة مغلقة ليست خطأً بل رسالة ودّية — وُجدت كتلة جسده
+    // بلا ترويسة (إعلان الاختبار مفقود في المصدر المنسوخ) فاستُعيد هنا.
+    [Fact]
+    public void T09_AlreadyClosed_ReClose_Is_Polite()
     {
         using var host = new TestHost();
         var e = Setup(host, e => new List<PlanItemDto>
@@ -237,7 +242,7 @@ public class PlanClosureTests
     }
 
     [Fact]
-    public void T09_Reopen_Recalculates_Status()
+    public void T10_Reopen_Recalculates_Status()
     {
         using var host = new TestHost();
         var e = Setup(host, e => new List<PlanItemDto>
@@ -255,7 +260,7 @@ public class PlanClosureTests
     }
 
     [Fact]
-    public void T10_Editing_Closed_Plan_Rejected()
+    public void T11_Editing_Closed_Plan_Rejected()
     {
         using var host = new TestHost();
         var e = Setup(host, e => new List<PlanItemDto>
@@ -276,7 +281,7 @@ public class PlanClosureTests
 
     /// <summary>الحالة 3 — أمر مكتمل الإنتاج لكن غير مقفل: يمنع الإقفال حتى يُقفل الأمر رسمياً.</summary>
     [Fact]
-    public void T11_Completed_But_Not_Closed_Order_Blocks()
+    public void T12_Completed_But_Not_Closed_Order_Blocks()
     {
         using var host = new TestHost();
         var e = Setup(host, e => new List<PlanItemDto>
@@ -308,7 +313,7 @@ public class PlanClosureTests
 
     /// <summary>§B95 — الحالة 7: عجز 200 من 1000 معالج بتسوية موثقة (سبب إغلاق + توقف مسجل + عودة المتبقي للخام): يسمح بالإقفال.</summary>
     [Fact]
-    public void T12_Settled_Shortfall_With_Reason_Allows_Closure()
+    public void T13_Settled_Shortfall_With_Reason_Allows_Closure()
     {
         using var host = new TestHost();
         var e = Setup(host, e => new List<PlanItemDto>
@@ -349,7 +354,7 @@ public class PlanClosureTests
 
     /// <summary>الحالة 8 — عجز 200 غير معالج: الأمر لا يُقفل والخطة لا تُقفل.</summary>
     [Fact]
-    public void T13_Unsettled_Shortfall_Blocks_Closure()
+    public void T14_Unsettled_Shortfall_Blocks_Closure()
     {
         using var host = new TestHost();
         var e = Setup(host, e => new List<PlanItemDto>
