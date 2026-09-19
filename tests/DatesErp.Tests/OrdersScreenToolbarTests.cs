@@ -40,6 +40,8 @@ public class OrdersScreenToolbarTests
         Assert.Contains(".WithSearch", screen);
         Assert.Contains(".WithDelete", screen);
         Assert.Contains(".WithPrint", screen);
+        Assert.Contains("IssueSelectedBtn.IsEnabled = open.Any(r => r.IsPending) && canCreate", screen);
+        Assert.Contains("TodayGrid.SelectedItem is TodayProductionRowDto current && current.IsPending", screen);
         Assert.DoesNotContain("WithCustom(\"📤 إصدار أوامر اليوم\"", screen);
         Assert.Contains("UpdateOrderHeader(_orderId, notes: _notesBox.Text ?? \"\")", cs);
         Assert.Contains("ملاحظات الأمر", cs);

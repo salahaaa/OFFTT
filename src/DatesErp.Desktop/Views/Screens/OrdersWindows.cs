@@ -459,7 +459,7 @@ public class OrderDocumentPanel : UserControl
                 grid.ItemsSource = groups;
                 hint.Text = groups.Count == 0
                     ? "لا توجد مجموعات معلّقة — تحقّق من اعتماد الخطة وتاريخ الجدولة، أو حدّث الشاشة."
-                    : "كل صف = مجموعة (تاريخ مجدول + خطة + عميل + وردية + خط) بلا أمر بعد. الإصدار بكميات الخطة الأصلية كما هي.";
+                    : "كل صف = مجموعة (تاريخ مجدول سابق أو حالي أو قادم + خطة + عميل + وردية + خط) بلا أمر بعد. الإصدار بكميات الخطة الأصلية كما هي.";
             }
             catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "OrderDoc.AddLoad"); }
         }
@@ -481,7 +481,7 @@ public class OrderDocumentPanel : UserControl
             catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "OrderDoc.IssueGroup"); }
         };
         var sp = new StackPanel { Margin = new Thickness(12) };
-        sp.Children.Add(new TextBlock { Text = "الأوامر تنشأ من الخطط المعتمدة فقط — تظهر هنا جدولة اليوم والأيام القادمة، اختر المجموعة المطلوبة ثم أصدر أمرها:", FontWeight = FontWeights.Bold });
+        sp.Children.Add(new TextBlock { Text = "الأوامر تنشأ من الخطط المعتمدة فقط — تظهر هنا الخطط المجدولة السابقة والحالية والقادمة، اختر المجموعة المطلوبة ثم أصدر أمرها:", FontWeight = FontWeights.Bold });
         sp.Children.Add(grid);
         sp.Children.Add(hint);
         sp.Children.Add(issue);

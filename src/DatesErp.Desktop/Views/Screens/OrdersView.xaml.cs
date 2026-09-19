@@ -90,14 +90,17 @@ public partial class OrdersView : UserControl
             TotCustsBox.Text = $"عملاء: {open.Select(r => r.CustomerId).Distinct().Count()}";
             TotLinesBox.Text = $"خطوط: {open.Select(r => r.LineId).Distinct().Count()}";
             DayClosedChip.Text = $"🔒 أُقفل يومه: {closed}";
-            IssueTodayBtn.IsEnabled = next.CanIssue && (_isolated || AppContainer.Get<SessionContext>().Can("production", "Create"));
+            bool canCreate = _isolated || AppContainer.Get<SessionContext>().Can("production", "Create");
+            IssueTodayBtn.IsEnabled = next.CanIssue && canCreate;
+            // الإصدار اليدوي من الجدول يشمل التاريخ السابق والحالي والقادم، بعد تحديد صف/مجموعة معلقة.
+            IssueSelectedBtn.IsEnabled = open.Any(r => r.IsPending) && canCreate;
             if (TodayGrid.SelectedItem is TodayProductionRowDto row && row.OrderId is int oid)
                 ShowOrderInPlace(oid);
         }
         catch (Exception ex)
         {
             _sheet = null; TodayGrid.ItemsSource = null;
-            IssueTodayBtn.IsEnabled = false;
+            IssueTodayBtn.IsEnabled = false; IssueSelectedBtn.IsEnabled = false;
             ItemsChip.Text = "📦 البنود المجدولة: 0"; IssuedChip.Text = "🗂 أوامر صادرة: 0";
             PendingChip.Text = "⏳ بانتظار الإصدار: 0";
             TotCartonsBox.Text = "الكراتين المجدولة: 0"; TotQtyBox.Text = "الوزن المجدول: 0 كجم";
@@ -144,7 +147,10 @@ public partial class OrdersView : UserControl
     {
         if (_sheet?.Rows == null) return;
         var sel = _sheet.Rows.Where(r => r.IsPending && r.IsSelected).ToList();
-        if (sel.Count == 0) { AppContainer.Get<DialogService>().Info("حدد بنداً واحداً على الأقل من الجدول (✓)."); return; }
+        // السماح بالنقر على الصف ثم الإصدار مباشرة، مع إبقاء مربع ✓ للتحديد المتعدد.
+        if (sel.Count == 0 && TodayGrid.SelectedItem is TodayProductionRowDto current && current.IsPending)
+            sel.Add(current);
+        if (sel.Count == 0) { AppContainer.Get<DialogService>().Info("حدد صفاً معلقاً أو ضع علامة ✓ على بند واحد على الأقل."); return; }
         // التحديد يختار المجموعة الحقيقية؛ الإصدار ينقل كل بنودها الأصلية دون إصدار جزئي.
         var groups = sel.GroupBy(r => new { r.PlanId, r.ScheduledDate, r.CustomerId, r.ShiftId, r.LineId }).ToList();
         if (!_isolated && !AppContainer.Get<DialogService>().Confirm($"إصدار {groups.Count} مجموعة من البنود المحددة بكميات الخطة الأصلية؟")) return;

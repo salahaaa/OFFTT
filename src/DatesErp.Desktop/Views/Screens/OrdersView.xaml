@@ -42,8 +42,8 @@
         <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Margin="0,0,0,6">
             <WrapPanel>
                 <!-- أزرار الجدول فقط؛ الأفعال العامة (إضافة/تعديل/حفظ/بحث/حذف/طباعة) في شريط واحد بالأعلى. -->
-                <Button x:Name="IssueTodayBtn" Content="📤 إصدار أوامر اليوم من الخطة" Style="{StaticResource ErpApproveButton}" Click="IssueToday_Click" Margin="0,0,8,4" IsEnabled="False"/>
-                <Button x:Name="IssueSelectedBtn" Content="✅ إصدار المحدد فقط" Style="{StaticResource ErpApproveButton}" Click="IssueSelected_Click" Margin="0,0,8,4" ToolTip="إصدار مجموعات البنود المحددة كاملةً بكميات الخطة الأصلية"/>
+                <Button x:Name="IssueTodayBtn" Content="📤 إصدار أوامر اليوم من الخطة" Style="{StaticResource ErpApproveButton}" Click="IssueToday_Click" Margin="0,0,8,4" IsEnabled="False" ToolTip="هذا الزر لخطط تاريخ العمل الحالي فقط؛ للخطط السابقة أو القادمة حدّد الصف ثم استخدم إصدار المحدد"/>
+                <Button x:Name="IssueSelectedBtn" Content="✅ إصدار المحدد فقط" Style="{StaticResource ErpApproveButton}" Click="IssueSelected_Click" Margin="0,0,8,4" ToolTip="اختر صفاً أو ضع علامة ✓؛ سيصدر كامل مجموعته بتاريخها الأصلي وبكميات الخطة"/>
                 <Button x:Name="SelectAllBtn" Content="☑ تحديد الكل" Style="{StaticResource ErpButton}" Click="SelectAll_Click" Margin="0,0,8,4"/>
             </WrapPanel>
         </Border>
