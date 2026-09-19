@@ -51,7 +51,9 @@ public partial class ProductBOMView : UserControl
 
     private void Finished_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (FinishedBox.SelectedValue is int fid)
+        // SelectionChanged قد يصل أثناء InitializeComponent قبل إسناد الحقول المسماة في XAML.
+        var box = sender as ComboBox ?? FinishedBox;
+        if (box?.SelectedValue is int fid)
             RefreshBOM(fid);
     }
 
@@ -63,7 +65,7 @@ public partial class ProductBOMView : UserControl
             var svc = scope.ServiceProvider.GetRequiredService<AuxiliaryManagementService>();
             var list = svc.GetRequirementsForFinished(finishedId);
             // نحتاج اسم الصنف التام للعرض
-            var finishedName = (FinishedBox.SelectedItem as DatesErp.Core.Domain.Entities.Product)?.ProductNameAr ?? "";
+            var finishedName = (FinishedBox?.SelectedItem as DatesErp.Core.Domain.Entities.Product)?.ProductNameAr ?? "";
             var display = list.Select(r => new
             {
                 r.Id,
@@ -143,7 +145,11 @@ public partial class ProductBOMView : UserControl
     // اختيار «لكل كجم»، فادخل المستخدم قيمة لكل كرتون فيُصرف مضروباً في الكجم (×8 لكرتون 8كجم).
     private void Calc_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
-        string calc = (CalcBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "PerCarton";
+        // ComboBox.SelectedIndex في XAML يطلق الحدث أثناء InitializeComponent؛
+        // عندها قد لا تكون QtyLabel وCalcHint قد أُنشئتا بعد.
+        var box = sender as ComboBox ?? CalcBox;
+        string calc = (box?.SelectedItem as ComboBoxItem)?.Tag as string ?? "PerCarton";
+        if (QtyLabel == null || CalcHint == null) return;
         (QtyLabel.Text, CalcHint.Text) = calc switch
         {
             "PerKg" => ("الكمية لكل كجم *:", "الكمية لكل **كجم** من المنتج — مثال: 7500 كجم × 0.020 = 150 كجم سكري (لا تُدخل قيمة الكرتون)."),
