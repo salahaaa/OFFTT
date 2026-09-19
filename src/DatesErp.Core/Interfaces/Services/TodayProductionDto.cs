@@ -1,6 +1,6 @@
 namespace DatesErp.Core.Interfaces.Services;
 
-/// <summary>The approved day sheet is a read model, not an order-entry form.</summary>
+/// <summary>الخطط المعتمدة المجدولة هي نموذج قراءة، وليست نموذج إدخال أو تعديل أمر.</summary>
 public sealed class TodayProductionDto
 {
     public DateTime Day { get; init; }
@@ -27,16 +27,16 @@ public sealed class TodayProductionRowDto : System.ComponentModel.INotifyPropert
     public string LineName { get; init; }
     public int? OrderId { get; init; }
     public string OrderNumber { get; init; }
+    /// <summary>تاريخ الجدولة المنقول من بند الخطة؛ يعرض أيضاً عند استعراض الفترات السابقة والقادمة.</summary>
+    public string ScheduledDate { get; init; }
+    public bool IsToday { get; init; }
     public string Status { get; init; }
     public bool IsPending { get; init; }
     /// <summary>§v1.50.24: يوم هذا الأمر أُقفل (سُجل فعليه) — يغادر قائمة «أمر إنتاج اليوم».</summary>
     public bool DayClosed { get; init; }
-    // §1.50.61 — إصدار جماعي: اختيار متعدد + تعديل مباشر
+    // اختيار الإصدار فقط؛ الأصناف والكميات المنقولة من الخطة للعرض ولا تُعدّل من هذه الشاشة.
     private bool _isSelected;
     public bool IsSelected { get => _isSelected; set { _isSelected = value; PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsSelected))); } }
-    private int _editableCartons;
-    public int EditableCartons { get => _editableCartons; set { _editableCartons = value; PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(EditableCartons))); } }
-    public bool IsInvalid => IsPending && EditableCartons <= 0;
     public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
 }
 
@@ -45,7 +45,7 @@ public class TodayPendingGroupDto
 {
     public int PlanId { get; init; }
     public string PlanNumber { get; init; }
-    /// <summary>تاريخ البند المجدول؛ قد يكون اليوم أو تاريخاً مستقبلياً في «إضافة من الخطة».</summary>
+    /// <summary>تاريخ البند المجدول؛ قد يكون سابقاً أو اليوم أو مستقبلياً في «إضافة من الخطة».</summary>
     public string ScheduledDate { get; init; }
     public int? CustomerId { get; init; }
     public string CustomerName { get; init; }

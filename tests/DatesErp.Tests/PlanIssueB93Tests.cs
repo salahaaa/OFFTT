@@ -116,6 +116,32 @@ public class PlanIssueB93Tests
     }
 
     [Fact]
+    public void Scheduled_Sheet_Shows_Past_Current_And_Future_And_Issues_Past_Group_By_Its_Date()
+    {
+        var (host, a, b) = Seed2(); using var _host = host;
+        int planId = SaveApprovedPlan(host, new List<PlanItemDto>
+        {
+            new() { CustomerId = a, ProductId = 3, PlannedCartons = 200, PlannedQtyKg = 1500, ScheduledDate = "2026-09-01", SuggestedShiftId = 1 },
+            new() { CustomerId = b, ProductId = 4, PlannedCartons = 100, PlannedQtyKg = 600, ScheduledDate = "2026-09-03", SuggestedShiftId = 2 },
+            new() { CustomerId = a, ProductId = 3, PlannedCartons = 50, PlannedQtyKg = 375, ScheduledDate = "2026-09-05", SuggestedShiftId = 1 },
+        });
+
+        host.SetBusinessDate("2026-09-03");
+        var orders = Orders(host);
+        var scheduled = orders.GetScheduledProduction();
+        Assert.Equal(3, scheduled.Rows.Count);
+        Assert.Equal(new[] { "01/09/2026", "03/09/2026", "05/09/2026" }, scheduled.Rows.Select(r => r.ScheduledDate).ToArray());
+        Assert.Equal(1, scheduled.Rows.Count(r => r.IsToday));
+        Assert.Contains(scheduled.Rows, r => r.ScheduledDate == "01/09/2026" && r.IsPending);
+
+        var late = orders.IssuePlanGroup(planId, "01/09/2026", a, 1, null);
+        Assert.True(late.Ok, late.Message);
+        var lateOrder = Assert.Single(host.Get<DatesErpDbContext>().ProductionOrders.Include(o => o.Items));
+        Assert.Equal(new DateTime(2026, 9, 1), lateOrder.ProductionDate);
+        Assert.Equal(200, lateOrder.Items.Single().PlannedCartons);
+    }
+
+    [Fact]
     public void All_Customers_Are_Issued_With_Their_Own_Identity()
     {
         var (host, a, b) = Seed2(); using var _host = host;

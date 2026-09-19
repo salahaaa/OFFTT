@@ -20,16 +20,27 @@ public class OrdersScreenToolbarTests
     private static string Read(string rel) => File.ReadAllText(Path.Combine(RepoRoot(), rel));
 
     [Fact]
-    public void Save_Button_Lives_At_The_Screen_Head_Above_The_Scrolling_Content()
+    public void Grid_Contains_Only_Issue_Actions_And_Classic_Actions_Live_In_The_Toolbar()
     {
         string xaml = Read("src/DatesErp.Desktop/Views/Screens/OrdersView.xaml");
+        string screen = Read("src/DatesErp.Desktop/Views/Screens/OrdersView.xaml.cs");
         string cs = Read("src/DatesErp.Desktop/Views/Screens/OrdersWindows.cs");
-        Assert.Contains("x:Name=\"SaveBtn\"", xaml);
-        Assert.Contains("Click=\"Save_Click\"", xaml);
-        int issue = xaml.IndexOf("IssueTodayBtn", StringComparison.Ordinal);
-        int save = xaml.IndexOf("x:Name=\"SaveBtn\"", StringComparison.Ordinal);
-        int grid = xaml.IndexOf("x:Name=\"TodayGrid\"", StringComparison.Ordinal);
-        Assert.True(issue > 0 && save > issue && grid > save, "شريط الحفظ فوق جدول اليوم");
+        Assert.Contains("x:Name=\"IssueTodayBtn\"", xaml);
+        Assert.Contains("x:Name=\"IssueSelectedBtn\"", xaml);
+        Assert.Contains("x:Name=\"SelectAllBtn\"", xaml);
+        Assert.DoesNotContain("x:Name=\"AddFromPlanBtn\"", xaml);
+        Assert.DoesNotContain("x:Name=\"EditBtn\"", xaml);
+        Assert.DoesNotContain("x:Name=\"SaveBtn\"", xaml);
+        Assert.DoesNotContain("x:Name=\"SearchBtn\"", xaml);
+        Assert.DoesNotContain("x:Name=\"DeleteBtn\"", xaml);
+        Assert.DoesNotContain("EditableCartons", xaml);
+        Assert.Contains(".WithNew", screen);
+        Assert.Contains(".WithEdit", screen);
+        Assert.Contains(".WithSave", screen);
+        Assert.Contains(".WithSearch", screen);
+        Assert.Contains(".WithDelete", screen);
+        Assert.Contains(".WithPrint", screen);
+        Assert.DoesNotContain("WithCustom(\"📤 إصدار أوامر اليوم\"", screen);
         Assert.Contains("UpdateOrderHeader(_orderId, notes: _notesBox.Text ?? \"\")", cs);
         Assert.Contains("ملاحظات الأمر", cs);
         Assert.DoesNotContain("head.Children.Add(BuildTopBar());", cs);
@@ -38,13 +49,8 @@ public class OrdersScreenToolbarTests
     [Fact]
     public void All_Classic_Buttons_Are_Present_At_The_Head()
     {
-        string xaml = Read("src/DatesErp.Desktop/Views/Screens/OrdersView.xaml");
         string cs = Read("src/DatesErp.Desktop/Views/Screens/OrdersWindows.cs");
-        Assert.Contains("➕ إضافة أمر من الخطة", xaml);
-        Assert.Contains("✏️ تعديل", xaml);
-        Assert.Contains("💾 حفظ", xaml);
-        Assert.Contains("🔍 بحث", xaml);
-        Assert.Contains("🗑 حذف المسودة", xaml);
+        Assert.Contains("التاريخ المجدول", Read("src/DatesErp.Desktop/Views/Screens/OrdersWindows.cs"));
         Assert.Contains("SearchOrders", cs);
         Assert.Contains("GetPendingPlanGroups", cs);
         Assert.Contains("IssuePlanGroup(", cs);
@@ -78,5 +84,7 @@ public class OrdersScreenToolbarTests
         Assert.Contains("هوية بند أمر الإنتاج وكميته يجب أن تطابق الخطة المعتمدة تماماً", today);
         Assert.Contains("أمر الإنتاج لا ينشأ يدوياً؛ يلزم مرجع خطة معتمدة", today);
         Assert.Contains("IssuePlanGroup", today);
+        Assert.Contains("GetScheduledProduction", Read("src/DatesErp.Desktop/Views/Screens/OrdersView.xaml.cs"));
+        Assert.Contains("ScheduledDate", Read("src/DatesErp.Core/Interfaces/Services/TodayProductionDto.cs"));
     }
 }

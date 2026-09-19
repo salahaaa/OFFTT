@@ -26,7 +26,8 @@ public partial class OrdersView : UserControl
     {
         InitializeComponent();
         _isolated = load != null;
-        _load = load ?? (() => { using var scope = AppContainer.NewScope(); return scope.ServiceProvider.GetRequiredService<IProductionOrderService>().GetTodayProduction(); });
+        // شاشة أوامر الإنتاج تعرض كل الخطط المعتمدة المجدولة؛ إصدار «اليوم» له زر مستقل وحارس مستقل.
+        _load = load ?? (() => { using var scope = AppContainer.NewScope(); return scope.ServiceProvider.GetRequiredService<IProductionOrderService>().GetScheduledProduction(); });
         _issue = issue ?? (() => { using var scope = AppContainer.NewScope(); return scope.ServiceProvider.GetRequiredService<IProductionOrderService>().IssueTodayOrders(); });
         _timer.Tick += (_, _) => RefreshToday();
         Loaded += (_, _) =>
@@ -43,7 +44,7 @@ public partial class OrdersView : UserControl
 
     public void AttachChrome(Views.ErpChrome chrome)
     {
-        chrome.SetModule("أمر الإنتاج — شاشة واحدة: اليوم + المستند");
+        chrome.SetModule("أمر الإنتاج — شاشة واحدة: الخطط المجدولة + المستند");
         // عنوان الشاشة للعرض فقط؛ بوابة الأزرار والصلاحيات تستخدم كود الوحدة الثابت.
         chrome.SetPermissionModule("production");
         chrome.SetScreenCode("MRPMPS1007");
@@ -55,7 +56,6 @@ public partial class OrdersView : UserControl
             .WithDelete((_, _) => Delete_Click(null, null))
             .WithRefresh((_, _) => RefreshToday())
             .WithPrint((_, _) => Print_Click(null, null))
-            .WithCustom("📤 إصدار أوامر اليوم", "ErpApproveButton", (_, _) => IssueToday_Click(null, null), "إصدار كل بنود اليوم المعتمدة")
             .WithExit((_, _) => (Window.GetWindow(this) as MainWindow)?.OpenScreen("dashboard")));
         chrome.SetBody(this);
         chrome.CloseRequested += (_, _) => (Window.GetWindow(this) as MainWindow)?.OpenScreen("dashboard");
@@ -67,16 +67,12 @@ public partial class OrdersView : UserControl
         {
             int? selected = (TodayGrid.SelectedItem as TodayProductionRowDto)?.PlanItemId;
             var next = _load();
-            // §1.50.61 — إصدار جماعي: تهيئة EditableCartons و IsSelected
-            foreach (var r in next.Rows)
-            {
-                if (r.EditableCartons <= 0) r.EditableCartons = r.PlannedCartons;
-                // Preserve selection across refresh if same item was selected before
-            }
+            // صفوف الخطة للعرض والتحديد فقط؛ لا تهيئة لكمية قابلة للتحرير هنا.
             _sheet = next;
-            DayLabel.Text = $"اليوم: {next.Day:dd/MM/yyyy} — تاريخ العمل من الخادم";
+            DayLabel.Text = $"الخطط المجدولة — تاريخ العمل: {next.Day:dd/MM/yyyy}";
             var open = next.Rows.Where(r => !r.DayClosed).ToList();
-            DayHint.Text = open.Count == 0 && next.Rows.Count > 0
+            var todayRows = next.Rows.Where(r => r.IsToday).ToList();
+            DayHint.Text = todayRows.Count > 0 && todayRows.All(r => r.DayClosed)
                 ? "أُقفل يوم جميع بنود اليوم ✓ — بقاياهم في «تسليم الإنتاج» كسجلات تم التسجيل وفي التقارير."
                 : next.Message;
             _syncing = true;
@@ -86,11 +82,11 @@ public partial class OrdersView : UserControl
             _syncing = false;
             DayChip.Text = $"📅 اليوم: {next.Day:dd/MM/yyyy}";
             var closed = next.Rows.Count(r => r.DayClosed);
-            ItemsChip.Text = $"📦 بنود اليوم المتبقية: {open.Count}";
+            ItemsChip.Text = $"📦 البنود المجدولة المعروضة: {open.Count}";
             IssuedChip.Text = $"🗂 أوامر صادرة: {next.Rows.Count(r => r.OrderId != null)}";
             PendingChip.Text = $"⏳ بانتظار الإصدار: {open.Count(r => r.IsPending)}";
-            TotCartonsBox.Text = $"كراتين اليوم المتبقية: {open.Sum(r => r.PlannedCartons):N0}";
-            TotQtyBox.Text = $"الوزن المتبقي: {open.Sum(r => r.PlannedKg):N1} كجم";
+            TotCartonsBox.Text = $"الكراتين المجدولة: {open.Sum(r => r.PlannedCartons):N0}";
+            TotQtyBox.Text = $"الوزن المجدول: {open.Sum(r => r.PlannedKg):N1} كجم";
             TotCustsBox.Text = $"عملاء: {open.Select(r => r.CustomerId).Distinct().Count()}";
             TotLinesBox.Text = $"خطوط: {open.Select(r => r.LineId).Distinct().Count()}";
             DayClosedChip.Text = $"🔒 أُقفل يومه: {closed}";
@@ -102,12 +98,12 @@ public partial class OrdersView : UserControl
         {
             _sheet = null; TodayGrid.ItemsSource = null;
             IssueTodayBtn.IsEnabled = false;
-            ItemsChip.Text = "📦 بنود اليوم: 0"; IssuedChip.Text = "🗂 أوامر صادرة: 0";
+            ItemsChip.Text = "📦 البنود المجدولة: 0"; IssuedChip.Text = "🗂 أوامر صادرة: 0";
             PendingChip.Text = "⏳ بانتظار الإصدار: 0";
-            TotCartonsBox.Text = "كراتين اليوم: 0"; TotQtyBox.Text = "الوزن: 0 كجم";
+            TotCartonsBox.Text = "الكراتين المجدولة: 0"; TotQtyBox.Text = "الوزن المجدول: 0 كجم";
             TotCustsBox.Text = "عملاء: 0"; TotLinesBox.Text = "خطوط: 0";
             ClearDetails();
-            DayHint.Text = "تعذر تحميل خطة اليوم المعتمدة؛ لا إصدار من بيانات قديمة. حدّث الشاشة بعد معالجة الاتصال/الصلاحية.";
+            DayHint.Text = "تعذر تحميل الخطط المجدولة المعتمدة؛ لا إصدار من بيانات قديمة. حدّث الشاشة بعد معالجة الاتصال/الصلاحية.";
             if (!_isolated) AppContainer.Get<DialogService>().HandleException(ex, "Orders.Today");
             else throw;
         }
@@ -149,22 +145,22 @@ public partial class OrdersView : UserControl
         if (_sheet?.Rows == null) return;
         var sel = _sheet.Rows.Where(r => r.IsPending && r.IsSelected).ToList();
         if (sel.Count == 0) { AppContainer.Get<DialogService>().Info("حدد بنداً واحداً على الأقل من الجدول (✓)."); return; }
-        if (sel.Any(r => r.EditableCartons <= 0)) { AppContainer.Get<DialogService>().Error("بعض البنود المحددة كميتها ≤ 0 — صححها قبل الإصدار (الخلفية حمراء 7-ز)."); return; }
-        if (!_isolated && !AppContainer.Get<DialogService>().Confirm($"إصدار {sel.Count} بنداً محدداً فقط؟")) return;
+        // التحديد يختار المجموعة الحقيقية؛ الإصدار ينقل كل بنودها الأصلية دون إصدار جزئي.
+        var groups = sel.GroupBy(r => new { r.PlanId, r.ScheduledDate, r.CustomerId, r.ShiftId, r.LineId }).ToList();
+        if (!_isolated && !AppContainer.Get<DialogService>().Confirm($"إصدار {groups.Count} مجموعة من البنود المحددة بكميات الخطة الأصلية؟")) return;
         try
         {
             int issued = 0;
             using var scope = AppContainer.NewScope();
             var svc = scope.ServiceProvider.GetRequiredService<IProductionOrderService>();
-            // §1.50.61 — إصدار جماعي حسب المجموعات المميزة
-            var groups = sel.GroupBy(r => new { r.PlanId, r.CustomerId, r.ShiftId, r.LineId }).ToList();
+            // كل مجموعة تحمل تاريخها وعميلها وورديتها وخطها؛ لا نرسلها لمسار اليوم فقط.
             foreach (var g in groups)
             {
-                var res = svc.IssueTodayGroup(g.Key.PlanId, g.Key.CustomerId, g.Key.ShiftId, g.Key.LineId);
+                var res = svc.IssuePlanGroup(g.Key.PlanId, g.Key.ScheduledDate, g.Key.CustomerId, g.Key.ShiftId, g.Key.LineId);
                 if (!res.Ok) { AppContainer.Get<DialogService>().Error(res.Message); return; }
                 issued++;
             }
-            AppContainer.Get<DialogService>().Info($"تم إصدار {issued} أمر من البنود المحددة ({sel.Count} بنداً).");
+            AppContainer.Get<DialogService>().Info($"تم إصدار {issued} أمر من مجموعات البنود المحددة ({groups.Count} مجموعة) بكميات الخطة الأصلية.");
             RefreshToday();
         }
         catch (Exception ex)
@@ -215,6 +211,6 @@ public partial class OrdersView : UserControl
         if (_syncing) return;
         if ((TodayGrid.SelectedItem as TodayProductionRowDto)?.OrderId is int id) ShowOrderInPlace(id);
         else if ((TodayGrid.SelectedItem as TodayProductionRowDto)?.IsPending == true)
-            DetailsHint.Text = "هذا البند بانتظار الإصدار — اضغط «📤 إصدار أوامر اليوم» أو «➕ إضافة أمر من الخطة».";
+            DetailsHint.Text = "هذا البند بانتظار الإصدار — حدده ثم اضغط «✅ إصدار المحدد فقط» أو استخدم «➕ إضافة أمر من الخطة».";
     }
 }

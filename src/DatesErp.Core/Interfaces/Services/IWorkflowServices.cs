@@ -688,6 +688,8 @@ public interface IProductionOrderService
     TodayProductionDto GetTodayProduction();
     /// <summary>Atomic, idempotent issuance of all pending today rows. No client-selected items or quantities.</summary>
     OpResult IssueTodayOrders();
+    /// <summary>قراءة جميع بنود الخطط المعتمدة المجدولة، بما فيها السابقة والحالية والقادمة، للعرض فقط.</summary>
+    TodayProductionDto GetScheduledProduction();
     OpResult SaveOrder(string sourceType, int? sourcePlanId, int? customerId, string productionDate, int? shiftId, int? lineId, List<OrderItemDto> items);
     /// <summary>§بنود الخطة القابلة للتحويل إلى أوامر — بالمرجع الكامل والمتبقي بعد الأوامر السابقة.</summary>
     List<OrderableItemDto> GetOrderableItems(int planId);
@@ -720,7 +722,7 @@ public interface IProductionOrderService
 
     // §v1.50.34 — الأزرار الكلاسيكية على شاشة أمر الإنتاج: إضافة من الخطة (لمجموعة واحدة)، بحث، وحفظ مسودة
     List<TodayPendingGroupDto> GetTodayPendingGroups();
-    /// <summary>المجموعات غير الصادرة من الخطط المعتمدة لليوم أو الأيام القادمة.</summary>
+    /// <summary>المجموعات غير الصادرة من الخطط المعتمدة السابقة والحالية والقادمة.</summary>
     List<TodayPendingGroupDto> GetPendingPlanGroups();
     OpResult IssueTodayGroup(int planId, int? customerId, int? shiftId, int? lineId);
     /// <summary>إنشاء أمر لمجموعة مجدولة في تاريخ اليوم أو تاريخ مستقبلي، دون إدخال يدوي.</summary>
