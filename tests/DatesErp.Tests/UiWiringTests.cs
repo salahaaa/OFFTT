@@ -119,6 +119,31 @@ public class UiWiringTests
     }
 
     /// <summary>
+    /// التحقق من إصلاح 1.50.73: الحفظ متاح قبل الصفوف وقبل نتيجة الطاقة،
+    /// بينما تبقى الطاقة شرطاً عند الضغط، والقفل وحده يعطل الأزرار.
+    /// </summary>
+    [Fact]
+    public void Planning_Save_Is_Gated_Only_By_Lock_Not_Capacity()
+    {
+        var root = RepoRoot();
+        var cap = File.ReadAllText(Path.Combine(root, "src", "DatesErp.Desktop", "Views", "Screens", "PlanningView.Capacity.cs"));
+        var planning = File.ReadAllText(Path.Combine(root, "src", "DatesErp.Desktop", "Views", "Screens", "PlanningView.xaml.cs"));
+
+        Assert.Contains("SaveActionBtn.IsEnabled = !_locked", cap);
+        Assert.Contains("_toolbar.SaveBtn.IsEnabled = !_locked", cap);
+        Assert.Contains("if (_toolbar.SaveBtn != null) _toolbar.SaveBtn.IsEnabled = !locked;", planning);
+        Assert.Contains("if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !locked;", planning);
+        Assert.DoesNotContain("SaveActionBtn.IsEnabled = !_locked &&", cap);
+        Assert.DoesNotContain("SaveBtn.IsEnabled = !_locked &&", cap);
+        Assert.DoesNotContain("SaveBtn.IsEnabled = !locked &&", planning);
+        Assert.DoesNotContain("SaveActionBtn.IsEnabled = !locked &&", planning);
+        Assert.Contains("if (!_capacityValid)", planning);
+        Assert.Contains("validRows.Count == 0", planning);
+        Assert.Contains("أدخل عنوان الخطة", planning);
+        Assert.Contains("SetPermissionModule(\"planning\")", planning);
+    }
+
+    /// <summary>
     /// عمليات دورة العمل الحرجة يجب أن تكون قابلة للوصول من الواجهات —
     /// وإلا كانت «خدمة بلا واجهة» (نمط وقع فعلاً: MarkInvoiced وApprove وUnitsAndPacksWindow).
     /// </summary>

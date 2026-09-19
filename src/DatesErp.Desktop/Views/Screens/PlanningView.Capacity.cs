@@ -78,16 +78,14 @@ public partial class PlanningView
             foreach (var empty in _rows.Where(r => r.LotId == null && r.ProductId == 0)) empty.Capacity = null;
             foreach (var inc in allValid.Where(r => r.Cartons <= 0)) inc.Capacity = null;
         }
-        catch (Exception ex) { ErrorLog.Write(ex, "Planning.CapacityBar"); _capacityValid = false; RemainingBadge.Text = "تعذر التحقق من الطاقة؛ الحفظ موقوف."; }
+        catch (Exception ex) { ErrorLog.Write(ex, "Planning.CapacityBar"); _capacityValid = false; RemainingBadge.Text = "تعذر التحقق من الطاقة؛ راجع البيانات ثم أعد المحاولة."; }
         finally
         {
             _updatingCapacity = false;
-            // §FIX 1.50.70: زر الحفظ كان يتشفر (disabled) لأن _capacityValid يتطلب IsValid + completeRows>0
-            // المستخدم يريد أن يضغط حفظ ليرى سبب الرفض من الخلفية، لا أن يبقى الزر معطل بلا تفسير.
-            // نجعل الزر مفعلاً ما دام هناك بند واحد له هوية (Lot/Product)، والتحقق الحقيقي في Save_Click والـ Backend.
-            bool hasAnyRow = _rows.Any(r => r.LotId != null || r.ProductId != 0);
-            if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !_locked && hasAnyRow;
-            if (_toolbar?.SaveBtn != null) _toolbar.SaveBtn.IsEnabled = !_locked && hasAnyRow;
+            // §FIX 1.50.73: الطاقة تُعرض وتُراجع عند الحفظ، لكنها لا تعطل الزر.
+            // التفعيل الوحيد هنا هو حالة القفل؛ Save_Click يعطي رسالة التحقق الواضحة.
+            if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !_locked;
+            if (_toolbar?.SaveBtn != null) _toolbar.SaveBtn.IsEnabled = !_locked;
         }
     }
 }

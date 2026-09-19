@@ -117,6 +117,8 @@ public partial class PlanningView : UserControl
     public void AttachChrome(Views.ErpChrome chrome)
     {
         chrome.SetModule("خطة الإنتاج — التخطيط والجدولة (MPS)");
+        // وحدة الصلاحيات ثابتة بالكود، وليست عنوان الشاشة المعروض للمستخدم.
+        chrome.SetPermissionModule("planning");
         chrome.SetScreenCode("MRPMPS1001");
         _toolbar = new Views.ErpToolbar()
             .WithNew((_, _) => NewPlan(), "خطة إنتاج جديدة (F2)")
@@ -911,7 +913,6 @@ public partial class PlanningView : UserControl
             RowsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
             RowsGrid.CommitEdit(DataGridEditingUnit.Row, true);
             UpdateCapacityBar();
-            if (!_capacityValid) { AppContainer.Get<DialogService>().Error(RemainingBadge.Text); return; }
             if (string.IsNullOrWhiteSpace(TitleBox.Text)) { AppContainer.Get<DialogService>().Error("أدخل عنوان الخطة."); return; }
             // §1.50.67 FIX2: عند الضغط على صنف جديد يتشفر الحفظ — تجاهل الصفوف غير المكتملة (كراتين 0) عند الحفظ
             // مثل UpdateCapacityBar: فقط البنود المكتملة (هوية + كراتين>0) تُحفظ، الصف الجديد الفارغ لا يعطل الحفظ
@@ -922,6 +923,8 @@ public partial class PlanningView : UserControl
                 if (allValid.Count > 0) { AppContainer.Get<DialogService>().Error("أكمل كمية الكراتين للبند الجديد (يجب أن تكون >0) أو احذفه — الصفوف الفارغة لا تُحفظ."); return; }
                 AppContainer.Get<DialogService>().Error("أضف بنداً واحداً على الأقل — اختر دفعة من الجدول مباشرة."); return;
             }
+            // فحص الطاقة لا يعطل الزر؛ بعد اكتمال البيانات يُعرض سببه هنا عند الضغط على حفظ.
+            if (!_capacityValid) { AppContainer.Get<DialogService>().Error(RemainingBadge.Text); return; }
             // §B80: فرض تاريخ كل إنتاج — كل بند بتاريخ صالح داخل فترة الخطة (قبل الخلفية أيضاً)
             var perStart = (StartBox.SelectedDate ?? DateTime.Today).Date;
             var perEnd = (EndBox.SelectedDate ?? DateTime.Today).Date;
@@ -1271,16 +1274,14 @@ public partial class PlanningView : UserControl
         if (ApproveRadio != null) ApproveRadio.IsEnabled = !locked;
         if (_toolbar != null)
         {
-            // §FIX 1.50.70: زر الحفظ يتشفر — فك الارتباط بـ _capacityValid، يبقى مفعلاً ما دام هناك صفوف
-            bool hasAnyRow = _rows.Any(r => r.LotId != null || r.ProductId != 0);
-            if (_toolbar.SaveBtn != null) _toolbar.SaveBtn.IsEnabled = !locked && hasAnyRow;
+            // §FIX 1.50.73: القفل وحده يتحكم في تفعيل الحفظ؛ التحقق يتم عند الضغط.
+            if (_toolbar.SaveBtn != null) _toolbar.SaveBtn.IsEnabled = !locked;
             if (_toolbar.NewBtn != null) _toolbar.NewBtn.IsEnabled = true; // خطة جديدة دائماً متاحة
             if (_toolbar.ApproveBtn != null) _toolbar.ApproveBtn.IsEnabled = !locked;
             if (_toolbar.DeleteBtn != null) _toolbar.DeleteBtn.IsEnabled = !locked;
         }
-        // §FIX 1.50.70: نفس الإصلاح لزر الحفظ الرئيسي في الشاشة
-        bool hasAny = _rows.Any(r => r.LotId != null || r.ProductId != 0);
-        if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !locked && hasAny;
+        // §FIX 1.50.73: نفس القاعدة لزر الحفظ الرئيسي في الشاشة.
+        if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !locked;
         if (ApproveActionBtn != null) ApproveActionBtn.IsEnabled = !locked;
         if (SubmitBtn != null) SubmitBtn.IsEnabled = !locked;
     }
@@ -1757,4 +1758,3 @@ public partial class PlanningView : UserControl
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Planning.ImportExcel"); }
     }
 }
-
