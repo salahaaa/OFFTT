@@ -27,6 +27,7 @@ public class OrdersScreenToolbarTests
         string cs = Read("src/DatesErp.Desktop/Views/Screens/OrdersWindows.cs");
         Assert.Contains("x:Name=\"IssueTodayBtn\"", xaml);
         Assert.Contains("x:Name=\"IssueSelectedBtn\"", xaml);
+        Assert.Contains("x:Name=\"ApproveSelectedBtn\"", xaml);
         Assert.Contains("x:Name=\"SelectAllBtn\"", xaml);
         Assert.DoesNotContain("x:Name=\"AddFromPlanBtn\"", xaml);
         Assert.DoesNotContain("x:Name=\"EditBtn\"", xaml);
@@ -41,6 +42,8 @@ public class OrdersScreenToolbarTests
         Assert.Contains(".WithDelete", screen);
         Assert.Contains(".WithPrint", screen);
         Assert.Contains("IssueSelectedBtn.IsEnabled = open.Any(r => r.IsPending) && canCreate", screen);
+        Assert.Contains("ApproveSelectedBtn.IsEnabled", screen);
+        Assert.Contains("ApproveSelected_Click", screen);
         Assert.Contains("TodayGrid.SelectedItem is TodayProductionRowDto current && current.IsPending", screen);
         Assert.DoesNotContain("WithCustom(\"📤 إصدار أوامر اليوم\"", screen);
         Assert.Contains("UpdateOrderHeader(_orderId, notes: _notesBox.Text ?? \"\")", cs);

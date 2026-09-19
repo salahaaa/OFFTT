@@ -2,9 +2,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using DatesErp.Core.Common;
 using DatesErp.Core.Interfaces.Services;
 using DatesErp.Desktop.Services;
-using DatesErp.Infrastructure.Session;
 
 namespace DatesErp.Desktop.Views.Screens;
 
@@ -90,17 +90,19 @@ public partial class OrdersView : UserControl
             TotCustsBox.Text = $"عملاء: {open.Select(r => r.CustomerId).Distinct().Count()}";
             TotLinesBox.Text = $"خطوط: {open.Select(r => r.LineId).Distinct().Count()}";
             DayClosedChip.Text = $"🔒 أُقفل يومه: {closed}";
-            bool canCreate = _isolated || AppContainer.Get<SessionContext>().Can("production", "Create");
+            bool canCreate = _isolated || DatesErp.Desktop.Views.PermissionGate.Can("production", "Create");
+            bool canApprove = _isolated || DatesErp.Desktop.Views.PermissionGate.Can("production", "Approve");
             IssueTodayBtn.IsEnabled = next.CanIssue && canCreate;
             // الإصدار اليدوي من الجدول يشمل التاريخ السابق والحالي والقادم، بعد تحديد صف/مجموعة معلقة.
             IssueSelectedBtn.IsEnabled = open.Any(r => r.IsPending) && canCreate;
+            ApproveSelectedBtn.IsEnabled = open.Any(r => r.OrderId != null && r.Status == DocStatuses.ToArabic(DocStatuses.Draft)) && canApprove;
             if (TodayGrid.SelectedItem is TodayProductionRowDto row && row.OrderId is int oid)
                 ShowOrderInPlace(oid);
         }
         catch (Exception ex)
         {
             _sheet = null; TodayGrid.ItemsSource = null;
-            IssueTodayBtn.IsEnabled = false; IssueSelectedBtn.IsEnabled = false;
+            IssueTodayBtn.IsEnabled = false; IssueSelectedBtn.IsEnabled = false; ApproveSelectedBtn.IsEnabled = false;
             ItemsChip.Text = "📦 البنود المجدولة: 0"; IssuedChip.Text = "🗂 أوامر صادرة: 0";
             PendingChip.Text = "⏳ بانتظار الإصدار: 0";
             TotCartonsBox.Text = "الكراتين المجدولة: 0"; TotQtyBox.Text = "الوزن المجدول: 0 كجم";
@@ -172,6 +174,41 @@ public partial class OrdersView : UserControl
         catch (Exception ex)
         {
             if (!_isolated) AppContainer.Get<DialogService>().HandleException(ex, "Orders.IssueSelected");
+            else throw;
+        }
+    }
+
+    private void ApproveSelected_Click(object sender, RoutedEventArgs e)
+    {
+        if (_sheet?.Rows == null) return;
+        var selected = _sheet.Rows
+            .Where(r => r.OrderId != null && r.Status == DocStatuses.ToArabic(DocStatuses.Draft) && r.IsSelected)
+            .ToList();
+        if (selected.Count == 0 && TodayGrid.SelectedItem is TodayProductionRowDto current
+            && current.OrderId != null && current.Status == DocStatuses.ToArabic(DocStatuses.Draft))
+            selected.Add(current);
+        var orderIds = selected.Where(r => r.OrderId != null).Select(r => r.OrderId!.Value).Distinct().ToList();
+        if (orderIds.Count == 0)
+        {
+            AppContainer.Get<DialogService>().Info("حدد أمراً في حالة مسودة أولاً، ثم اضغط «اعتماد الأمر».");
+            return;
+        }
+        if (!_isolated && !AppContainer.Get<DialogService>().Confirm($"اعتماد {orderIds.Count} أمر إنتاج؟ سيُعاد فحص الخطة والطاقة والعبوة والدفعات قبل الانتقال للمرحلة التالية.")) return;
+        try
+        {
+            using var scope = AppContainer.NewScope();
+            var svc = scope.ServiceProvider.GetRequiredService<IProductionOrderService>();
+            foreach (var id in orderIds)
+            {
+                var result = svc.ApproveOrder(id);
+                if (!result.Ok) { AppContainer.Get<DialogService>().Error(result.Message); return; }
+            }
+            AppContainer.Get<DialogService>().Info($"تم اعتماد {orderIds.Count} أمر إنتاج والانتقال إلى حالة الجدولة.");
+            RefreshToday();
+        }
+        catch (Exception ex)
+        {
+            if (!_isolated) AppContainer.Get<DialogService>().HandleException(ex, "Orders.ApproveSelected");
             else throw;
         }
     }
