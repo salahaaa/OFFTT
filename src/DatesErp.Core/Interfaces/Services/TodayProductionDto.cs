@@ -45,6 +45,8 @@ public class TodayPendingGroupDto
 {
     public int PlanId { get; init; }
     public string PlanNumber { get; init; }
+    /// <summary>تاريخ البند المجدول؛ قد يكون اليوم أو تاريخاً مستقبلياً في «إضافة من الخطة».</summary>
+    public string ScheduledDate { get; init; }
     public int? CustomerId { get; init; }
     public string CustomerName { get; init; }
     public int? ShiftId { get; init; }

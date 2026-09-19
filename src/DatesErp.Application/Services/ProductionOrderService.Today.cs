@@ -19,19 +19,26 @@ public partial class ProductionOrderService
         public int? Line => Item.SuggestedLineId ?? Plan.LineId;
     }
 
-    private List<DayEntry> TodayEntries(DateTime day)
+    private List<DayEntry> ApprovedScheduledEntries(DateTime? day = null)
     {
-        // §1.50.66 — Production Order ينشأ فقط من Approved Production Plan (لا ملغاة ولا مغلقة)
-        // اليوم فقط من الخطط المعتمدة حرفياً، لا المغلقة
+        // Production Order ينشأ فقط من خطة معتمدة (لا ملغاة ولا مغلقة).
         var plans = Db.ProductionPlans.AsNoTracking()
             .Where(p => p.IsApproved && p.Status == DocStatuses.Approved && !p.IsClosed)
             .ToDictionary(p => p.Id);
         var ids = plans.Keys.ToList();
-        return Db.ProductionPlanItems.AsNoTracking()
-            .Where(i => ids.Contains(i.PlanId) && i.ScheduledDate != null && i.ScheduledDate.Value.Date == day)
-            .OrderBy(i => i.PlanId).ThenBy(i => i.PriorityNo).ThenBy(i => i.Id).ToList()
-            .Select(i => new DayEntry(plans[i.PlanId], i)).ToList();
+        var items = Db.ProductionPlanItems.AsNoTracking()
+            .Where(i => ids.Contains(i.PlanId) && i.ScheduledDate != null);
+        if (day.HasValue)
+        {
+            var start = day.Value.Date;
+            var end = start.AddDays(1);
+            items = items.Where(i => i.ScheduledDate >= start && i.ScheduledDate < end);
+        }
+        return items.OrderBy(i => i.ScheduledDate).ThenBy(i => i.PlanId).ThenBy(i => i.PriorityNo).ThenBy(i => i.Id)
+            .ToList().Select(i => new DayEntry(plans[i.PlanId], i)).ToList();
     }
+
+    private List<DayEntry> TodayEntries(DateTime day) => ApprovedScheduledEntries(day);
 
     private List<ProductionOrderItem> ExistingItems(IEnumerable<int> planItemIds)
     {
@@ -146,25 +153,42 @@ public partial class ProductionOrderService
 
     private OpResult SaveTodayGroup(string sourceType, int? planId, int? customerId, string productionDate,
         int? shiftId, int? lineId, List<OrderItemDto> requested)
+        => SaveScheduledGroup(sourceType, planId, customerId, productionDate, shiftId, lineId, requested, requireToday: true);
+
+    /// <summary>
+    /// ينشئ أمراً من مجموعة بنود خطة معتمدة. مسار اليوم يستدعيه مع requireToday=true؛
+    /// ومسار «إضافة من الخطط» يسمح بتاريخ اليوم المجدول أو تاريخ لاحق فقط، مع بقاء
+    /// الهوية والكميات ومراجع الخطة وحراس الطاقة كما هي.
+    /// </summary>
+    private OpResult SaveScheduledGroup(string sourceType, int? planId, int? customerId, string productionDate,
+        int? shiftId, int? lineId, List<OrderItemDto> requested, bool requireToday)
     {
-        var day = Db.BusinessNow.Date;
-        // §1.50.66.1 — أمر الإنتاج ينشأ فقط من خطة معتمدة
-        if (sourceType != "FromPlan" || planId == null) throw new DomainException("أمر الإنتاج لا ينشأ يدوياً؛ يلزم مرجع خطة اليوم المعتمدة (Approved Production Plan فقط).");
+        if (sourceType != "FromPlan" || planId == null)
+            throw new DomainException("أمر الإنتاج لا ينشأ يدوياً؛ يلزم مرجع خطة معتمدة (Approved Production Plan فقط).");
+        if (!UiFormat.TryParseDate(productionDate, out var day))
+            throw new DomainException("تاريخ أمر الإنتاج غير صالح؛ اختر تاريخ البند من الخطة.");
+        day = day.Date;
+        var businessDay = Db.BusinessNow.Date;
+        if (requireToday && day != businessDay)
+            throw new DomainException("أمر إنتاج اليوم يجب أن يطابق يوم العمل الحالي.");
+        if (!requireToday && day < businessDay)
+            throw new DomainException("لا يمكن إنشاء أمر إنتاج بتاريخ مجدول منتهٍ؛ راجع تاريخ الخطة أو استخدم تسوية رسمية.");
+
         var planCheck = Db.ProductionPlans.AsNoTracking().FirstOrDefault(p => p.Id == planId);
         if (planCheck == null) throw new DomainException("الخطة المرجعية غير موجودة.");
         if (!planCheck.IsApproved || planCheck.Status != DocStatuses.Approved || planCheck.IsClosed)
             throw new DomainException($"لا يمكن إنشاء أمر إنتاج من خطة غير معتمدة أو ملغاة أو مغلقة — حالة الخطة: {DocStatuses.ToArabic(planCheck.Status)}", "PLAN_NOT_APPROVED");
-        if (!UiFormat.TryParseDate(productionDate, out var date) || date.Date != day)
-            throw new DomainException("أمر الإنتاج لليوم الحالي فقط؛ لا تنفيذ لخطة يوم سابق أو لاحق.");
         if (requested == null || requested.Count == 0 || requested.Any(i => i.PlanItemId == null) || requested.Select(i => i.PlanItemId).Distinct().Count() != requested.Count)
             throw new DomainException("يلزم نقل بنود الخطة الأصلية كاملة دون بنود يدوية أو مكررة.");
+
         var entries = TodayEntries(day).Where(e => e.Plan.Id == planId && e.Plan.Status == DocStatuses.Approved && !e.Plan.IsClosed && !e.Item.IsClosed).ToList();
-        if (entries.Count == 0) throw new DomainException(NoTodayPlanMessage);
+        if (entries.Count == 0)
+            throw new DomainException(requireToday ? NoTodayPlanMessage : "لا توجد بنود خطة معتمدة ومجدولة بهذا التاريخ.");
         var existing = ExistingItems(entries.Select(e => e.Item.Id));
         var group = entries.Where(e => e.Item.CustomerId == customerId && e.Shift == shiftId && e.Line == lineId
             && !existing.Any(i => i.PlanItemId == e.Item.Id)).ToList();
         if (group.Count == 0 || !group.Select(e => e.Item.Id).ToHashSet().SetEquals(requested.Select(i => i.PlanItemId.Value)))
-            throw new DomainException("بنود الأمر يجب أن تطابق مجموعة الخطة المعتمدة لليوم كاملة؛ لا اختيار جزئي أو صنف إضافي أو تكرار أمر سابق.");
+            throw new DomainException($"بنود الأمر يجب أن تطابق مجموعة الخطة المعتمدة ليوم {day:dd/MM/yyyy} كاملة؛ لا اختيار جزئي أو صنف إضافي أو تكرار أمر سابق.");
         foreach (var e in group)
         {
             var dto = requested.Single(i => i.PlanItemId == e.Item.Id); var p = e.Item;
@@ -179,7 +203,6 @@ public partial class ProductionOrderService
             ProductIdentityGuard.EnsurePlanningLink(Db, p.ProductId, p.LotId, null);
             UnitsPolicy.RequireItemType(Db, p.ProductId, "Finished", "أمر الإنتاج");
             UnitsPolicy.RequireCartonWeight(Db, p.ProductId, p.PackagingTypeId, p.PlannedCartons, "تعريف الخطة عند إصدار أمر الإنتاج");
-            // Validate the approved unit definition, never silently recalculate the planned quantity.
             _ = UnitsPolicy.EnsureCartonKgConsistency(Db, p.ProductId, p.PackagingTypeId,
                 p.PlannedQtyKg, p.PlannedCartons, "راجع تعريف العبوة والخطة رسمياً؛ لا تصحح كمية الأمر هنا");
             if (p.LotId is int lotId)
@@ -204,7 +227,7 @@ public partial class ProductionOrderService
         ValidateSourceCapacity(order);
         Db.ProductionOrders.Add(order); Db.SaveChanges();
         CalculateMaterials(order); Db.SaveChanges();
-        return OpResult.Success("تم نقل بنود الخطة المعتمدة لليوم كما هي إلى أمر الإنتاج.", order.Id, order.DocumentNumber);
+        return OpResult.Success($"تم نقل بنود الخطة المعتمدة ليوم {day:dd/MM/yyyy} كما هي إلى أمر الإنتاج.", order.Id, order.DocumentNumber);
     }
 
     private static bool Matches(DayEntry e, ProductionOrder o, ProductionOrderItem i) =>
@@ -214,18 +237,26 @@ public partial class ProductionOrderService
         && i.ShipmentId == e.Item.ShipmentId && i.PackagingTypeId == e.Item.PackagingTypeId
         && i.PlannedCartons == e.Item.PlannedCartons && i.PlannedQtyKg == e.Item.PlannedQtyKg;
 
-    // ═══ §v1.50.34 — «إضافة أمر» من الشاشة: نفس انضباط الإصدار اليومي لكن لمجموعة واحدة لم تُصدر بعد ═══
-    public List<TodayPendingGroupDto> GetTodayPendingGroups()
+    // ═══ «إضافة أمر» من شاشة الإنتاج: مجموعات خطة معتمدة لم تُصدر بعد ═══
+    private List<TodayPendingGroupDto> BuildPendingGroups(IEnumerable<DayEntry> source)
     {
-        var day = Db.BusinessNow.Date;
-        var entries = TodayEntries(day).Where(e => e.Plan.Status == DocStatuses.Approved && !e.Plan.IsClosed && !e.Item.IsClosed).ToList();
+        var entries = source.Where(e => e.Plan.Status == DocStatuses.Approved && !e.Plan.IsClosed && !e.Item.IsClosed).ToList();
         var existing = ExistingItems(entries.Select(e => e.Item.Id));
         return entries.Where(e => !existing.Any(i => i.PlanItemId == e.Item.Id))
-            .GroupBy(e => new { e.Plan.Id, e.Plan.DocumentNumber, CustomerId = e.Item.CustomerId, e.Shift, e.Line })
+            .GroupBy(e => new
+            {
+                e.Plan.Id,
+                e.Plan.DocumentNumber,
+                ScheduledDate = e.Item.ScheduledDate!.Value.Date,
+                CustomerId = e.Item.CustomerId,
+                e.Shift,
+                e.Line
+            })
             .Select(g => new TodayPendingGroupDto
             {
                 PlanId = g.Key.Id,
                 PlanNumber = g.Key.DocumentNumber,
+                ScheduledDate = g.Key.ScheduledDate.ToString("dd/MM/yyyy"),
                 CustomerId = g.Key.CustomerId,
                 CustomerName = g.Key.CustomerId != null ? Db.Customers.AsNoTracking().Where(c => c.Id == g.Key.CustomerId).Select(c => c.CustomerName).FirstOrDefault() ?? "-" : "-",
                 ShiftId = g.Key.Shift,
@@ -234,7 +265,25 @@ public partial class ProductionOrderService
                 LineName = g.Key.Line != null ? Db.ProductionLines.AsNoTracking().Where(x => x.Id == g.Key.Line).Select(x => x.LineNameAr).FirstOrDefault() ?? $"خط #{g.Key.Line}" : "-",
                 ItemsCount = g.Count(),
                 Cartons = g.Sum(x => x.Item.PlannedCartons)
-            }).OrderBy(x => x.PlanId).ToList();
+            })
+            .OrderBy(x => x.ScheduledDate).ThenBy(x => x.PlanId).ThenBy(x => x.CustomerName).ToList();
+    }
+
+    public List<TodayPendingGroupDto> GetTodayPendingGroups()
+        => BuildPendingGroups(TodayEntries(Db.BusinessNow.Date));
+
+    /// <summary>
+    /// يعرض كل مجموعات الخطط المعتمدة المجدولة لليوم أو الأيام القادمة، لا اليوم الحالي فقط.
+    /// شاشة «أمر إنتاج اليوم» تبقى مقيدة بيوم العمل، أما زر «إضافة من الخطة» فيحتاج هذا المسار
+    /// حتى لا تختفي الخطط المستقبلية ولا يُجبر المستخدم على إعادة إدخال أمر يدوي.
+    /// </summary>
+    public List<TodayPendingGroupDto> GetPendingPlanGroups()
+    {
+        if (Session == null || !Session.Can("production", "View"))
+            throw new PermissionDeniedException("عرض الخطط المجدولة لأوامر الإنتاج");
+        var today = Db.BusinessNow.Date;
+        return BuildPendingGroups(ApprovedScheduledEntries()
+            .Where(e => e.Item.ScheduledDate!.Value.Date >= today));
     }
 
     public OpResult IssueTodayGroup(int planId, int? customerId, int? shiftId, int? lineId)
@@ -256,16 +305,45 @@ public partial class ProductionOrderService
         });
     }
 
-    private void ValidateTodayOrder(ProductionOrder order)
+    /// <summary>إصدار مجموعة من خطة اليوم أو من خطة مستقبلية مجدولة، مع منع التواريخ الماضية.</summary>
+    public OpResult IssuePlanGroup(int planId, string scheduledDate, int? customerId, int? shiftId, int? lineId)
     {
-        var day = Db.BusinessNow.Date;
-        if (order.ProductionDate?.Date != day || order.SourcePlanId == null || order.SourceType != "FromPlan")
-            throw new DomainException("التنفيذ لأمر مرتبط بخطة اليوم المعتمدة فقط؛ لا أمر يدوي أو من يوم آخر.");
+        Require("production", "Create");
+        return RunTodayWrite(() =>
+        {
+            if (!UiFormat.TryParseDate(scheduledDate, out var day))
+                return OpResult.Fail("تاريخ الخطة غير صالح؛ حدّث الشاشة واختر تاريخاً مجدولاً صحيحاً.");
+            day = day.Date;
+            if (day < Db.BusinessNow.Date)
+                return OpResult.Fail("تاريخ الخطة انتهى؛ لا يمكن إنشاء أمر إنتاج بأثر رجعي من شاشة الإصدار.");
+            var entries = TodayEntries(day)
+                .Where(e => e.Plan.Id == planId && e.Plan.Status == DocStatuses.Approved && !e.Plan.IsClosed && !e.Item.IsClosed
+                    && e.Item.CustomerId == customerId && e.Shift == shiftId && e.Line == lineId).ToList();
+            var existing = ExistingItems(entries.Select(e => e.Item.Id));
+            var group = entries.Where(e => !existing.Any(i => i.PlanItemId == e.Item.Id)).ToList();
+            if (group.Count == 0) return OpResult.Fail("هذه المجموعة صادرة سابقاً أو لم تعد متاحة — حدّث الشاشة.");
+            var result = SaveScheduledGroup("FromPlan", planId, customerId, day.ToString("dd/MM/yyyy"), shiftId, lineId,
+                group.Select(e => FromPlan(e.Item)).ToList(), requireToday: false);
+            if (!result.Ok) return result;
+            return OpResult.Success($"تم إنشاء أمر الإنتاج {result.DocumentNumber} ليوم {day:dd/MM/yyyy} — {group.Count} بنداً بكميات الخطة الأصلية.", result.Id, result.DocumentNumber);
+        });
+    }
+
+    private void ValidateTodayOrder(ProductionOrder order)
+        => ValidateScheduledOrder(order, requireToday: true);
+
+    private void ValidateScheduledOrder(ProductionOrder order, bool requireToday)
+    {
+        if (order.ProductionDate == null || order.SourcePlanId == null || order.SourceType != "FromPlan")
+            throw new DomainException("أمر الإنتاج يجب أن يكون مرتبطاً بخطة إنتاج معتمدة؛ لا أمر يدوي.");
+        var day = order.ProductionDate.Value.Date;
+        if (requireToday && day != Db.BusinessNow.Date)
+            throw new DomainException("التنفيذ لا يبدأ إلا لأمر يوم العمل الحالي؛ يمكن اعتماد أمر الأيام القادمة مسبقاً.");
         var entries = TodayEntries(day).Where(e => e.Plan.Id == order.SourcePlanId && e.Plan.Status == DocStatuses.Approved && !e.Plan.IsClosed && !e.Item.IsClosed
             && e.Item.CustomerId == order.CustomerId && e.Shift == order.ShiftId && e.Line == order.LineId).ToList();
         if (entries.Count == 0 || order.Items.Count != entries.Count || order.Items.Any(i => !entries.Any(e => Matches(e, order, i)))
             || order.Items.Select(i => i.PlanItemId).Distinct().Count() != order.Items.Count)
-            throw new DomainException("أمر الإنتاج لا يطابق بنود وكميات خطة اليوم المعتمدة؛ أوقف التنفيذ وراجع جهة التخطيط.");
+            throw new DomainException("أمر الإنتاج لا يطابق بنود وكميات الخطة المعتمدة؛ أوقف التنفيذ وراجع جهة التخطيط.");
         var prev = ExistingItems(entries.Select(e => e.Item.Id));
         if (prev.Any(i => i.OrderId != order.Id)) throw new DomainException("يوجد أمر آخر لنفس بند الخطة؛ يمنع التنفيذ المكرر.");
         foreach (var i in order.Items) ProductIdentityGuard.EnsurePlanningLink(Db, i.ProductId, i.LotId, null);

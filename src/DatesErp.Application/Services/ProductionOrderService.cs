@@ -378,7 +378,82 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
     public PlanIssueResult IssueOrdersFromPlan(int planId, string fromDate = null, string toDate = null, int? shiftId = null)
     {
         Require("production", "Create");
-        return new PlanIssueResult { PlanId = planId, Message = TodayOrdersOnlyMessage };
+        var result = new PlanIssueResult { PlanId = planId };
+        var plan = Db.ProductionPlans.AsNoTracking().FirstOrDefault(p => p.Id == planId);
+        if (plan == null)
+        {
+            result.Message = "الخطة غير موجودة.";
+            result.Failed.Add(result.Message);
+            return result;
+        }
+        result.PlanNumber = plan.DocumentNumber;
+        if (!plan.IsApproved || plan.Status != DocStatuses.Approved || plan.IsClosed)
+        {
+            result.Message = "لا يمكن ترحيل خطة غير معتمدة أو مغلقة.";
+            result.Failed.Add(result.Message);
+            return result;
+        }
+        DateTime? from = null, to = null;
+        if (!string.IsNullOrWhiteSpace(fromDate))
+        {
+            if (!UiFormat.TryParseDate(fromDate, out var parsed))
+            {
+                result.Message = "تاريخ البداية غير صالح.";
+                result.Failed.Add(result.Message);
+                return result;
+            }
+            from = parsed.Date;
+        }
+        if (!string.IsNullOrWhiteSpace(toDate))
+        {
+            if (!UiFormat.TryParseDate(toDate, out var parsed))
+            {
+                result.Message = "تاريخ النهاية غير صالح.";
+                result.Failed.Add(result.Message);
+                return result;
+            }
+            to = parsed.Date;
+        }
+        if (from != null && to != null && from > to)
+        {
+            result.Message = "فترة الترحيل غير صحيحة: تاريخ البداية بعد النهاية.";
+            result.Failed.Add(result.Message);
+            return result;
+        }
+
+        var groups = GetPendingPlanGroups().Where(g => g.PlanId == planId).Where(g =>
+        {
+            if (!UiFormat.TryParseDate(g.ScheduledDate, out var d)) return false;
+            var day = d.Date;
+            return (!from.HasValue || day >= from.Value) && (!to.HasValue || day <= to.Value)
+                && (!shiftId.HasValue || g.ShiftId == shiftId);
+        }).ToList();
+        foreach (var group in groups)
+        {
+            var issued = IssuePlanGroup(planId, group.ScheduledDate, group.CustomerId, group.ShiftId, group.LineId);
+            if (!issued.Ok)
+            {
+                result.Failed.Add($"{group.ScheduledDate} / {group.CustomerName}: {issued.Message}");
+                continue;
+            }
+            result.Created.Add(new IssuedOrderDto
+            {
+                OrderId = issued.Id,
+                OrderNumber = issued.DocumentNumber,
+                ProductionDate = group.ScheduledDate,
+                ShiftName = group.ShiftName,
+                LineName = group.LineName,
+                ItemsCount = group.ItemsCount,
+                TotalKg = 0
+            });
+        }
+        result.Ok = result.Failed.Count == 0;
+        result.Message = groups.Count == 0
+            ? "لا توجد مجموعات خطة معتمدة ومتاحة ضمن الفترة المحددة — قد تكون صادرة سابقاً أو لا توجد جدولة بهذا التاريخ."
+            : result.Failed.Count == 0
+                ? $"تم إنشاء {result.Created.Count} أمر إنتاج من الخطة {plan.DocumentNumber}."
+                : $"تم إنشاء {result.Created.Count} أمر، وتعذر إنشاء {result.Failed.Count} مجموعة. راجع التفاصيل.";
+        return result;
     }
 
     /// <summary>§10/§12 — طاقة فتحة يوم/وردية/خط لصنف محدد — للعرض والتوزيع على الورديات.</summary>
@@ -467,7 +542,7 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
         {
             // §1.50.66.4 — إعادة التحقق قبل السماح بالتنفيذ
             ReverifyPlanAndLotForApproval(order);
-            ValidateTodayOrder(order);
+            ValidateScheduledOrder(order, requireToday: false);
             GuardReceivingOrderReadiness(order.Items.Select(i => i.LotId));
             // §متبقي الخطة والطاقة يُعاد فحصهما عند الاعتماد أيضاً (قد تكونت أوامر بعد الحفظ)
             CheckPlanRemaining(order);

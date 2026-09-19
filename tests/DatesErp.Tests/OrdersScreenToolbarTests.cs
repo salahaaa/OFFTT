@@ -46,10 +46,12 @@ public class OrdersScreenToolbarTests
         Assert.Contains("🔍 بحث", xaml);
         Assert.Contains("🗑 حذف المسودة", xaml);
         Assert.Contains("SearchOrders", cs);
-        Assert.Contains("GetTodayPendingGroups", cs);
-        Assert.Contains("IssueTodayGroup(", cs);
-        Assert.Contains("ShowOrderInPlace", File.ReadAllText(Path.Combine(RepoRoot(), "src/DatesErp.Desktop/Views/Screens/OrdersView.xaml.cs")));
-        Assert.DoesNotContain("x:Name=\"DocArea\"", File.ReadAllText(Path.Combine(RepoRoot(), "src/DatesErp.Desktop/Views/Screens/OrdersView.xaml")));
+        Assert.Contains("GetPendingPlanGroups", cs);
+        Assert.Contains("IssuePlanGroup(", cs);
+        var ordersScreen = File.ReadAllText(Path.Combine(RepoRoot(), "src", "DatesErp.Desktop", "Views", "Screens", "OrdersView.xaml.cs"));
+        Assert.Contains("ShowOrderInPlace", ordersScreen);
+        Assert.Contains("SetPermissionModule(\"production\")", ordersScreen);
+        Assert.DoesNotContain("x:Name=\"DocArea\"", File.ReadAllText(Path.Combine(RepoRoot(), "src", "DatesErp.Desktop", "Views", "Screens", "OrdersView.xaml")));
         Assert.Contains("DeleteOrder(_orderId)", cs);
     }
 
@@ -74,6 +76,7 @@ public class OrdersScreenToolbarTests
         Assert.Contains("SaveTodayGroup(\"FromPlan\", planId, customerId, day.ToString(\"dd/MM/yyyy\"), shiftId, lineId, group.Select(e => FromPlan(e.Item)).ToList());", today);
         // حراسة الهوية والكمية الأصلية باقية في SaveTodayGroup
         Assert.Contains("هوية بند أمر الإنتاج وكميته يجب أن تطابق الخطة المعتمدة تماماً", today);
-        Assert.Contains("أمر الإنتاج لا ينشأ يدوياً؛ يلزم مرجع خطة اليوم المعتمدة.", today);
+        Assert.Contains("أمر الإنتاج لا ينشأ يدوياً؛ يلزم مرجع خطة معتمدة", today);
+        Assert.Contains("IssuePlanGroup", today);
     }
 }

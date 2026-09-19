@@ -94,7 +94,7 @@ public class PlanIssueB93Tests
     }
 
     [Fact]
-    public void Retired_Date_Filter_Cannot_Issue_A_Future_Day()
+    public void Issue_From_Plan_Can_Create_A_Future_Scheduled_Day()
     {
         var (host, a, b) = Seed2(); using var _host = host;
         int planId = SaveApprovedPlan(host, new List<PlanItemDto>
@@ -104,12 +104,13 @@ public class PlanIssueB93Tests
         });
 
         host.SetBusinessDate("2026-09-01");
-        var oldPath = Orders(host).IssueOrdersFromPlan(planId, "2026-09-03", "2026-09-03");
-        Assert.False(oldPath.Ok); Assert.Empty(oldPath.Created);
-        Assert.Empty(host.Get<DatesErpDbContext>().ProductionOrders);
+        var future = Orders(host).IssueOrdersFromPlan(planId, "2026-09-03", "2026-09-03");
+        Assert.True(future.Ok, future.Message); Assert.Single(future.Created);
+        var futureOrder = Assert.Single(host.Get<DatesErpDbContext>().ProductionOrders);
+        Assert.Equal(new DateTime(2026, 9, 3), futureOrder.ProductionDate);
+        Assert.Equal(b, futureOrder.CustomerId);
         var issued = Orders(host).IssueTodayOrders(); Assert.True(issued.Ok, issued.Message);
-        var order = Assert.Single(host.Get<DatesErpDbContext>().ProductionOrders);
-        Assert.Equal(new DateTime(2026, 9, 1), order.ProductionDate);
+        var order = host.Get<DatesErpDbContext>().ProductionOrders.Single(o => o.ProductionDate == new DateTime(2026, 9, 1));
         Assert.Equal(a, order.CustomerId);
 
     }

@@ -720,7 +720,11 @@ public interface IProductionOrderService
 
     // §v1.50.34 — الأزرار الكلاسيكية على شاشة أمر الإنتاج: إضافة من الخطة (لمجموعة واحدة)، بحث، وحفظ مسودة
     List<TodayPendingGroupDto> GetTodayPendingGroups();
+    /// <summary>المجموعات غير الصادرة من الخطط المعتمدة لليوم أو الأيام القادمة.</summary>
+    List<TodayPendingGroupDto> GetPendingPlanGroups();
     OpResult IssueTodayGroup(int planId, int? customerId, int? shiftId, int? lineId);
+    /// <summary>إنشاء أمر لمجموعة مجدولة في تاريخ اليوم أو تاريخ مستقبلي، دون إدخال يدوي.</summary>
+    OpResult IssuePlanGroup(int planId, string scheduledDate, int? customerId, int? shiftId, int? lineId);
     List<OrderSearchRowDto> SearchOrders(string term, int take = 50);
     /// <summary>§بطاقة ملخص الأمر الحية (للشاشة وشريط التقدم والطباعة).</summary>
     OrderCardDto GetOrderCard(int orderId);

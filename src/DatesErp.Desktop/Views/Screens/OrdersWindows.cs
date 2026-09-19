@@ -439,8 +439,9 @@ public class OrderDocumentPanel : UserControl
 
     private void AddFromPlan_Click(object sender, RoutedEventArgs e)
     {
-        var win = new Window { Title = "إضافة أمر إنتاج من خطة اليوم", Width = 860, Height = 470, FlowDirection = FlowDirection.RightToLeft, WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = Window.GetWindow(this) };
-        var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, Height = 310, RowHeight = 30 };
+        var win = new Window { Title = "إضافة أمر إنتاج من الخطط المعتمدة", Width = 1000, Height = 520, FlowDirection = FlowDirection.RightToLeft, WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = Window.GetWindow(this) };
+        var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, Height = 350, RowHeight = 30 };
+        grid.Columns.Add(new DataGridTextColumn { Header = "التاريخ المجدول", Binding = new System.Windows.Data.Binding("ScheduledDate"), Width = 115 });
         grid.Columns.Add(new DataGridTextColumn { Header = "الخطة", Binding = new System.Windows.Data.Binding("PlanNumber"), Width = 130 });
         grid.Columns.Add(new DataGridTextColumn { Header = "العميل", Binding = new System.Windows.Data.Binding("CustomerName"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
         grid.Columns.Add(new DataGridTextColumn { Header = "الوردية", Binding = new System.Windows.Data.Binding("ShiftName"), Width = 130 });
@@ -454,11 +455,11 @@ public class OrderDocumentPanel : UserControl
             try
             {
                 using var scope = AppContainer.NewScope();
-                var groups = scope.ServiceProvider.GetRequiredService<IProductionOrderService>().GetTodayPendingGroups();
+                var groups = scope.ServiceProvider.GetRequiredService<IProductionOrderService>().GetPendingPlanGroups();
                 grid.ItemsSource = groups;
                 hint.Text = groups.Count == 0
-                    ? "لا مجموعات معلّقة — جميع بنود اليوم المعتمدة صادرة أو مقفلة."
-                    : "كل صف = مجموعة (خطة + عميل + وردية + خط) بلا أمر بعد. الإصدار بكميات الخطة الأصلية كما هي.";
+                    ? "لا توجد مجموعات معلّقة — تحقّق من اعتماد الخطة وتاريخ الجدولة، أو حدّث الشاشة."
+                    : "كل صف = مجموعة (تاريخ مجدول + خطة + عميل + وردية + خط) بلا أمر بعد. الإصدار بكميات الخطة الأصلية كما هي.";
             }
             catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "OrderDoc.AddLoad"); }
         }
@@ -466,11 +467,11 @@ public class OrderDocumentPanel : UserControl
         {
             if (grid.SelectedItem is not DatesErp.Core.Interfaces.Services.TodayPendingGroupDto g)
             { AppContainer.Get<DialogService>().Info("اختر المجموعة أولاً."); return; }
-            if (!AppContainer.Get<DialogService>().Confirm($"إصدار أمر إنتاج لهذه المجموعة ({g.CustomerName} — {g.ItemsCount} بنداً / {g.Cartons:N0} كرتون)؟")) return;
+            if (!AppContainer.Get<DialogService>().Confirm($"إصدار أمر إنتاج ليوم {g.ScheduledDate} لهذه المجموعة ({g.CustomerName} — {g.ItemsCount} بنداً / {g.Cartons:N0} كرتون)؟")) return;
             try
             {
                 using var scope = AppContainer.NewScope();
-                var r = scope.ServiceProvider.GetRequiredService<IProductionOrderService>().IssueTodayGroup(g.PlanId, g.CustomerId, g.ShiftId, g.LineId);
+                var r = scope.ServiceProvider.GetRequiredService<IProductionOrderService>().IssuePlanGroup(g.PlanId, g.ScheduledDate, g.CustomerId, g.ShiftId, g.LineId);
                 if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
                 AppContainer.Get<DialogService>().Info(r.Message);
                 Changed?.Invoke();
@@ -480,7 +481,7 @@ public class OrderDocumentPanel : UserControl
             catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "OrderDoc.IssueGroup"); }
         };
         var sp = new StackPanel { Margin = new Thickness(12) };
-        sp.Children.Add(new TextBlock { Text = "الأوامر تنشأ من الخطة المعتمدة فقط — اختر المجموعة المطلوبة ثم أصدر أمرها:", FontWeight = FontWeights.Bold });
+        sp.Children.Add(new TextBlock { Text = "الأوامر تنشأ من الخطط المعتمدة فقط — تظهر هنا جدولة اليوم والأيام القادمة، اختر المجموعة المطلوبة ثم أصدر أمرها:", FontWeight = FontWeights.Bold });
         sp.Children.Add(grid);
         sp.Children.Add(hint);
         sp.Children.Add(issue);

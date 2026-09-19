@@ -44,6 +44,8 @@ public partial class OrdersView : UserControl
     public void AttachChrome(Views.ErpChrome chrome)
     {
         chrome.SetModule("أمر الإنتاج — شاشة واحدة: اليوم + المستند");
+        // عنوان الشاشة للعرض فقط؛ بوابة الأزرار والصلاحيات تستخدم كود الوحدة الثابت.
+        chrome.SetPermissionModule("production");
         chrome.SetScreenCode("MRPMPS1007");
         chrome.SetToolbar(new Views.ErpToolbar()
             .WithNew((_, _) => AddFromPlan_Click(null, null), "➕ إضافة أمر من الخطة")
