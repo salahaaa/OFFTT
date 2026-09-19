@@ -55,6 +55,7 @@ public class TodayPendingGroupDto
     public string LineName { get; init; }
     public int ItemsCount { get; init; }
     public int Cartons { get; init; }
+    public double PlannedKg { get; init; }
 }
 
 /// <summary>§v1.50.34 — صف نتيجة بحث أوامر الإنتاج.</summary>

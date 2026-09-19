@@ -264,7 +264,8 @@ public partial class ProductionOrderService
                 LineId = g.Key.Line,
                 LineName = g.Key.Line != null ? Db.ProductionLines.AsNoTracking().Where(x => x.Id == g.Key.Line).Select(x => x.LineNameAr).FirstOrDefault() ?? $"خط #{g.Key.Line}" : "-",
                 ItemsCount = g.Count(),
-                Cartons = g.Sum(x => x.Item.PlannedCartons)
+                Cartons = g.Sum(x => x.Item.PlannedCartons),
+                PlannedKg = g.Sum(x => x.Item.PlannedQtyKg)
             })
             .OrderBy(x => x.ScheduledDate).ThenBy(x => x.PlanId).ThenBy(x => x.CustomerName).ToList();
     }

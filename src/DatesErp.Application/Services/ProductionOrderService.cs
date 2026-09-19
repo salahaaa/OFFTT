@@ -444,7 +444,7 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
                 ShiftName = group.ShiftName,
                 LineName = group.LineName,
                 ItemsCount = group.ItemsCount,
-                TotalKg = 0
+                TotalKg = group.PlannedKg
             });
         }
         result.Ok = result.Failed.Count == 0;
