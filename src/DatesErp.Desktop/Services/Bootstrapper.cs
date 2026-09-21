@@ -68,6 +68,15 @@ public class Bootstrapper
             BootTrace.Step("المرحلة 2: تم بناء حاوية الخدمات.");
             ErrorLog.WriteInfo("تم بناء حاوية الخدمات.");
 
+            // §THEME: تحميل الثيم المحفوظ مبكراً (من الملف المحلي كاحتياط قبل فحص القاعدة)
+            try
+            {
+                BootTrace.Step("المرحلة 2.5: تحميل ثيم النظام...");
+                DatesErp.Desktop.Theming.ThemeManager.Initialize();
+                BootTrace.Step("المرحلة 2.5: تم تحميل الثيم.");
+            }
+            catch (Exception exTheme) { ErrorLog.Write(exTheme, "ThemeManager.Init.Early"); }
+
             // 3) فحص الخادم وقاعدة البيانات والإصدار (§20/§31)
             splash.SetStatus("جارٍ فحص قاعدة البيانات والإصدار...");
             BootTrace.Step("المرحلة 3: فتح نطاق وفحص قاعدة البيانات...");
@@ -234,6 +243,14 @@ public class Bootstrapper
                         });
                         db.SaveChanges();
                     }
+
+                    // §THEME: إعادة تحميل الثيم من قاعدة البيانات بعد الترحيل (قد يكون محفوظ في DB)
+                    try
+                    {
+                        DatesErp.Desktop.Theming.ThemeManager.Initialize();
+                        BootTrace.Step("المرحلة 3: تم إعادة تحميل الثيم من قاعدة البيانات.");
+                    }
+                    catch (Exception exTheme2) { ErrorLog.Write(exTheme2, "ThemeManager.Init.AfterMigrate"); }
 
                     // §استعادة الطوارئ: إن وُجد ملف reset_admin.flag يفك القفل ويعيد كلمة المدير
                     TryEmergencyAdminRecovery(db);

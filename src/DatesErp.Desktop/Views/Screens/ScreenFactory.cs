@@ -108,6 +108,14 @@ public static class ScreenFactory
         return c;
     }
 
+    private static UIElement ThemeScreen()
+    {
+        var v = new ThemeCustomizationView();
+        var c = new ErpChrome { TitleText = "[MAIN] - [نظام إدارة وتصنيع التمور - تخصيص النظام والمظهر] - (" + Company + ")" };
+        v.AttachChrome(c);
+        return c;
+    }
+
     private static UIElement Wrap(GenericListView list, string title, string module, string screenCode)
     {
         var chrome = new ErpChrome
@@ -178,6 +186,7 @@ public static class ScreenFactory
         "items" => WrapPlain(new ItemsView(), "الأصناف", "إدارة النظام", "MRPMAS1001"),
         "caps" => WrapPlain(new ItemsCapacitiesView(), "طاقات الأصناف", "إدارة النظام", "MRPMAS1011"),
         "plan-closure" => WrapPlain(new PlanClosureView(), "إقفال خطة الإنتاج", "الإنتاج", "MRPMPS1020"),
+        "theme" => ThemeScreen(),
 
         _ => new TextBlock { Text = "الشاشة غير متوفرة.", FontSize = 16, Margin = new Thickness(20) }
     };

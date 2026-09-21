@@ -1,0 +1,942 @@
+<UserControl x:Class="DatesErp.Desktop.Views.Screens.ThemeCustomizationView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:views="clr-namespace:DatesErp.Desktop.Views"
+             FlowDirection="RightToLeft"
+             Background="{DynamicResource ScreenBackgroundBrush}">
+    
+    <UserControl.Resources>
+        <Style x:Key="CategoryButton" TargetType="Button" BasedOn="{StaticResource ErpButton}">
+            <Setter Property="HorizontalContentAlignment" Value="Right"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="MinHeight" Value="36"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+        <Style x:Key="CategoryButtonActive" TargetType="Button" BasedOn="{StaticResource ErpPrimaryButton}">
+            <Setter Property="HorizontalContentAlignment" Value="Right"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="MinHeight" Value="36"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+        <Style x:Key="SettingLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="Margin" Value="0,8,0,4"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="SettingGroup" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource TableBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ErpLineBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="14"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ═══ شريط علوي ═══ -->
+        <Border Grid.Row="0" Background="{DynamicResource ChromeBackgroundBrush}" Padding="12,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Text="🎨 تخصيص النظام والمظهر" FontSize="16" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+                    <Border Background="#33FFFFFF" CornerRadius="4" Padding="8,2" Margin="12,0,0,0">
+                        <TextBlock x:Name="CurrentThemeName" Text="الافتراضي" Foreground="White" FontSize="11"/>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <ComboBox x:Name="ThemeSelector" Width="160" Margin="0,0,8,0" 
+                              SelectionChanged="ThemeSelector_Changed"
+                              ToolTip="اختر ثيم محفوظ"/>
+                    <Button Content="➕ جديد" Style="{StaticResource ErpButton}" Margin="0,0,4,0" Click="NewTheme_Click"/>
+                    <Button Content="💾 حفظ" Style="{StaticResource ErpApproveButton}" Margin="0,0,4,0" Click="Save_Click"/>
+                    <Button Content="✅ تطبيق" Style="{StaticResource ErpPrimaryButton}" Margin="0,0,4,0" Click="Apply_Click"/>
+                    <Button Content="↩ إلغاء" Style="{StaticResource ErpButton}" Margin="0,0,4,0" Click="Cancel_Click"/>
+                    <Button Content="🔄 افتراضي" Style="{StaticResource ErpDangerButton}" Click="RestoreDefaults_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ═══ المحتوى الرئيسي ═══ -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="380"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- القائمة الجانبية - الفئات -->
+            <Border Grid.Column="0" Background="{DynamicResource SidebarBackgroundBrush}" Padding="8">
+                <StackPanel>
+                    <TextBlock Text="الفئات" FontWeight="Bold" Foreground="#CBD5E1" Margin="0,0,0,8"/>
+                    <Button x:Name="CatColors" Content="🎨 الألوان" Style="{StaticResource CategoryButtonActive}" Click="Category_Click" Tag="Colors"/>
+                    <Button x:Name="CatFonts" Content="🔤 الخطوط" Style="{StaticResource CategoryButton}" Click="Category_Click" Tag="Fonts"/>
+                    <Button x:Name="CatBorders" Content="🔲 الحدود والزوايا" Style="{StaticResource CategoryButton}" Click="Category_Click" Tag="Borders"/>
+                    <Button x:Name="CatButtons" Content="🔘 الأزرار" Style="{StaticResource CategoryButton}" Click="Category_Click" Tag="Buttons"/>
+                    <Button x:Name="CatTables" Content="📊 الجداول" Style="{StaticResource CategoryButton}" Click="Category_Click" Tag="Tables"/>
+                    <Button x:Name="CatWindows" Content="🪟 النوافذ والبطاقات" Style="{StaticResource CategoryButton}" Click="Category_Click" Tag="Windows"/>
+                    <Button x:Name="CatGeneral" Content="⚙️ الوضع العام" Style="{StaticResource CategoryButton}" Click="Category_Click" Tag="General"/>
+
+                    <Separator Margin="0,12"/>
+
+                    <TextBlock Text="الثيمات المحفوظة" FontWeight="Bold" Foreground="#CBD5E1" Margin="0,0,0,8"/>
+                    <ListBox x:Name="SavedThemesList" Background="Transparent" BorderThickness="0"
+                             SelectionChanged="SavedThemesList_SelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="#22FFFFFF" CornerRadius="4" Padding="8,6" Margin="0,2">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding DisplayName}" Foreground="White" FontWeight="Bold" FontSize="12"/>
+                                            <TextBlock Text="{Binding Mode}" Foreground="#94A3B8" FontSize="10"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="🎨" Foreground="#C9A227" FontSize="14" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+            </Border>
+
+            <!-- منطقة الإعدادات -->
+            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="16" Background="{DynamicResource ScreenBackgroundBrush}">
+                <StackPanel x:Name="SettingsPanel">
+
+                    <!-- ═══ الألوان ═══ -->
+                    <StackPanel x:Name="PanelColors" Visibility="Visible">
+                        <TextBlock Text="🎨 الألوان الأساسية" Style="{StaticResource ThemeSectionTitle}"/>
+                        
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="الألوان الرئيسية" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="اللون الرئيسي Primary" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="0" Grid.Column="1" x:Name="PickPrimary" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="اللون الداكن Primary Dark" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="1" Grid.Column="1" x:Name="PickPrimaryDark" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="اللون الثانوي Secondary" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="2" Grid.Column="1" x:Name="PickSecondary" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="لون التأكيد Accent" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="3" Grid.Column="1" x:Name="PickAccent" ColorChanged="Color_Changed"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="الخلفيات" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="خلفية النظام" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="0" Grid.Column="1" x:Name="PickBackground" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="خلفية النوافذ" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="1" Grid.Column="1" x:Name="PickWindowBg" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="خلفية الجداول" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="2" Grid.Column="1" x:Name="PickTableBg" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="رؤوس الجداول" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="3" Grid.Column="1" x:Name="PickTableHeader" ColorChanged="Color_Changed"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="النصوص" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="النص الرئيسي" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="0" Grid.Column="1" x:Name="PickTextPrimary" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="النص الثانوي" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="1" Grid.Column="1" x:Name="PickTextSecondary" ColorChanged="Color_Changed"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="الأزرار" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="خلفية الأزرار" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="0" Grid.Column="1" x:Name="PickBtnBg" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="نص الأزرار" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="1" Grid.Column="1" x:Name="PickBtnFg" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Hover (مرور)" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="2" Grid.Column="1" x:Name="PickBtnHover" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Pressed (ضغط)" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="3" Grid.Column="1" x:Name="PickBtnPressed" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="الحدود" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="4" Grid.Column="1" x:Name="PickBorder" ColorChanged="Color_Changed"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="ألوان الحالات" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="نجاح Success" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="0" Grid.Column="1" x:Name="PickSuccess" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="تحذير Warning" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="1" Grid.Column="1" x:Name="PickWarning" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="خطأ Error" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="2" Grid.Column="1" x:Name="PickError" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="معلومات Info" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="3" Grid.Column="1" x:Name="PickInfo" ColorChanged="Color_Changed"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ═══ الخطوط ═══ -->
+                    <StackPanel x:Name="PanelFonts" Visibility="Collapsed">
+                        <TextBlock Text="🔤 الخطوط والأحجام" Style="{StaticResource ThemeSectionTitle}"/>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="نوع الخط" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="الخط الرئيسي" Style="{StaticResource SettingLabel}"/>
+                                    <ComboBox Grid.Row="0" Grid.Column="1" x:Name="ComboMainFont" SelectionChanged="Font_Changed"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="خط العناوين" Style="{StaticResource SettingLabel}"/>
+                                    <ComboBox Grid.Row="1" Grid.Column="1" x:Name="ComboHeadingFont" SelectionChanged="Font_Changed"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="أحجام الخطوط" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="40"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="الأساسي" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="0" Grid.Column="1" x:Name="SliderBaseFont" Minimum="10" Maximum="18" Value="12.5" TickFrequency="0.5" IsSnapToTickEnabled="True" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" x:Name="LblBaseFont" Text="12.5" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="عناوين الصفحات" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="1" Grid.Column="1" x:Name="SliderPageTitle" Minimum="14" Maximum="28" Value="18" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" x:Name="LblPageTitle" Text="18" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="عناوين الأقسام" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="2" Grid.Column="1" x:Name="SliderSectionTitle" Minimum="12" Maximum="20" Value="15" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="2" x:Name="LblSectionTitle" Text="15" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="الجداول" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="3" Grid.Column="1" x:Name="SliderTableFont" Minimum="10" Maximum="16" Value="12.5" TickFrequency="0.5" IsSnapToTickEnabled="True" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="2" x:Name="LblTableFont" Text="12.5" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="الأزرار" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="4" Grid.Column="1" x:Name="SliderButtonFont" Minimum="10" Maximum="16" Value="12" TickFrequency="0.5" IsSnapToTickEnabled="True" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="4" Grid.Column="2" x:Name="LblButtonFont" Text="12" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="5" Grid.Column="0" Text="تسميات الحقول" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="5" Grid.Column="1" x:Name="SliderFieldLabel" Minimum="10" Maximum="16" Value="12" TickFrequency="0.5" IsSnapToTickEnabled="True" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="5" Grid.Column="2" x:Name="LblFieldLabel" Text="12" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="السمك Bold / Normal" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <CheckBox x:Name="CheckHeadingBold" Content="عناوين عريضة Bold" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <CheckBox x:Name="CheckBodyBold" Content="نصوص عريضة Bold" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <CheckBox x:Name="CheckButtonBold" Content="أزرار عريضة Bold" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="وزن العناوين:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox x:Name="ComboHeadingWeight" Width="120" SelectionChanged="Font_Changed">
+                                        <ComboBoxItem Content="Normal"/>
+                                        <ComboBoxItem Content="Bold"/>
+                                        <ComboBoxItem Content="SemiBold"/>
+                                        <ComboBoxItem Content="Medium"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ═══ الحدود والزوايا ═══ -->
+                    <StackPanel x:Name="PanelBorders" Visibility="Collapsed">
+                        <TextBlock Text="🔲 الحدود والزوايا والمسافات" Style="{StaticResource ThemeSectionTitle}"/>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="إظهار/إخفاء الحدود" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <CheckBox x:Name="CheckShowTextBoxBorder" Content="إظهار حدود TextBox" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <CheckBox x:Name="CheckShowButtonBorder" Content="إظهار حدود الأزرار" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <CheckBox x:Name="CheckShowUnderline" Content="إظهار التسطير تحت الحقول" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="سمك الحدود" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="40"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="العام" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="0" Grid.Column="1" x:Name="SliderBorderThickness" Minimum="0" Maximum="3" Value="1.2" TickFrequency="0.1" IsSnapToTickEnabled="True" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" x:Name="LblBorderThickness" Text="1.2" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="الحقول" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="1" Grid.Column="1" x:Name="SliderTextBoxBorder" Minimum="0" Maximum="3" Value="1.2" TickFrequency="0.1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" x:Name="LblTextBoxBorder" Text="1.2" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="الأزرار" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="2" Grid.Column="1" x:Name="SliderButtonBorder" Minimum="0" Maximum="3" Value="1.2" TickFrequency="0.1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="2" x:Name="LblButtonBorder" Text="1.2" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="الجداول" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="3" Grid.Column="1" x:Name="SliderTableBorder" Minimum="0" Maximum="3" Value="1" TickFrequency="0.1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="2" x:Name="LblTableBorder" Text="1" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="زوايا العناصر Corner Radius" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="40"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="العام" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="0" Grid.Column="1" x:Name="SliderCornerRadius" Minimum="0" Maximum="16" Value="6" TickFrequency="1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" x:Name="LblCornerRadius" Text="6" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="الأزرار" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="1" Grid.Column="1" x:Name="SliderBtnCorner" Minimum="0" Maximum="16" Value="6" TickFrequency="1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" x:Name="LblBtnCorner" Text="6" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="الحقول" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="2" Grid.Column="1" x:Name="SliderTextBoxCorner" Minimum="0" Maximum="16" Value="4" TickFrequency="1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="2" x:Name="LblTextBoxCorner" Text="4" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="البطاقات" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="3" Grid.Column="1" x:Name="SliderCardCorner" Minimum="0" Maximum="20" Value="8" TickFrequency="1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="2" x:Name="LblCardCorner" Text="8" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="المسافات والحشو" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="40"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="حشو الحقول" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="0" Grid.Column="1" x:Name="SliderFieldPadding" Minimum="2" Maximum="12" Value="6" TickFrequency="1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" x:Name="LblFieldPadding" Text="6" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="المحتوى العام" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="1" Grid.Column="1" x:Name="SliderContentPadding" Minimum="4" Maximum="24" Value="12" TickFrequency="1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" x:Name="LblContentPadding" Text="12" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <TextBlock Text="شكل الحقول:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox x:Name="ComboInputShape" Width="120" SelectionChanged="Combo_Changed">
+                                        <ComboBoxItem Content="Rounded" Tag="Rounded"/>
+                                        <ComboBoxItem Content="Flat" Tag="Flat"/>
+                                        <ComboBoxItem Content="Simple" Tag="Simple"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ═══ الأزرار ═══ -->
+                    <StackPanel x:Name="PanelButtons" Visibility="Collapsed">
+                        <TextBlock Text="🔘 شكل الأزرار" Style="{StaticResource ThemeSectionTitle}"/>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="النمط والشكل" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="شكل الأزرار" Style="{StaticResource SettingLabel}"/>
+                                    <ComboBox Grid.Row="0" Grid.Column="1" x:Name="ComboButtonShape" SelectionChanged="Combo_Changed">
+                                        <ComboBoxItem Content="مستدير" Tag="Rounded"/>
+                                        <ComboBoxItem Content="مربع" Tag="Square"/>
+                                        <ComboBoxItem Content="مسطح Flat" Tag="Flat"/>
+                                        <ComboBoxItem Content="بإطار Border" Tag="Border"/>
+                                    </ComboBox>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="ستايل الأزرار" Style="{StaticResource SettingLabel}"/>
+                                    <ComboBox Grid.Row="1" Grid.Column="1" x:Name="ComboButtonStyle" SelectionChanged="Combo_Changed">
+                                        <ComboBoxItem Content="افتراضي" Tag="Default"/>
+                                        <ComboBoxItem Content="مسطح" Tag="Flat"/>
+                                        <ComboBoxItem Content="بإطار" Tag="Border"/>
+                                        <ComboBoxItem Content="متدرج" Tag="Gradient"/>
+                                    </ComboBox>
+                                </Grid>
+                                <CheckBox x:Name="CheckButtonShadow" Content="ظل للأزرار" Margin="0,8,0,0" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="الأحجام" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="40"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="ارتفاع الزر" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="0" Grid.Column="1" x:Name="SliderButtonHeight" Minimum="24" Maximum="48" Value="30" TickFrequency="1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" x:Name="LblButtonHeight" Text="30" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="أقل عرض" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="1" Grid.Column="1" x:Name="SliderButtonMinWidth" Minimum="60" Maximum="160" Value="92" TickFrequency="4" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" x:Name="LblButtonMinWidth" Text="92" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="حجم الأيقونة" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="2" Grid.Column="1" x:Name="SliderIconSize" Minimum="10" Maximum="24" Value="14" TickFrequency="1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="2" x:Name="LblIconSize" Text="14" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="موضع الأيقونة:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox x:Name="ComboIconPos" Width="100" SelectionChanged="Combo_Changed">
+                                        <ComboBoxItem Content="يسار" Tag="Left"/>
+                                        <ComboBoxItem Content="يمين" Tag="Right"/>
+                                        <ComboBoxItem Content="أعلى" Tag="Top"/>
+                                        <ComboBoxItem Content="بدون" Tag="None"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ═══ الجداول ═══ -->
+                    <StackPanel x:Name="PanelTables" Visibility="Collapsed">
+                        <TextBlock Text="📊 شكل الجداول" Style="{StaticResource ThemeSectionTitle}"/>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="ألوان الجدول" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="صفوف عادية" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="0" Grid.Column="1" x:Name="PickTableRow" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="صفوف بديلة" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="1" Grid.Column="1" x:Name="PickTableAltRow" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="الصف المحدد" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="2" Grid.Column="1" x:Name="PickTableSelected" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Hover (مرور)" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="3" Grid.Column="1" x:Name="PickTableHover" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="الخلية المحددة" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="4" Grid.Column="1" x:Name="PickTableCellSelected" ColorChanged="Color_Changed"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="الأبعاد" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="40"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="ارتفاع الصف" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="0" Grid.Column="1" x:Name="SliderRowHeight" Minimum="24" Maximum="60" Value="32" TickFrequency="2" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" x:Name="LblRowHeight" Text="32" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="ارتفاع الرأس" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="1" Grid.Column="1" x:Name="SliderHeaderHeight" Minimum="24" Maximum="60" Value="32" TickFrequency="2" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" x:Name="LblHeaderHeight" Text="32" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="خيارات العرض" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <CheckBox x:Name="CheckShowGridLines" Content="إظهار خطوط الشبكة" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <CheckBox x:Name="CheckShowColSep" Content="خطوط فصل الأعمدة" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <CheckBox x:Name="CheckShowRowSep" Content="خطوط فصل الصفوف" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <CheckBox x:Name="CheckAltRows" Content="صفوف متناوبة الألوان" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <CheckBox x:Name="CheckEnableHover" Content="تمييز الصف عند المرور" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <CheckBox x:Name="CheckShowRowNumbers" Content="إظهار الترقيم" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="محاذاة النص:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox x:Name="ComboTextAlign" Width="100" SelectionChanged="Combo_Changed">
+                                        <ComboBoxItem Content="يمين" Tag="Right"/>
+                                        <ComboBoxItem Content="يسار" Tag="Left"/>
+                                        <ComboBoxItem Content="وسط" Tag="Center"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ═══ النوافذ والبطاقات ═══ -->
+                    <StackPanel x:Name="PanelWindows" Visibility="Collapsed">
+                        <TextBlock Text="🪟 النوافذ والبطاقات والقوائم" Style="{StaticResource ThemeSectionTitle}"/>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="الخلفيات" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="خلفية الشاشة" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="0" Grid.Column="1" x:Name="PickScreenBg" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="رأس الصفحة" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="1" Grid.Column="1" x:Name="PickPageHeaderBg" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="شريط العنوان" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="2" Grid.Column="1" x:Name="PickChromeBg" ColorChanged="Color_Changed"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="القائمة الجانبية" Style="{StaticResource SettingLabel}"/>
+                                    <views:ColorPickerControl Grid.Row="3" Grid.Column="1" x:Name="PickSidebarBg" ColorChanged="Color_Changed"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="الأبعاد" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="40"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="ارتفاع شريط العنوان" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="0" Grid.Column="1" x:Name="SliderTitleBar" Minimum="30" Maximum="80" Value="40" TickFrequency="2" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" x:Name="LblTitleBar" Text="40" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="عرض القائمة الجانبية" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="1" Grid.Column="1" x:Name="SliderSidebarWidth" Minimum="180" Maximum="400" Value="260" TickFrequency="10" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" x:Name="LblSidebarWidth" Text="260" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="حشو المحتوى" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="2" Grid.Column="1" x:Name="SliderContentPad" Minimum="4" Maximum="24" Value="12" TickFrequency="1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="2" x:Name="LblContentPad" Text="12" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </Grid>
+                                <CheckBox x:Name="CheckShowSidebar" Content="إظهار القائمة الجانبية" Margin="0,8,0,0" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="البطاقات والظلال" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="40"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="عمق الظل" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="0" Grid.Column="1" x:Name="SliderShadowDepth" Minimum="0" Maximum="8" Value="1" TickFrequency="0.5" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" x:Name="LblShadowDepth" Text="1" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="تشويش الظل" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="1" Grid.Column="1" x:Name="SliderShadowBlur" Minimum="0" Maximum="20" Value="8" TickFrequency="1" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" x:Name="LblShadowBlur" Text="8" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="شفافية الظل" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="2" Grid.Column="1" x:Name="SliderShadowOpacity" Minimum="0" Maximum="0.5" Value="0.12" TickFrequency="0.02" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="2" x:Name="LblShadowOpacity" Text="0.12" VerticalAlignment="Center" Margin="6,0,0,0"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="شفافية عامة" Style="{StaticResource SettingLabel}"/>
+                                    <Slider Grid.Row="3" Grid.Column="1" x:Name="SliderOpacity" Minimum="0.8" Maximum="1" Value="1" TickFrequency="0.05" ValueChanged="Slider_Changed"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="2" x:Name="LblOpacity" Text="1" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </Grid>
+                                <CheckBox x:Name="CheckEnableShadow" Content="تفعيل الظلال" Margin="0,8,0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <CheckBox x:Name="CheckCardShadow" Content="ظل للبطاقات" Margin="0,4" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="شكل البطاقات:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox x:Name="ComboCardShape" Width="120" SelectionChanged="Combo_Changed">
+                                        <ComboBoxItem Content="مستدير" Tag="Rounded"/>
+                                        <ComboBoxItem Content="مربع" Tag="Square"/>
+                                        <ComboBoxItem Content="مسطح" Tag="Flat"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ═══ الوضع العام ═══ -->
+                    <StackPanel x:Name="PanelGeneral" Visibility="Collapsed">
+                        <TextBlock Text="⚙️ الوضع العام والثيمات الجاهزة" Style="{StaticResource ThemeSectionTitle}"/>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="وضع العرض" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton x:Name="RadioLight" Content="☀️ فاتح Light" Margin="0,0,12,0" Checked="Mode_Changed"/>
+                                    <RadioButton x:Name="RadioDark" Content="🌙 داكن Dark" Margin="0,0,12,0" Checked="Mode_Changed"/>
+                                    <RadioButton x:Name="RadioAuto" Content="🔄 تلقائي Auto" Checked="Mode_Changed"/>
+                                </StackPanel>
+                                <CheckBox x:Name="CheckIsDark" Content="تفعيل الوضع الداكن (تجريبي)" Margin="0,12,0,0" Checked="Check_Changed" Unchecked="Check_Changed"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="ثيمات جاهزة" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <WrapPanel>
+                                    <Button Content="الافتراضي" Style="{StaticResource ErpButton}" Margin="0,0,6,6" Click="PresetTheme_Click" Tag="default"/>
+                                    <Button Content="رسمي" Style="{StaticResource ErpPrimaryButton}" Margin="0,0,6,6" Click="PresetTheme_Click" Tag="official"/>
+                                    <Button Content="داكن" Style="{StaticResource ErpButton}" Margin="0,0,6,6" Click="PresetTheme_Click" Tag="dark"/>
+                                    <Button Content="فاتح" Style="{StaticResource ErpButton}" Margin="0,0,6,6" Click="PresetTheme_Click" Tag="light"/>
+                                </WrapPanel>
+                                <TextBlock Text="اختر أحد الثيمات الجاهزة لتطبيقه فوراً، ثم خصصه حسب رغبتك." 
+                                           Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}">
+                            <StackPanel>
+                                <TextBlock Text="إدارة الثيمات" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="اسم الثيم:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBox x:Name="ThemeNameBox" Width="160" Text="مخصص"/>
+                                    <Button Content="💾 حفظ باسم" Style="{StaticResource ErpApproveButton}" Margin="8,0,0,0" Click="SaveAs_Click"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <Button Content="📤 تصدير الثيم" Style="{StaticResource ErpButton}" Margin="0,0,6,0" Click="Export_Click"/>
+                                    <Button Content="📥 استيراد ثيم" Style="{StaticResource ErpButton}" Click="Import_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingGroup}" Background="#FEF3C7" BorderBrush="#F59E0B">
+                            <StackPanel>
+                                <TextBlock Text="⚠️ ملاحظات مهمة" FontWeight="Bold" Margin="0,0,0,4"/>
+                                <TextBlock TextWrapping="Wrap" FontSize="11" LineHeight="18">
+                                    • التغييرات تظهر مباشرة في المعاينة قبل الحفظ.<LineBreak/>
+                                    • اضغط "تطبيق" لرؤية الثيم على النظام الحالي.<LineBreak/>
+                                    • اضغط "حفظ" لحفظ الثيم وتطبيقه عند كل تشغيل.<LineBreak/>
+                                    • لا يتم تغيير منطق الأعمال أو قواعد البيانات.<LineBreak/>
+                                    • جميع القيم قابلة للتعديل مركزياً من هذه الشاشة.
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ═══ المعاينة المباشرة ═══ -->
+            <Border Grid.Column="2" Background="{DynamicResource TableBackgroundBrush}" BorderBrush="{DynamicResource ErpLineBrush}" BorderThickness="1,0,0,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Background="{DynamicResource ChromeBackgroundBrush}" Padding="10,6">
+                        <TextBlock Text="👁️ معاينة مباشرة" FontWeight="Bold" Foreground="White"/>
+                    </Border>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="12">
+                        <StackPanel x:Name="PreviewPanel">
+
+                            <!-- عنوان -->
+                            <TextBlock Text="عنوان الصفحة" FontSize="{DynamicResource PageTitleFontSize}" 
+                                       FontFamily="{DynamicResource HeadingFontFamily}"
+                                       FontWeight="{DynamicResource HeadingFontWeight}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,12"/>
+
+                            <TextBlock Text="عنوان القسم" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+
+                            <!-- حقول -->
+                            <TextBlock Text="حقل نصي:" Style="{StaticResource FieldLabel}"/>
+                            <TextBox x:Name="PreviewTextBox" Text="نص تجريبي للمعاينة" Margin="0,0,0,8"/>
+
+                            <TextBlock Text="قائمة منسدلة:" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox x:Name="PreviewCombo" Margin="0,0,0,12">
+                                <ComboBoxItem Content="خيار أول" IsSelected="True"/>
+                                <ComboBoxItem Content="خيار ثاني"/>
+                                <ComboBoxItem Content="خيار ثالث"/>
+                            </ComboBox>
+
+                            <!-- أزرار -->
+                            <TextBlock Text="الأزرار:" Style="{StaticResource FieldLabel}"/>
+                            <WrapPanel Margin="0,0,0,12">
+                                <Button Content="💾 حفظ" Style="{StaticResource ErpPrimaryButton}" Margin="0,0,6,6"/>
+                                <Button Content="إلغاء" Style="{StaticResource ErpButton}" Margin="0,0,6,6"/>
+                                <Button Content="✅ اعتماد" Style="{StaticResource ErpApproveButton}" Margin="0,0,6,6"/>
+                                <Button Content="🗑️ حذف" Style="{StaticResource ErpDangerButton}" Margin="0,0,6,6"/>
+                            </WrapPanel>
+
+                            <!-- جدول -->
+                            <TextBlock Text="جدول:" Style="{StaticResource FieldLabel}"/>
+                            <DataGrid x:Name="PreviewGrid" AutoGenerateColumns="False" Height="120" Margin="0,0,0,12"
+                                      HeadersVisibility="Column" CanUserAddRows="False">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="م" Binding="{Binding No}" Width="40"/>
+                                    <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="*"/>
+                                    <DataGridTextColumn Header="الكمية" Binding="{Binding Qty}" Width="80"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <!-- بطاقة -->
+                            <TextBlock Text="بطاقة:" Style="{StaticResource FieldLabel}"/>
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="عنوان البطاقة" FontWeight="Bold" Margin="0,0,0,4"/>
+                                    <TextBlock Text="محتوى البطاقة التجريبي يوضح شكل البطاقات في النظام بعد التخصيص." 
+                                               TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- رسائل حالات -->
+                            <TextBlock Text="رسائل الحالات:" Style="{StaticResource FieldLabel}"/>
+                            <Border Background="{DynamicResource SuccessLightBrush}" BorderBrush="{DynamicResource SuccessBrush}" 
+                                    BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,0,0,6">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="✅" Margin="0,0,6,0"/>
+                                    <TextBlock Text="تمت العملية بنجاح" Foreground="{DynamicResource SuccessBrush}" FontWeight="Bold"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Background="{DynamicResource WarningLightBrush}" BorderBrush="{DynamicResource WarningBrush}" 
+                                    BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,0,0,6">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="⚠️" Margin="0,0,6,0"/>
+                                    <TextBlock Text="تحذير: راجع البيانات" Foreground="{DynamicResource WarningBrush}" FontWeight="Bold"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Background="{DynamicResource ErrorLightBrush}" BorderBrush="{DynamicResource ErrorBrush}" 
+                                    BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,0,0,6">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="❌" Margin="0,0,6,0"/>
+                                    <TextBlock Text="خطأ: فشلت العملية" Foreground="{DynamicResource ErrorBrush}" FontWeight="Bold"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Background="{DynamicResource InfoLightBrush}" BorderBrush="{DynamicResource InfoBrush}" 
+                                    BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,0,0,12">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="ℹ️" Margin="0,0,6,0"/>
+                                    <TextBlock Text="معلومة: تم التحديث" Foreground="{DynamicResource InfoBrush}" FontWeight="Bold"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- نصوص -->
+                            <TextBlock Text="النصوص:" Style="{StaticResource FieldLabel}"/>
+                            <TextBlock Text="نص رئيسي - Primary Text" FontSize="{DynamicResource BaseFontSize}" Margin="0,0,0,4"/>
+                            <TextBlock Text="نص ثانوي - Secondary Text" FontSize="{DynamicResource BaseFontSize}" 
+                                       Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ═══ شريط سفلي ═══ -->
+        <Border Grid.Row="2" Background="{DynamicResource ErpSurfaceColor}" BorderBrush="{DynamicResource ErpLineColor}" BorderThickness="0,1,0,0" Padding="12,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" x:Name="StatusText" Text="جاهز - اختر فئة للتخصيص" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <TextBlock Text="آخر حفظ:" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <TextBlock x:Name="LastSavedText" Text="—" VerticalAlignment="Center" FontSize="11" FontWeight="Bold"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -78,7 +78,9 @@ public static class ScreenCatalog
 
         // 🛠️ النسخ الاحتياطي والصيانة
         new("backup", "النسخ الاحتياطي والصيانة", "النسخ الاحتياطي والاستعادة", "backup", "💾", "MRPSYS1001"),
-        new("systeminfo", "النسخ الاحتياطي والصيانة", "معلومات النظام والإعدادات", "settings", "⚙️", "MRPSYS1002")
+        new("systeminfo", "النسخ الاحتياطي والصيانة", "معلومات النظام والإعدادات", "settings", "⚙️", "MRPSYS1002"),
+        // 🎨 تخصيص النظام والمظهر - إدارة الثيم المركزي
+        new("theme", "إدارة النظام", "تخصيص النظام والمظهر", "settings", "🎨", "MRPSYS1004")
     };
 
     public static IEnumerable<ScreenDef> OfDept(string deptId) => All.Where(s => s.Group == DeptTitle(deptId));
