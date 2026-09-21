@@ -49,7 +49,8 @@ public partial class OrdersView : UserControl
         chrome.SetPermissionModule("production");
         chrome.SetScreenCode("MRPMPS1007");
         chrome.SetToolbar(new Views.ErpToolbar()
-            .WithNew((_, _) => AddFromPlan_Click(null, null), "➕ إضافة أمر من الخطة")
+            .WithNew((_, _) => AddFromPlan_Click(null, null), "➕ إضافة أمر")
+            .WithCustom("📥 إنزال من خطة", "ErpPrimaryButton", (_, _) => AddFromPlan_Click(null, null), "إنشاء أمر من مجموعة خطة معتمدة فقط", "Create")
             .WithEdit((_, _) => Edit_Click(null, null))
             .WithSave((_, _) => Save_Click(null, null), "💾 حفظ")
             .WithSearch((_, _) => Search_Click(null, null), "بحث عن أمر إنتاج")
@@ -69,7 +70,7 @@ public partial class OrdersView : UserControl
             var next = _load();
             // صفوف الخطة للعرض والتحديد فقط؛ لا تهيئة لكمية قابلة للتحرير هنا.
             _sheet = next;
-            DayLabel.Text = $"الخطط المجدولة — تاريخ العمل: {next.Day:dd/MM/yyyy}";
+            DayLabel.Text = $"📅 اليوم: {next.Day:dd/MM/yyyy} — الخطط المجدولة السابقة والحالية والقادمة";
             var open = next.Rows.Where(r => !r.DayClosed).ToList();
             var todayRows = next.Rows.Where(r => r.IsToday).ToList();
             DayHint.Text = todayRows.Count > 0 && todayRows.All(r => r.DayClosed)

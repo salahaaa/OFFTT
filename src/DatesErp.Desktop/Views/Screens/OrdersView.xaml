@@ -4,11 +4,15 @@
              FlowDirection="RightToLeft">
     <!-- §v1.50.36 — شاشة واحدة: الخطط المجدولة + مستند الأمر أسفلها بلا تبديل واجهات. -->
     <DockPanel x:Name="ListArea" LastChildFill="True" Margin="12">
-        <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Margin="0,0,0,6">
+        <!-- رأس الشاشة: شريط داكن مطابق للهوية المرئية المعتمدة في نموذج التصميم. -->
+        <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Background="#071B2E" BorderBrush="#071B2E" Padding="16,11" Margin="0,0,0,6">
             <StackPanel>
-                <TextBlock Text="📝 أوامر الإنتاج — الخطط المجدولة" FontSize="22" FontWeight="Bold" Foreground="#123544"/>
-                <TextBlock x:Name="DayLabel" FontSize="15" FontWeight="Bold" Foreground="#14532D" Margin="0,6,0,2"/>
-                <TextBlock x:Name="DayHint" TextWrapping="Wrap" Foreground="#526474" FontSize="13"/>
+                <DockPanel>
+                    <TextBlock Text="📝 أوامر الإنتاج" FontSize="22" FontWeight="Bold" Foreground="White"/>
+                    <TextBlock Text="MRPMPS1007" DockPanel.Dock="Left" FontFamily="Consolas" FontSize="11" Foreground="#D7E3F1" VerticalAlignment="Center"/>
+                </DockPanel>
+                <TextBlock x:Name="DayLabel" FontSize="15" FontWeight="Bold" Foreground="#F4D35E" Margin="0,6,0,2"/>
+                <TextBlock x:Name="DayHint" TextWrapping="Wrap" Foreground="#E5E7EB" FontSize="13"/>
             </StackPanel>
         </Border>
         <Border DockPanel.Dock="Top" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8,5" Margin="0,0,0,6">
@@ -39,7 +43,7 @@
                 <TextBlock x:Name="TotLinesBox" Text="خطوط: 0" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Center"/>
             </StackPanel>
         </Border>
-        <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Margin="0,0,0,6">
+        <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Background="#F8F4E8" BorderBrush="#D8CDAE" Padding="10,8" Margin="0,0,0,6">
             <WrapPanel>
                 <!-- أزرار الجدول فقط؛ الأفعال العامة (إضافة/تعديل/حفظ/بحث/حذف/طباعة) في شريط واحد بالأعلى. -->
                 <Button x:Name="IssueTodayBtn" Content="📤 إصدار أوامر اليوم من الخطة" Style="{StaticResource ErpApproveButton}" Click="IssueToday_Click" Margin="0,0,8,4" IsEnabled="False" ToolTip="هذا الزر لخطط تاريخ العمل الحالي فقط؛ للخطط السابقة أو القادمة حدّد الصف ثم استخدم إصدار المحدد"/>
@@ -68,6 +72,17 @@
                         <Setter Property="BorderThickness" Value="0"/>
                     </Style>
                 </DataGrid.CellStyle>
+                <DataGrid.ColumnHeaderStyle>
+                    <Style TargetType="DataGridColumnHeader">
+                        <Setter Property="Background" Value="#10283E"/>
+                        <Setter Property="Foreground" Value="White"/>
+                        <Setter Property="FontWeight" Value="Bold"/>
+                        <Setter Property="Padding" Value="7,5"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                        <Setter Property="BorderBrush" Value="#284C68"/>
+                        <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                    </Style>
+                </DataGrid.ColumnHeaderStyle>
                 <DataGrid.RowStyle>
                     <Style TargetType="DataGridRow">
                         <Setter Property="Background" Value="White"/>

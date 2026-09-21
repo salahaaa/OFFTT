@@ -36,6 +36,7 @@ public class OrdersScreenToolbarTests
         Assert.DoesNotContain("x:Name=\"DeleteBtn\"", xaml);
         Assert.DoesNotContain("EditableCartons", xaml);
         Assert.Contains(".WithNew", screen);
+        Assert.Contains("WithCustom(\"📥 إنزال من خطة\"", screen);
         Assert.Contains(".WithEdit", screen);
         Assert.Contains(".WithSave", screen);
         Assert.Contains(".WithSearch", screen);
