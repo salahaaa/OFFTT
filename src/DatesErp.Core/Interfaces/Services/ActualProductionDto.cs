@@ -23,11 +23,16 @@ public sealed class ActualDeliveryOrderDto
     public string Customer { get; init; }
     public string Shift { get; init; }
     public string PlanNumber { get; init; }
+    public int ExecutionId { get; init; }
+    public int ProductionDeliveryId { get; init; }
     public bool Recorded { get; init; }
     public bool CanRecord { get; init; }
+    public bool CanCreateDelivery { get; init; }
     public string Status { get; init; }
     public string ReceiptNumber { get; init; }
     public string QualityNumber { get; init; }
+    public string ProductionDeliveryNumber { get; init; }
+    public string ProductionDeliveryStatus { get; init; }
     public double ConsumedRawKg { get; init; }
     public double DowntimeHours { get; init; }
     public string DowntimeReason { get; init; }

@@ -192,15 +192,10 @@ public class B99QualityTests
         Assert.True(ok.Ok, ok.Message);
         Assert.True(quality.ApproveCheck(qcId.Value).Ok);
 
-        // الإنتاج: أمر تسليم من المحضر المعتمد + تحريره
+        // الإنتاج: أمر تسليم من التنفيذ الفعلي + تحريره (الجودة لا تنشئ الاستلام)
         host.LoginAs("production");
         var del = host.Get<IProductionDeliveryService>();
-        var sd = del.SaveDelivery(DeliverySources.FromCheck, qcId.Value, DateTime.Today.ToString("yyyy-MM-dd"),
-            new List<ProductionDeliveryItemDto>
-            {
-                new() { OrderId = oid, ProductId = 3, LotId = lot, CustomerId = 1, PackagingTypeId = 1,
-                        PackageCount = 98, QtyKg = 490 }
-            });
+        var sd = del.CreateDeliveryFromActual(qc.ExecutionId, DateTime.Today.ToString("yyyy-MM-dd"));
         Assert.True(sd.Ok, sd.Message);
         Assert.True(del.IssueDelivery(sd.Id).Ok);
 
@@ -211,8 +206,8 @@ public class B99QualityTests
         var sr = fg.SaveReceipt(oid, null, DateTime.Today.ToString("yyyy-MM-dd"),
             new List<FinishedGoodsItemDto>
             {
-                new() { ProductId = 3, LotId = lot, PackagingTypeId = 1, PackageCount = 98,
-                        NetWeightKg = 490, CustomerId = 1, DeliveryItemId = delItem.Id }
+                new() { ProductId = 3, LotId = lot, PackagingTypeId = 1, PackageCount = 100,
+                        NetWeightKg = 500, CustomerId = 1, DeliveryItemId = delItem.Id }
             }, sd.Id);
         Assert.True(sr.Ok, sr.Message);
         Assert.True(fg.Issue(sr.Id).Ok);
@@ -229,7 +224,7 @@ public class B99QualityTests
 
         int wfg = db.Warehouses.Single(w => w.WarehouseCode == "WFG").Id;
         var bal = db.StockBalances.Single(b => b.WarehouseId == wfg && b.ProductId == 3 && b.LotId == lot && b.CustomerId == 1);
-        Assert.Equal(490, bal.QtyKg, 1);
+        Assert.Equal(500, bal.QtyKg, 1);
 
         var order = db.ProductionOrders.Single(o => o.Id == oid);
         Assert.True(order.IsClosed); // اكتمال الإنتاج + الاستلام → إغلاق تلقائي
@@ -256,12 +251,7 @@ public class B99QualityTests
 
         host.LoginAs("production");
         var del = host.Get<IProductionDeliveryService>();
-        var sd = del.SaveDelivery(DeliverySources.FromCheck, qcId.Value, DateTime.Today.ToString("yyyy-MM-dd"),
-            new List<ProductionDeliveryItemDto>
-            {
-                new() { OrderId = oid, ProductId = 3, LotId = lot, CustomerId = 1, PackagingTypeId = 1,
-                        PackageCount = 100, QtyKg = 500 }
-            });
+        var sd = del.CreateDeliveryFromActual(qc.ExecutionId, DateTime.Today.ToString("yyyy-MM-dd"));
         Assert.True(sd.Ok, sd.Message);
         Assert.True(del.IssueDelivery(sd.Id).Ok);
 
@@ -326,12 +316,7 @@ public class B99QualityTests
 
         // أمر تسليم محرَّر ← المخزن يرى «أمر تسليم بانتظار الاستلام»
         var del = host.Get<IProductionDeliveryService>();
-        var sd = del.SaveDelivery(DeliverySources.FromCheck, qcId.Value, DateTime.Today.ToString("yyyy-MM-dd"),
-            new List<ProductionDeliveryItemDto>
-            {
-                new() { OrderId = oid, ProductId = 3, LotId = lot, CustomerId = 1, PackagingTypeId = 1,
-                        PackageCount = 100, QtyKg = 500 }
-            });
+        var sd = del.CreateDeliveryFromActual(qc.ExecutionId, DateTime.Today.ToString("yyyy-MM-dd"));
         Assert.True(sd.Ok, sd.Message);
         Assert.True(del.IssueDelivery(sd.Id).Ok);
 

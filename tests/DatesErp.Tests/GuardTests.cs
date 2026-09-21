@@ -145,7 +145,7 @@ public class GuardTests
         quality.ApproveCheck(q.Id);
 
         var fg = host.Get<IFinishedGoodsService>();
-        var f = fg.SaveReceipt(oid, q.Id, null, new List<FinishedGoodsItemDto> { new() { ProductId = 3, LotId = lotId, PackageCount = 67, NetWeightKg = 500 } });
+        var f = TestProductionDocumentFlow.SaveReceiptFromActual(host, oid, q.Id, null, new List<FinishedGoodsItemDto> { new() { ProductId = 3, LotId = lotId, PackageCount = 67, NetWeightKg = 500 } });
         fg.Issue(f.Id);
         Assert.True(fg.Receive(f.Id, new Dictionary<int, double>()).Ok);
         var again = fg.Receive(f.Id, new Dictionary<int, double>());

@@ -130,7 +130,7 @@ public class FullCycleMultiCustomerTests
         // 8) تسليم إنتاج الأمر الأول: الإصدار لا يؤثر على الأرصدة
         var fg = Svc<IFinishedGoodsService>(host);
         var whFg = db.Warehouses.Single(w => w.WarehouseCode == "WFG").Id;
-        var f1 = fg.SaveReceipt(o1.Id, q1.Id, "2026-08-20",
+        var f1 = TestProductionDocumentFlow.SaveReceiptFromActual(host, o1.Id, q1.Id, "2026-08-20",
             new List<FinishedGoodsItemDto> { new() { ProductId = 3, LotId = lot1.Id, PackageCount = 400, NetWeightKg = 3000 } });
         Assert.True(f1.Ok, f1.Message);
         double wfgBefore;
@@ -154,7 +154,7 @@ public class FullCycleMultiCustomerTests
             Assert.Equal(3000, rd.StockBalances.Single(b => b.WarehouseId == whFg && b.CustomerId == cust1).QtyKg, 1);
 
         // تسليم إنتاج الأمر الثاني كاملاً
-        var f2 = fg.SaveReceipt(o2.Id, q2.Id, "2026-08-21",
+        var f2 = TestProductionDocumentFlow.SaveReceiptFromActual(host, o2.Id, q2.Id, "2026-08-21",
             new List<FinishedGoodsItemDto> { new() { ProductId = 3, LotId = lot2.Id, PackageCount = 267, NetWeightKg = 2000 } });
         Assert.True(f2.Ok, f2.Message);
         Assert.True(fg.Issue(f2.Id).Ok);

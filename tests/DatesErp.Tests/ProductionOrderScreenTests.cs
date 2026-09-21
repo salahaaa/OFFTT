@@ -329,7 +329,7 @@ public class ProductionOrderScreenTests
             Assert.True(quality.ApproveCheck(qc.Id).Ok);
 
             var fg = scope.ServiceProvider.GetRequiredService<IFinishedGoodsService>();
-            var rcpt = fg.SaveReceipt(orderId, qc.Id, DateTime.Today.ToString("dd/MM/yyyy"), new List<FinishedGoodsItemDto>
+            var rcpt = TestProductionDocumentFlow.SaveReceiptFromActual(host, orderId, qc.Id, DateTime.Today.ToString("dd/MM/yyyy"), new List<FinishedGoodsItemDto>
             { new() { ProductId = s.FinSukkari, LotId = lot, NetWeightKg = 9700, PackageCount = 1293 } });
             Assert.True(rcpt.Ok, rcpt.Message);
             Assert.True(fg.Issue(rcpt.Id).Ok);

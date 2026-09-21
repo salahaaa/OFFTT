@@ -82,7 +82,7 @@ public class ReportsEngineTests
         Assert.True(qc.Ok, qc.Message);
         Assert.True(quality.ApproveCheck(qc.Id).Ok);
 
-        var rcpt = fg.SaveReceipt(order.Id, qc.Id, "22/08/2026", new List<FinishedGoodsItemDto>
+        var rcpt = TestProductionDocumentFlow.SaveReceiptFromActual(host, order.Id, qc.Id, "22/08/2026", new List<FinishedGoodsItemDto>
         {
             new() { ProductId = fs.Id, LotId = lotSuk, NetWeightKg = 7300, PackageCount = 973 },
             new() { ProductId = fk.Id, LotId = lotKha, NetWeightKg = 5500, PackageCount = 733 }

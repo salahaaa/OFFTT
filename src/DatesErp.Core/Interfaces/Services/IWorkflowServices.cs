@@ -253,6 +253,8 @@ public class DeliverySourceLine
     public string LotCode { get; set; }
     public int? CustomerId { get; set; }
     public string CustomerName { get; set; }
+    public int? PackagingTypeId { get; set; }
+    public int PackageCount { get; set; }
     public double AvailableQtyKg { get; set; }
     public double DeliveredQtyKg { get; set; }
     public double RemainingQtyKg { get; set; }
@@ -297,6 +299,8 @@ public class ProductionDeliveryLineRow
     public string LotCode { get; set; }
     public int? CustomerId { get; set; }
     public string CustomerName { get; set; }
+    public int? PackagingTypeId { get; set; }
+    public int PackageCount { get; set; }
     public double QtyKg { get; set; }
     public double ReceivedQtyKg { get; set; }
     public double RemainingQtyKg { get; set; }
@@ -1092,15 +1096,19 @@ public interface IProductionDeliveryService
     List<ActualDeliveryOrderDto> GetActualDeliveryOrders() => throw new NotSupportedException();
     List<ActualByProductDefinitionDto> GetActualByProducts() => throw new NotSupportedException();
     OpResult SaveActualProduction(ActualProductionDto input) => throw new NotSupportedException();
-    /// <summary>إنشاء أمر تسليم من مصدر (محضر معتمد/خطة/إقفال خطة — الأخيران تجاوز بصلاحية وسبب).</summary>
+    /// <summary>إنشاء أمر تسليم من مصدر؛ المسار التشغيلي الرسمي هو FromActual من جلسة الإنتاج الفعلي.</summary>
     OpResult SaveDelivery(string sourceType, int sourceId, string deliveryDate, List<ProductionDeliveryItemDto> items, string bypassReason = null, string notes = null);
-    /// <summary>تحرير الأمر للمخزن (مدير الإنتاج) — لا يمس الأرصدة.</summary>
+    /// <summary>إنشاء أمر تسليم كامل من تنفيذ فعلي محفوظ، بلا إنشاء سند استلام مخزني.</summary>
+    OpResult CreateDeliveryFromActual(int executionId, string deliveryDate = null, string notes = null);
+    /// <summary>تعديل أمر تسليم فعلي مسودة قبل تحريره للمخزن.</summary>
+    OpResult UpdateDelivery(int deliveryId, string deliveryDate, List<ProductionDeliveryItemDto> items, string notes = null);
+    /// <summary>تحرير الأمر للمخزن (مدير الإنتاج) — لا يمس الأرصدة، ويقفل الخطة المرتبطة في المسار الرسمي.</summary>
     OpResult IssueDelivery(int deliveryId);
     /// <summary>إلغاء الأمر (مسودة دائماً — مُصدَر فقط إن لم يبدأ استلامه).</summary>
     OpResult CancelDelivery(int deliveryId);
     /// <summary>سياق المصدر للملء الآلي (سطور + متاح/مُسلَّم/متبقي).</summary>
     DeliverySourceContext GetSourceContext(string sourceType, int sourceId);
-    /// <summary>مستندات مصدر صالحة للاختيار (محاضر معتمدة/خطط معتمدة/خطط مقفلة).</summary>
+    /// <summary>مستندات مصدر صالحة للاختيار؛ في الدورة الجديدة هي جلسات الإنتاج الفعلي المكتملة.</summary>
     List<(int Id, string Label)> GetSourceDocs(string sourceType);
     /// <summary>بطاقة أمر تسليم (رأس + بنود + متبقيات).</summary>
     ProductionDeliveryCard GetDelivery(int deliveryId);

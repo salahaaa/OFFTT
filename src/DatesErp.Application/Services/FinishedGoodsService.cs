@@ -22,33 +22,25 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
     {
         Require("finishedgoods", "Create");
         if (items == null || items.Count == 0) return OpResult.Fail("أدخل بنداً واحداً على الأقل.");
+        if (deliveryId == null)
+            return OpResult.Fail("لا يمكن إنشاء أمر استلام الإنتاج مباشرة من أمر الإنتاج أو الفعلي. اختر أمر تسليم إنتاج محرراً من مدير الإنتاج.");
         var order = Db.ProductionOrders.Include(o => o.Items).FirstOrDefault(o => o.Id == orderId);
         if (order == null) return OpResult.Fail("أمر الإنتاج غير موجود.");
-        // §B96 — الربط بأمر تسليم: يُحرَّر من الإنتاج أولاً، والأمر المحدد من أوامره
-        ProductionDelivery delivery = null;
-        if (deliveryId != null)
-        {
-            delivery = Db.ProductionDeliveries.Include(d => d.Items).FirstOrDefault(d => d.Id == deliveryId.Value);
-            if (delivery == null) return OpResult.Fail("أمر تسليم الإنتاج غير موجود — تحقق من الرقم.");
-            if (delivery.Status == DocStatuses.Draft) return OpResult.Fail("أمر التسليم مسودة — يجب تحريره من مدير الإنتاج أولاً.");
-            if (delivery.Status == DocStatuses.Cancelled) return OpResult.Fail("أمر التسليم ملغى.");
-            if (delivery.Status == DocStatuses.Completed) return OpResult.Fail("أمر التسليم مستلم بالكامل مسبقاً.");
-            var delOrders = delivery.Items.Where(i => i.OrderId != null).Select(i => i.OrderId.Value).Distinct().ToList();
-            if (!delOrders.Contains(orderId)) return OpResult.Fail("الأمر المحدد ليس من أوامر أمر التسليم المحدد.");
-        }
-        // §جودة التمور (فترة تبريد يومان): يُسمح بالتسليم لمخزن التام بمجرد الإقفال اليومي
-        // وإرسال الإنتاج للجودة — النتيجة النهائية تُستكمل خلال يومين قبل تسليم العميل.
-        // §B96 — المربوط بأمر تسليم يحكمه أمر التسليم (ومنه التجاوز الموثق) لا بوابة الفحص هنا
-        QualityCheck qualityCheck = null;
-        bool coolingPending = false;
-        if (delivery == null)
-        {
-            qualityCheck = Db.QualityChecks.AsNoTracking()
-                .Where(c => c.OrderId == orderId).OrderByDescending(c => c.Id).FirstOrDefault();
-            if (qualityCheck == null)
-                return OpResult.Fail("لا يمكن تسليم الإنتاج قبل إقفال يوم الإنتاج وإرساله إلى الجودة — نفّذ الإقفال اليومي مع «إرسال للفحص» أولاً، أو أنشئ فحص جودة مستقلاً من شاشة الجودة.");
-            coolingPending = !qualityCheck.IsApproved;
-        }
+        // المسار الرسمي الوحيد: أمين مخزن التام ينشئ أمر الاستلام من أمر تسليم فعلي محرر.
+        var delivery = Db.ProductionDeliveries.Include(d => d.Items).FirstOrDefault(d => d.Id == deliveryId.Value);
+        if (delivery == null) return OpResult.Fail("أمر تسليم الإنتاج غير موجود — تحقق من الرقم.");
+        if (delivery.SourceType != DeliverySources.FromActual)
+            return OpResult.Fail("أمر الاستلام لا يُنشأ إلا من أمر تسليم نازل من الإنتاج الفعلي.");
+        var sourceExecution = Db.ProductionExecutions.AsNoTracking().FirstOrDefault(e => e.Id == delivery.SourceId);
+        if (sourceExecution == null || sourceExecution.OrderId != orderId)
+            return OpResult.Fail("أمر التسليم لا يرتبط بالتنفيذ الفعلي لأمر الإنتاج المحدد.");
+        if (delivery.Status == DocStatuses.Draft) return OpResult.Fail("أمر التسليم مسودة — يجب تحريره من مدير الإنتاج أولاً.");
+        if (delivery.Status == DocStatuses.Cancelled) return OpResult.Fail("أمر التسليم ملغى.");
+        if (delivery.Status == DocStatuses.Completed) return OpResult.Fail("أمر التسليم مستلم بالكامل مسبقاً.");
+        var delOrders = delivery.Items.Where(i => i.OrderId != null).Select(i => i.OrderId.Value).Distinct().ToList();
+        if (!delOrders.Contains(orderId)) return OpResult.Fail("الأمر المحدد ليس من أوامر أمر التسليم المحدد.");
+        if (delivery.Status != DocStatuses.Issued)
+            return OpResult.Fail("أمر التسليم ليس محرراً للمخزن.");
 
         return RunOp(() =>
         {
@@ -56,14 +48,13 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
             {
                 DocumentNumber = Numbering.Next("FGR"),
                 OrderId = orderId,
-                QualityCheckId = qualityCheckId ?? (delivery?.SourceType == DeliverySources.FromCheck ? delivery.SourceId : null),
+                QualityCheckId = qualityCheckId,
                 DeliveryId = deliveryId,
                 DeliveryDate = UiFormat.TryParseDate(deliveryDate, out var d) ? d : DateTime.Now,
                 WarehouseId = WarehouseId("WFG"),
                 Status = DocStatuses.Draft,
                 ReceiptStatus = "None"
             };
-            var boxWarnings = new List<string>(); // §B86/H7: تنبيهات مطابقة الكراتين
             // §B96 — حارس التكرار يمنع بندين بنفس (الصنف + الدفعة) في سند واحد: رفض مبكر برسالة واضحة
             // (لعملاء مختلفين على نفس الدفعة: استلم كل بند تسليم في سند مستقل — فالترقيم مختلف ولا تعارض)
             var dupLine = items.GroupBy(i => new { i.ProductId, i.LotId }).FirstOrDefault(g => g.Count() > 1);
@@ -79,86 +70,26 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
                 it.NetWeightKg = UnitsPolicy.EnsureCartonKgConsistency(Db, it.ProductId, it.PackagingTypeId,
                     it.NetWeightKg, it.PackageCount, "استلام الإنتاج التام");
 
-                // §B96 — المربوط: بند التسليم هو الحاكم (المتبقي + الهوية) — المباشر: بنود الأمر كما كان
+                // §B96 — بند التسليم هو الحاكم (المتبقي + الهوية)؛ لا يوجد مسار استلام مباشر.
                 int? effCust = null;
                 int? effLine = null;
-                if (delivery != null)
-                {
-                    if (it.DeliveryItemId == null)
-                        throw new DomainException("حدد بند أمر التسليم لكل صنف في السند المربوط.", "NO_DELIVERY_LINE");
-                    var line = delivery.Items.FirstOrDefault(l => l.Id == it.DeliveryItemId.Value)
-                        ?? throw new DomainException("بند التسليم غير تابع لأمر التسليم المحدد.", "NO_DELIVERY_LINE");
-                    if (line.ProductId != it.ProductId)
-                        throw new DomainException("الصنف لا يطابق بند أمر التسليم المحدد.", "LINE_MISMATCH");
-                    if (it.LotId != null && it.LotId != line.LotId)
-                        throw new DomainException("الدفعة لا تطابق بند أمر التسليم المحدد.", "LOT_MISMATCH");
-                    if (it.LotId == null) it.LotId = line.LotId;
-                    // §B86/H8 بالمثل: المسودات لا تحجب بعضها — السقف على المستلَم ويُعاد فحصه عند الاستلام
-                    double lineRemaining = line.QtyKg - line.ReceivedQtyKg;
-                    if (it.NetWeightKg > lineRemaining + 0.001)
-                        throw new DomainException(
-                            $"⛔ كمية البند ({it.NetWeightKg:N1} كجم) تتجاوز المتبقي في بند أمر التسليم ({lineRemaining:N1} كجم).",
-                            "OVER_DELIVERY");
-                    effCust = line.CustomerId;
-                    effLine = line.Id;
-                }
-                else
-                {
-                // §8 — لا يتجاوز بند التسليم كمية الأمر
-                var orderItem = order.Items.FirstOrDefault(i => i.ProductId == it.ProductId && i.LotId == it.LotId && i.PackagingTypeId == it.PackagingTypeId)
-                    ?? order.Items.FirstOrDefault(i => i.ProductId == it.ProductId);
-                if (orderItem == null) throw new DomainException("الصنف غير موجود في أمر الإنتاج.");
-
-                // §إصلاح (تسليم العميل): المسار المباشر كان يترك effCust = null، فتدخل البضاعة
-                // مخزنَ التام بلا هوية عميل. وشاشة «التسليم للعميل» تبحث بـ
-                // (WarehouseId == WFG && CustomerId == العميل) فلا تجد شيئاً — فيظهر رصيد صفر
-                // ولا تُعرض أصناف ولا كميات (الاختيار فيها بالنقر المزدوج على جدول الرصيد).
-                // الهوية تُشتق الآن من ملكية سطر الأمر ثم من عميل الأمر.
-                effCust = orderItem.CustomerId ?? order.CustomerId;
-
-                // §تتبع الصنف: الدفعة المرتبطة بالتسليم يجب أن تتطابق مع دفعة بند الأمر (لا استبدال هوية)
-                if (it.LotId is int fgLotId)
-                {
-                    ProductIdentityGuard.EnsureConversionAllowed(Db, it.ProductId, fgLotId);
-                    if (orderItem.LotId != null && orderItem.LotId != fgLotId)
-                    {
-                        string wantLot = Db.Lots.AsNoTracking().Where(l => l.Id == fgLotId).Select(l => l.LotCode).FirstOrDefault() ?? $"#{fgLotId}";
-                        string realLot = Db.Lots.AsNoTracking().Where(l => l.Id == orderItem.LotId).Select(l => l.LotCode).FirstOrDefault() ?? $"#{orderItem.LotId}";
-                        throw new DomainException(
-                            $"⛔ الدفعة {wantLot} ليست دفعة هذا البند — بند الأمر مرتبط بالدفعة {realLot}.\n" +
-                            "هوية الصنف والدفعة تنتقلان من أمر الإنتاج كما هما.",
-                            "LOT_MISMATCH");
-                    }
-                }
-                // §B86/H8: سقف المنتَج = مجموع بنود الأمر لذات الصنف (الأمر متعدد الدفعات لصنف واحد شائع)
-                double producedForProduct = order.Items.Where(i => i.ProductId == it.ProductId).Sum(i => i.ProducedQtyKg);
-                int producedBoxesForProduct = order.Items.Where(i => i.ProductId == it.ProductId).Sum(i => i.ProducedCartons);
-                // §B86/H8: الحصة المحجوزة = المستلَم فعلاً (لا المأمور) — المسودات لا تحجب بعضها، والملغاة لا تحجز؛ السقف يُعاد فحصه عند الاستلام
-                double alreadyDelivering = Db.FinishedGoodsReceiptItems
-                    .Join(Db.FinishedGoodsReceipts, i => i.ReceiptId, r => r.Id, (i, r) => new { i, r })
-                    .Where(x => x.r.OrderId == orderId && x.i.ProductId == it.ProductId
-                        && x.r.Status != DocStatuses.Cancelled)
-                    .Sum(x => x.i.ReceivedQtyKg);
-                if (alreadyDelivering + it.NetWeightKg > producedForProduct + 0.001)
+                if (it.DeliveryItemId == null)
+                    throw new DomainException("حدد بند أمر التسليم لكل صنف في السند المربوط.", "NO_DELIVERY_LINE");
+                var line = delivery.Items.FirstOrDefault(l => l.Id == it.DeliveryItemId.Value)
+                    ?? throw new DomainException("بند التسليم غير تابع لأمر التسليم المحدد.", "NO_DELIVERY_LINE");
+                if (line.ProductId != it.ProductId)
+                    throw new DomainException("الصنف لا يطابق بند أمر التسليم المحدد.", "LINE_MISMATCH");
+                if (it.LotId != null && it.LotId != line.LotId)
+                    throw new DomainException("الدفعة لا تطابق بند أمر التسليم المحدد.", "LOT_MISMATCH");
+                if (it.LotId == null) it.LotId = line.LotId;
+                // §B86/H8 بالمثل: المسودات لا تحجب بعضها — السقف على المستلَم ويُعاد فحصه عند الاستلام
+                double lineRemaining = line.QtyKg - line.ReceivedQtyKg;
+                if (it.NetWeightKg > lineRemaining + 0.001)
                     throw new DomainException(
-                        $"تسليم يتجاوز كمية أمر الإنتاج للصنف.\nالمنتَج: {producedForProduct:N1} كجم | المطلوب تسليمه تراكمياً: {alreadyDelivering + it.NetWeightKg:N1}",
-                        "EXCEED_ORDER_QTY");
-                // §B86/H7: مطابقة الكراتين — تنبيه عند تجاوز المتبقي المنتَج (لا رفض: إنتاج ما قبل B86 بلا كراتين مسجلة)
-                if (producedBoxesForProduct > 0 && it.PackageCount > 0)
-                {
-                    int receivedBoxes = Db.FinishedGoodsReceiptItems
-                        .Join(Db.FinishedGoodsReceipts, i => i.ReceiptId, r => r.Id, (i, r) => new { i, r })
-                        .Where(x => x.r.OrderId == orderId && x.i.ProductId == it.ProductId
-                            && x.r.Status != DocStatuses.Cancelled)
-                        .Sum(x => x.i.PackageCount);
-                    int boxRemaining = producedBoxesForProduct - receivedBoxes;
-                    if (it.PackageCount > boxRemaining)
-                    {
-                        string pname = Db.Products.AsNoTracking().Where(p => p.Id == it.ProductId).Select(p => p.ProductNameAr).FirstOrDefault() ?? $"#{it.ProductId}";
-                        boxWarnings.Add($"⚠ كراتين السند ({it.PackageCount:N0}) تتجاوز المتبقي المنتَج ({boxRemaining:N0}) للصنف «{pname}» — راجع العد قبل الاعتماد.");
-                    }
-                }
-                } // §B96 — نهاية المسار المباشر (غير مربوط)
+                        $"⛔ كمية البند ({it.NetWeightKg:N1} كجم) تتجاوز المتبقي في بند أمر التسليم ({lineRemaining:N1} كجم).",
+                        "OVER_DELIVERY");
+                effCust = line.CustomerId;
+                effLine = line.Id;
 
                 rcpt.Items.Add(new FinishedGoodsReceiptItem
                 {
@@ -176,30 +107,24 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
             }
             Db.FinishedGoodsReceipts.Add(rcpt);
             Db.SaveChanges();
-            // §1.50.66.10 — Production → Quality → Finished Goods Available مع سجل المستخدم والتاريخ
+            // الإصدار لا يمس الأرصدة؛ الترحيل الفعلي يتم لاحقاً من إجراء الاستلام فقط.
             rcpt.CreatedBy = Session?.UserId;
-            // §1.50.72 P3-2: الرسالة السابقة قالت دائماً «تم اعتماد الجودة» — غير صحيحة عندما يكون
-            // الفحص معلّقاً (فترة التبريد يومان، والتسليم للتام مسموح بالتصميم). المتغير coolingNote
-            // كان يُعلن ولا يُستخدم؛ اكتمل الآن.
-            string coolingNote = coolingPending
-                ? " — ⚠ فحص الجودة لم يُعتمد بعد (فترة التبريد) — التسليم لمخزن التام مسموح، أما تسليم العميل فينتظر اعتماد الفحص."
-                : "";
-            string boxMsg = boxWarnings.Count > 0 ? "\n" + string.Join("\n", boxWarnings) : "";
-            if (delivery != null)
-                return OpResult.Success($"تم إنشاء سند الاستلام {rcpt.DocumentNumber} من أمر التسليم {delivery.DocumentNumber} — أصدره ثم نفّذ الاستلام (Production→Quality→WFG موثق — المستخدم: {Session?.UserName} — التاريخ: {DateTime.Now:dd/MM/yyyy}).", rcpt.Id, rcpt.DocumentNumber);
-            return OpResult.Success($"تم إنشاء أمر تسليم الإنتاج {rcpt.DocumentNumber} — جاهز للاستلام في مخزن التام (WFG) مع رصيد بيع{coolingNote} (المستخدم: {Session?.UserName} — {DateTime.Now:dd/MM/yyyy})." + boxMsg, rcpt.Id, rcpt.DocumentNumber);
+            return OpResult.Success($"تم إنشاء أمر استلام الإنتاج {rcpt.DocumentNumber} من أمر التسليم المحرر {delivery.DocumentNumber} — أصدره ثم نفّذ الاستلام (المستخدم: {Session?.UserName} — التاريخ: {DateTime.Now:dd/MM/yyyy}).", rcpt.Id, rcpt.DocumentNumber);
         });
     }
 
     /// <summary>الإصدار إلى المخزن — لا يمس أي رصيد (§7).</summary>
     public OpResult Issue(int receiptId)
     {
+        Require("finishedgoods", "Approve");
         var rcpt = Db.FinishedGoodsReceipts.FirstOrDefault(r => r.Id == receiptId);
-        if (rcpt == null) return OpResult.Fail("أمر التسليم غير موجود.");
-        if (rcpt.Status == DocStatuses.Issued) return OpResult.Fail("أمر التسليم مُصدر مسبقاً.");
-        // بوابة الصلاحيات: الإصدار للإنتاج/الإدارة — الجودة والمخازن لا يُصدران
-        if (Session != null && !Session.Can("finishedgoods", "Create") && !Session.Can("production", "Edit"))
-            return OpResult.Fail("لا تملك صلاحية إصدار أمر التسليم.");
+        if (rcpt == null) return OpResult.Fail("أمر الاستلام غير موجود.");
+        if (rcpt.DeliveryId == null)
+            return OpResult.Fail("أمر الاستلام لا يملك مرجع أمر تسليم إنتاج.");
+        if (!Db.ProductionDeliveries.AsNoTracking().Any(d => d.Id == rcpt.DeliveryId.Value
+            && d.SourceType == DeliverySources.FromActual))
+            return OpResult.Fail("لا يمكن إصدار استلام مصدره أمر تسليم قديم غير نازل من الإنتاج الفعلي.");
+        if (rcpt.Status == DocStatuses.Issued) return OpResult.Fail("أمر الاستلام مُصدر مسبقاً.");
 
         return RunOp(() =>
         {
@@ -214,7 +139,12 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
     {
         Require("finishedgoods", "Approve");
         var rcpt = Db.FinishedGoodsReceipts.Include(r => r.Items).FirstOrDefault(r => r.Id == receiptId);
-        if (rcpt == null) return OpResult.Fail("أمر التسليم غير موجود.");
+        if (rcpt == null) return OpResult.Fail("أمر الاستلام غير موجود.");
+        if (rcpt.DeliveryId == null)
+            return OpResult.Fail("لا يمكن ترحيل استلام بلا أمر تسليم إنتاج مرتبط.");
+        if (!Db.ProductionDeliveries.AsNoTracking().Any(d => d.Id == rcpt.DeliveryId.Value
+            && d.SourceType == DeliverySources.FromActual))
+            return OpResult.Fail("لا يمكن ترحيل استلام مصدره أمر تسليم قديم غير نازل من الإنتاج الفعلي.");
         if (rcpt.ReceiptStatus == "Full") return OpResult.Fail("السند منفذ بالكامل مسبقاً.");
         if (rcpt.Status != DocStatuses.Issued && rcpt.Status != DocStatuses.Completed)
             return OpResult.Fail("لا يمكن الاستلام قبل إصدار أمر التسليم.");

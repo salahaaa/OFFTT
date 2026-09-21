@@ -163,7 +163,7 @@ public class PlanClosingTests
         int executionId = db.ProductionExecutions.Single(e => e.OrderId == orderId).Id;
 
         // ✅ الجودة سمحت بالتسليم للتام رغم أن الفحص لم يُعتمد بعد
-        var rcpt = fg.SaveReceipt(orderId, null, day, new List<FinishedGoodsItemDto>
+        var rcpt = TestProductionDocumentFlow.SaveReceiptFromActual(host, orderId, null, day, new List<FinishedGoodsItemDto>
         { new() { ProductId = 3, LotId = lotId, PackageCount = 2500, NetWeightKg = 18750 } });
         Assert.True(rcpt.Ok, rcpt.Message);
         Assert.Contains("التسليم للتام", rcpt.Message);

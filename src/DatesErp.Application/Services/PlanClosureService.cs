@@ -194,6 +194,17 @@ public class PlanClosureService : ServiceBase, IPlanClosureService
                 return OpResult.Success($"الخطة {plan.DocumentNumber} مقفلة سابقاً — لا حاجة لإقفال آخر.");
             if (plan.Status == DocStatuses.Cancelled) throw new DomainException("الخطة ملغاة — لا يمكن إقفالها.");
             if (!plan.IsApproved) throw new DomainException("الخطة غير معتمدة — اعتمدها أولاً.");
+            // إقفال الخطة في الدورة الحالية أثرٌ لأمر تسليم الإنتاج المحرر،
+            // وليس زرّاً مستقلاً بعد اعتماد أمر الإنتاج أو تسجيل الفعلي.
+            var actualExecutionIds = Db.ProductionExecutions.AsNoTracking()
+                .Where(e => Db.ProductionOrders.Any(o => o.Id == e.OrderId && o.SourcePlanId == planId))
+                .Select(e => e.Id);
+            bool hasIssuedProductionDelivery = Db.ProductionDeliveries.AsNoTracking()
+                .Any(d => d.SourceType == DeliverySources.FromActual
+                    && (d.Status == DocStatuses.Issued || d.Status == DocStatuses.Completed)
+                    && actualExecutionIds.Contains(d.SourceId));
+            if (!hasIssuedProductionDelivery)
+                throw new DomainException("لا تُقفل الخطة من هذه الشاشة مباشرة. حرّر أمر تسليم الإنتاج من الإنتاج الفعلي أولاً.", "PLAN_CLOSE_REQUIRES_DELIVERY");
             if (force && string.IsNullOrWhiteSpace(reason))
                 throw new DomainException("الإقفال الاستثنائي يتطلب سبباً مكتوباً يُسجَّل في التدقيق.");
             if (info.Blockers.Count > 0)

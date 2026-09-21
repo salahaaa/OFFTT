@@ -69,7 +69,7 @@ public class DeliveryAuditProbeTests
         if (approveQc) Assert.True(qcSvc.ApproveCheck(qc.Id).Ok);
 
         var fg = Svc<IFinishedGoodsService>(host);
-        var rc = fg.SaveReceipt(o.Id, qc.Id, "2026-09-12", new List<FinishedGoodsItemDto>
+        var rc = TestProductionDocumentFlow.SaveReceiptFromActual(host, o.Id, qc.Id, "2026-09-12", new List<FinishedGoodsItemDto>
         { new() { ProductId = finProductId, LotId = lotId, PackagingTypeId = 1, PackageCount = (int)(kg / 5), NetWeightKg = kg, CustomerId = custId } });
         Assert.True(rc.Ok, rc.Message);
         Assert.True(fg.Issue(rc.Id).Ok);

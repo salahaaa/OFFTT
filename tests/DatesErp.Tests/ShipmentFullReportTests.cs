@@ -78,7 +78,7 @@ public class ShipmentFullReportTests
         Assert.True(quality.ApproveCheck(qc.Id).Ok);
 
         // خروج التام إلى المخزن
-        var rcpt = fg.SaveReceipt(order.Id, qc.Id, "17/08/2026", new List<FinishedGoodsItemDto>
+        var rcpt = TestProductionDocumentFlow.SaveReceiptFromActual(host, order.Id, qc.Id, "17/08/2026", new List<FinishedGoodsItemDto>
         {
             new() { ProductId = fs.Id, LotId = lotSuk, NetWeightKg = 7300, PackageCount = 973 },
             new() { ProductId = fk.Id, LotId = lotKha, NetWeightKg = 5300, PackageCount = 707 }

@@ -152,7 +152,7 @@ public class MasterLinkageTests
         var closedItem = db.ProductionOrderItems.AsNoTracking().First(i => i.OrderId == or.Id && i.ProductId == fin.Id);
         Assert.Equal(5000, closedItem.ProducedQtyKg, 1);                      // الإقفال كتب على نفس المعرف
 
-        var fgr = fg.SaveReceipt(or.Id, null, "2026-09-01", new System.Collections.Generic.List<FinishedGoodsItemDto>
+        var fgr = TestProductionDocumentFlow.SaveReceiptFromActual(host, or.Id, null, "2026-09-01", new System.Collections.Generic.List<FinishedGoodsItemDto>
         { new() { ProductId = fin.Id, LotId = lot.Id, PackageCount = 100, NetWeightKg = 1000 } });
         Assert.True(fgr.Ok, fgr.Message);
         var fgItem = db.FinishedGoodsReceiptItems.AsNoTracking().First(i => i.ReceiptId == fgr.Id);

@@ -79,7 +79,7 @@ public class DeliveryPickingDirectiveTests
 
         // استلام التام ← رصيد العميل بمخزن التام
         var fg = Svc<IFinishedGoodsService>(host);
-        var fr = fg.SaveReceipt(o.Id, qcId, day, new List<FinishedGoodsItemDto>
+        var fr = TestProductionDocumentFlow.SaveReceiptFromActual(host, o.Id, qcId, day, new List<FinishedGoodsItemDto>
         { new() { ProductId = finishedProductId, LotId = lot, PackagingTypeId = null, PackageCount = cartons, NetWeightKg = kg } });
         Assert.True(fr.Ok, fr.Message);
         var rec = fg.Receive(fr.Id, null);

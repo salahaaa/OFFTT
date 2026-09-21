@@ -31,7 +31,8 @@ public partial class ProductionDeliveryService
             var exe = Db.ProductionExecutions.AsNoTracking().Include(e => e.Downtimes).Include(e => e.ByProducts)
                 .FirstOrDefault(e => e.OrderId == order.Id && e.IsDayClosed);
             var qc = exe == null ? null : Db.QualityChecks.AsNoTracking().FirstOrDefault(q => q.ExecutionId == exe.Id);
-            var receipt = qc == null ? null : Db.FinishedGoodsReceipts.AsNoTracking().FirstOrDefault(r => r.QualityCheckId == qc.Id && r.ReceiptStatus == "Full" && r.Status != DocStatuses.Cancelled);
+            var productionDelivery = exe == null ? null : Db.ProductionDeliveries.AsNoTracking()
+                .FirstOrDefault(d => d.SourceType == DeliverySources.FromActual && d.SourceId == exe.Id && d.Status != DocStatuses.Cancelled);
             var first = group.First();
             // §v1.50.24: أمر مسودة معتمد مقبول للتسجيل — الحفظ يبدأ تنفيذه تلقائياً،
             // فلا يحتاج المستخدم خطوة «بدء التنفيذ» من شاشة الأوامر.
@@ -40,11 +41,15 @@ public partial class ProductionDeliveryService
             {
                 OrderId = order.Id, Label = $"{order.DocumentNumber} — {first.CustomerName} — {first.ShiftName}",
                 Customer = first.CustomerName, Shift = first.ShiftName, PlanNumber = first.PlanNumber,
+                ExecutionId = exe?.Id ?? 0, ProductionDeliveryId = productionDelivery?.Id ?? 0,
                 Recorded = exe != null, CanRecord = can,
-                Status = receipt != null ? "تم تسجيل الفعلي واستلامه مخزنيًا — نتيجة الجودة مستقلة"
-                    : exe != null ? "تنفيذ محفوظ سابقًا — لا إعادة تسجيل أو ترحيل تلقائي للسجلات السابقة"
+                CanCreateDelivery = exe != null && productionDelivery == null,
+                Status = productionDelivery != null ? $"تم إنشاء أمر تسليم الإنتاج {productionDelivery.DocumentNumber} — {DocStatuses.ToArabic(productionDelivery.Status)}"
+                    : exe != null ? "إنتاج فعلي محفوظ — لا يوجد استلام مخزني تلقائي؛ أنشئ أمر التسليم من هنا"
                     : can ? "أدخل الفعلي فقط؛ المخطط ثابت من خطة اليوم" : "يلزم أمر اليوم المعتمد غير المقفل — اختر الأمر الصحيح من القائمة",
-                ReceiptNumber = receipt?.ReceiptNumber, QualityNumber = qc?.DocumentNumber,
+                ReceiptNumber = null, QualityNumber = qc?.DocumentNumber,
+                ProductionDeliveryNumber = productionDelivery?.DocumentNumber,
+                ProductionDeliveryStatus = productionDelivery == null ? null : DocStatuses.ToArabic(productionDelivery.Status),
                 ConsumedRawKg = exe?.ConsumedRawKg ?? 0, DowntimeHours = exe?.Downtimes.Sum(d => d.Hours) ?? 0,
                 DowntimeReason = exe == null ? null : string.Join("؛ ", exe.Downtimes.Select(d => d.ReasonAr)), Notes = exe?.ClosingNotes,
                 RecordedByProductDefinitions = exe == null ? new() : exe.ByProducts.Select(b => Db.ByProducts.AsNoTracking()
@@ -64,7 +69,8 @@ public partial class ProductionDeliveryService
     {
         // One operation, not an implicit grant of warehouse or quality permissions.
         Require("production", "Create"); Require("execution", "Edit");
-        Require("finishedgoods", "Create"); Require("finishedgoods", "Approve");
+        // تسجيل الفعلي ينتهي عند جلسة التنفيذ. لا يمنح ضمنياً صلاحيات المخازن
+        // ولا ينشئ أمر/سند استلام تام؛ تلك مرحلة مستقلة بعد تحرير أمر التسليم.
         return RunOp(() =>
         {
             if (input == null) throw new DomainException("بيانات التنفيذ غير موجودة.");
@@ -117,41 +123,37 @@ public partial class ProductionDeliveryService
             var definitions = GetActualByProducts().Select(b => b.Id).ToHashSet();
             if (secondary.Any(b => !definitions.Contains(b.ByProductId)))
                 throw new DomainException("المخرج الثانوي غير موجود أو موقوف في قائمة التعريفات.");
-            var execution = new ExecutionService(Db, Session, Numbering, new PlanningService(Db, Session, Numbering))
+            var execution = new ExecutionService(Db, Session, Numbering)
                 { JoinParentTransaction = true, RecordingActualDelivery = true };
             void Must(OpResult r) { if (!r.Ok) throw new DomainException(r.Message); }
             Must(execution.CloseProductionDay(order.Id, actual.Sum(i => i.ProducedKg), actual.Sum(i => i.ProducedCartons),
                 0, 0, 0, false, input.DowntimeHours > 0 ? new() { new DowntimeDto { Hours = input.DowntimeHours, ReasonAr = input.DowntimeReason.Trim() } } : new(),
                 true, input.Notes?.Trim(), secondary, input.ConsumedRawKg, actual));
             var exe = Db.ProductionExecutions.Single(e => e.OrderId == order.Id && e.IsDayClosed);
-            var qc = Db.QualityChecks.Single(q => q.ExecutionId == exe.Id);
-            qc.TotalCheckedCartons = actual.Sum(i => i.ProducedCartons);
-            qc.CheckDate = Db.BusinessNow; qc.ExpectedCheckDate = Db.BusinessNow.Date.AddDays(2);
-            var received = actual.Where(i => i.ProducedCartons > 0).Select(i =>
+            var qc = Db.QualityChecks.SingleOrDefault(q => q.ExecutionId == exe.Id);
+            if (qc != null)
             {
-                var source = order.Items.Single(s => s.Id == i.OrderItemId);
-                return new FinishedGoodsItemDto { ProductId = source.ProductId, LotId = source.LotId,
-                    CustomerId = source.CustomerId ?? order.CustomerId, PackagingTypeId = source.PackagingTypeId,
-                    PackageCount = i.ProducedCartons, NetWeightKg = i.ProducedKg };
-            }).GroupBy(i => new { i.ProductId, i.LotId, i.CustomerId, i.PackagingTypeId })
-            .Select(g => new FinishedGoodsItemDto { ProductId = g.Key.ProductId, LotId = g.Key.LotId,
-                CustomerId = g.Key.CustomerId, PackagingTypeId = g.Key.PackagingTypeId,
-                PackageCount = g.Sum(i => i.PackageCount), NetWeightKg = g.Sum(i => i.NetWeightKg) }).ToList();
-            // Pending inspection is not a passed result. No accepted quantity is invented.
-            foreach (var row in received)
-                qc.Items.Add(new QualityCheckItem { ProductId = row.ProductId, LotId = row.LotId,
-                    CheckedCartons = 0, CheckedQtyKg = 0,
-                    Notes = $"مرسل للفحص: {row.PackageCount} كرتون / {row.NetWeightKg} كجم — لا كمية مفحوصة أو مقبولة قبل إدخال النتائج" });
-            Db.SaveChanges();
-            var goods = new FinishedGoodsService(Db, Session, Numbering) { JoinParentTransaction = true };
-            var receipt = goods.SaveReceipt(order.Id, qc.Id, Db.BusinessNow.ToString("dd/MM/yyyy"), received); Must(receipt);
-            Must(goods.Issue(receipt.Id));
-            var lines = Db.FinishedGoodsReceiptItems.Where(i => i.ReceiptId == receipt.Id).ToDictionary(i => i.Id, i => i.NetWeightKg);
-            var posted = goods.Receive(receipt.Id, lines); Must(posted);
-            _audit.Log("تسليم الإنتاج", "تسجيل الفعلي واستلامه وإرساله للفحص", "ProductionExecution", exe.DocumentNumber, exe.Id,
+                qc.TotalCheckedCartons = actual.Sum(i => i.ProducedCartons);
+                qc.CheckDate = Db.BusinessNow;
+                qc.ExpectedCheckDate = Db.BusinessNow.Date.AddDays(2);
+                foreach (var row in actual.Where(i => i.ProducedCartons > 0))
+                {
+                    var source = order.Items.Single(s => s.Id == row.OrderItemId);
+                    qc.Items.Add(new QualityCheckItem
+                    {
+                        ProductId = source.ProductId, LotId = source.LotId,
+                        CheckedCartons = 0, CheckedQtyKg = 0,
+                        Notes = $"مرسل للفحص: {row.ProducedCartons} كرتون / {row.ProducedKg:N1} كجم — لا كمية مقبولة قبل إدخال نتيجة الجودة"
+                    });
+                }
+                Db.SaveChanges();
+            }
+            // لا يُنشأ هنا سند استلام مخزني ولا تُرحّل أرصدة مخزن التام.
+            // أمر تسليم الإنتاج يُنشأ لاحقاً صراحةً من التنفيذ الفعلي بواسطة مدير الإنتاج.
+            _audit.Log("الإنتاج الفعلي", "تسجيل الإنتاج الفعلي فقط — دون إنشاء استلام مخزني", "ProductionExecution", exe.DocumentNumber, exe.Id,
                 newValues: new { order.Id, PlannedCartons = order.Items.Sum(i => i.PlannedCartons), exe.ActualCartons,
-                    Difference = order.Items.Sum(i => i.PlannedCartons) - exe.ActualCartons, exe.ConsumedRawKg, ReceiptId = receipt.Id, QualityId = qc.Id });
-            return OpResult.Success($"تم تسجيل {exe.ActualCartons:N0} كرتون؛ الفرق {order.Items.Sum(i => i.PlannedCartons) - exe.ActualCartons:N0}. سند الاستلام {posted.DocumentNumber} — الفحص {qc.DocumentNumber} قيد الانتظار، وليس تصريحًا للبيع.", exe.Id, exe.DocumentNumber);
+                    Difference = order.Items.Sum(i => i.PlannedCartons) - exe.ActualCartons, exe.ConsumedRawKg, QualityId = qc?.Id });
+            return OpResult.Success($"تم تسجيل الإنتاج الفعلي {exe.ActualCartons:N0} كرتون؛ الفرق {order.Items.Sum(i => i.PlannedCartons) - exe.ActualCartons:N0}. لا يوجد استلام مخزني تلقائي — أنشئ أمر تسليم الإنتاج من التنفيذ ثم حرره للمخزن.", exe.Id, exe.DocumentNumber);
         });
     }
 }

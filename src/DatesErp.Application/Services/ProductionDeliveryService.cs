@@ -11,7 +11,7 @@ namespace DatesErp.Application.Services;
 /// <summary>
 /// §B96 — أوامر تسليم الإنتاج (إدارة الإنتاج — يحررها مدير الإنتاج):
 /// مسودة ← مُصدَرة ← مستلمة (عبر سندات الاستلام المخزنية).
-/// المصدر: محضر فحص معتمد (طبيعي) أو خطة/إقفال خطة (تجاوز للفحص بصلاحية وسبب مكتوب).
+/// المصدر التشغيلي الجديد: جلسة الإنتاج الفعلي المكتملة فقط؛ وتبقى مصادر الفحص/الخطة للقراءة التاريخية والتوافق مع المستندات القديمة.
 /// البند = أمر + صنف + دفعة + عميل + كمية — عميل أو عدة عملاء، صنف أو أكثر.
 /// سقفان: سقف المصدر (المقبول/المنتَج) + سقف فيزيائي موحد (كل المصادر ≤ المنتَج).
 /// </summary>
@@ -29,8 +29,9 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
         string bypassReason = null, string notes = null)
     {
         Require("production", "Create");
-        if (sourceType != DeliverySources.FromCheck && sourceType != DeliverySources.FromPlan && sourceType != DeliverySources.FromClosing)
-            return OpResult.Fail("مصدر التسليم غير معروف — اختر: محضر فحص / خطة إنتاج / إقفال خطة.");
+        if (sourceType != DeliverySources.FromActual && sourceType != DeliverySources.FromCheck
+            && sourceType != DeliverySources.FromPlan && sourceType != DeliverySources.FromClosing)
+            return OpResult.Fail("مصدر التسليم غير معروف — اختر جلسة إنتاج فعلي مكتملة.");
         if (items == null || items.Count == 0)
             return OpResult.Fail("أدخل بنداً واحداً على الأقل في أمر التسليم.");
 
@@ -47,7 +48,19 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
         QualityCheck check = null;
         ProductionPlan plan = null;
         ProductionOrder checkOrder = null;
-        if (sourceType == DeliverySources.FromCheck)
+        ProductionExecution execution = null;
+        if (sourceType == DeliverySources.FromActual)
+        {
+            execution = Db.ProductionExecutions.AsNoTracking().FirstOrDefault(e => e.Id == sourceId);
+            if (execution == null) return OpResult.Fail("جلسة الإنتاج الفعلي غير موجودة — احفظ الفعلي أولاً.");
+            if (!execution.IsDayClosed || execution.Status != DocStatuses.Completed)
+                return OpResult.Fail("لا يمكن إنشاء أمر تسليم قبل إقفال جلسة الإنتاج الفعلي.");
+            checkOrder = Db.ProductionOrders.Include(o => o.Items)
+                .FirstOrDefault(o => o.Id == execution.OrderId && o.IsApproved && o.Status != DocStatuses.Cancelled);
+            if (checkOrder == null)
+                return OpResult.Fail("أمر الإنتاج المرتبط بالفعلي غير موجود أو غير معتمد.");
+        }
+        else if (sourceType == DeliverySources.FromCheck)
         {
             check = Db.QualityChecks.Include(c => c.Items).FirstOrDefault(c => c.Id == sourceId);
             if (check == null) return OpResult.Fail("محضر الفحص غير موجود — تحقق من الرقم.");
@@ -67,7 +80,7 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
                 return OpResult.Fail("الخطة غير مقفلة — التسليم من الإقفال يتطلب خطة مقفلة (أو سلِّم من الخطة مباشرة).");
         }
 
-        var srcLines = BuildSourceLines(sourceType, sourceId, check, checkOrder, plan);
+        var srcLines = BuildSourceLines(sourceType, sourceId, check, checkOrder, plan, execution);
 
         return RunOp(() =>
         {
@@ -83,6 +96,24 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
                 Notes = notes
             };
 
+            PopulateDeliveryItems(delivery, sourceType, srcLines, items);
+
+            Db.ProductionDeliveries.Add(delivery);
+            Db.SaveChanges();
+            if (bypass)
+                _audit.Log("الإنتاج", "تسليم بتجاوز الفحص", "ProductionDelivery", delivery.DocumentNumber, delivery.Id,
+                    new { المصدر = DeliverySources.ToArabic(sourceType) }, new { السبب = delivery.BypassReason });
+            double total = delivery.Items.Sum(i => i.QtyKg);
+            return OpResult.Success(
+                $"تم إنشاء أمر تسليم الإنتاج {delivery.DocumentNumber} من {DeliverySources.ToArabic(sourceType)} — {delivery.Items.Count} بنود ({total:N1} كجم)." +
+                (bypass ? " (بتجاوز موثق للفحص)" : "") + " — بانتظار تحرير مدير الإنتاج.",
+                delivery.Id, delivery.DocumentNumber);
+        });
+    }
+
+    private void PopulateDeliveryItems(ProductionDelivery delivery, string sourceType,
+        List<DeliverySourceLine> srcLines, List<ProductionDeliveryItemDto> items)
+    {
             var takenPerLine = new Dictionary<DeliverySourceLine, double>();
             foreach (var it in items)
             {
@@ -171,16 +202,71 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
                 });
             }
 
-            Db.ProductionDeliveries.Add(delivery);
+    }
+
+    public OpResult CreateDeliveryFromActual(int executionId, string deliveryDate = null, string notes = null)
+    {
+        Require("production", "Create");
+        var execution = Db.ProductionExecutions.AsNoTracking().FirstOrDefault(e => e.Id == executionId);
+        if (execution == null) return OpResult.Fail("جلسة الإنتاج الفعلي غير موجودة.");
+        if (!execution.IsDayClosed || execution.Status != DocStatuses.Completed)
+            return OpResult.Fail("لا يمكن إنشاء أمر تسليم قبل حفظ الإنتاج الفعلي وإقفاله.");
+        if (Db.ProductionDeliveries.Any(d => d.SourceType == DeliverySources.FromActual
+            && d.SourceId == executionId && d.Status != DocStatuses.Cancelled))
+            return OpResult.Fail("يوجد أمر تسليم إنتاج مرتبط بهذا الفعلي — افتحه للتحرير قبل تحريره للمخزن.");
+
+        var ctx = GetSourceContext(DeliverySources.FromActual, executionId);
+        var items = ctx.Lines.Where(l => l.RemainingQtyKg > 0.001)
+            .Select(l => new ProductionDeliveryItemDto
+            {
+                OrderId = l.OrderId,
+                ProductId = l.ProductId,
+                LotId = l.LotId,
+                CustomerId = l.CustomerId,
+                PackagingTypeId = l.PackagingTypeId,
+                PackageCount = l.PackageCount,
+                QtyKg = Math.Round(l.RemainingQtyKg, 3)
+            }).ToList();
+        if (items.Count == 0) return OpResult.Fail("لا توجد كمية فعلية قابلة للتسليم في جلسة الإنتاج.");
+        return SaveDelivery(DeliverySources.FromActual, executionId,
+            deliveryDate ?? DateTime.Now.ToString("dd/MM/yyyy"), items, null, notes);
+    }
+
+    public OpResult UpdateDelivery(int deliveryId, string deliveryDate, List<ProductionDeliveryItemDto> items, string notes = null)
+    {
+        Require("production", "Edit");
+        if (items == null || items.Count == 0) return OpResult.Fail("أدخل بنداً واحداً على الأقل في أمر التسليم.");
+        var delivery = Db.ProductionDeliveries.Include(d => d.Items).FirstOrDefault(d => d.Id == deliveryId);
+        if (delivery == null) return OpResult.Fail("أمر التسليم غير موجود.");
+        if (delivery.SourceType != DeliverySources.FromActual)
+            return OpResult.Fail("لا يمكن تعديل أمر تسليم قديم غير نازل من الإنتاج الفعلي.");
+        if (delivery.Status != DocStatuses.Draft)
+            return OpResult.Fail("لا يمكن تعديل أمر التسليم بعد تحريره للمخزن.");
+        if (delivery.Items.Any(i => i.ReceivedQtyKg > 0.001))
+            return OpResult.Fail("بدأ استلام هذا الأمر — لا يمكن تعديله.");
+
+        var ctx = GetSourceContext(DeliverySources.FromActual, delivery.SourceId);
+        // مسودة الأمر الحالي لا تحجب نفسها عند إعادة حفظها.
+        foreach (var line in ctx.Lines)
+        {
+            var old = delivery.Items.Where(i => i.ProductId == line.ProductId && i.LotId == line.LotId
+                && i.CustomerId == line.CustomerId).Sum(i => i.QtyKg);
+            line.DeliveredQtyKg = Math.Max(0, line.DeliveredQtyKg - old);
+            line.RemainingQtyKg = Math.Max(0, line.AvailableQtyKg - line.DeliveredQtyKg);
+        }
+
+        return RunOp(() =>
+        {
+            Db.ProductionDeliveryItems.RemoveRange(delivery.Items);
+            delivery.Items.Clear();
+            Db.SaveChanges(); // لا تحتسب حواجز السقف بنود المسودة القديمة أثناء إعادة البناء
+            PopulateDeliveryItems(delivery, DeliverySources.FromActual, ctx.Lines, items);
+            delivery.DeliveryDate = UiFormat.TryParseDate(deliveryDate, out var d) ? d : delivery.DeliveryDate;
+            delivery.Notes = notes;
+            delivery.ModifiedBy = Session?.UserId;
+            delivery.ModifiedDate = DateTime.Now;
             Db.SaveChanges();
-            if (bypass)
-                _audit.Log("الإنتاج", "تسليم بتجاوز الفحص", "ProductionDelivery", delivery.DocumentNumber, delivery.Id,
-                    new { المصدر = DeliverySources.ToArabic(sourceType) }, new { السبب = delivery.BypassReason });
-            double total = delivery.Items.Sum(i => i.QtyKg);
-            return OpResult.Success(
-                $"تم إنشاء أمر تسليم الإنتاج {delivery.DocumentNumber} من {DeliverySources.ToArabic(sourceType)} — {delivery.Items.Count} بنود ({total:N1} كجم)." +
-                (bypass ? " (بتجاوز موثق للفحص)" : "") + " — بانتظار تحرير مدير الإنتاج.",
-                delivery.Id, delivery.DocumentNumber);
+            return OpResult.Success($"تم تعديل أمر تسليم الإنتاج {delivery.DocumentNumber} — ما زال مسودة بانتظار تحرير مدير الإنتاج.", delivery.Id, delivery.DocumentNumber);
         });
     }
 
@@ -201,9 +287,50 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
             delivery.IsApproved = true;
             delivery.ApprovedBy = Session?.UserId;
             delivery.ApprovedDate = DateTime.Now;
+            string planMessage = CloseLinkedPlanForDelivery(delivery);
             Db.SaveChanges();
-            return OpResult.Success($"تم تحرير أمر التسليم {delivery.DocumentNumber} إلى المخازن — بانتظار سند الاستلام.");
+            return OpResult.Success($"تم تحرير أمر التسليم {delivery.DocumentNumber} إلى المخازن — بانتظار أمر استلام أمين مخزن التام.{planMessage}");
         });
+    }
+
+    /// <summary>
+    /// إقفال الخطة هو أثر تحرير أمر تسليم الإنتاج، لا أثر اعتماد أمر الإنتاج
+    /// ولا أثر تسجيل الفعلي ولا أثر استلام المخزن. الصلاحية حُكمت في IssueDelivery
+    /// عبر production/Approve، ولا تُستخدم بوابة بديلة.
+    /// </summary>
+    private string CloseLinkedPlanForDelivery(ProductionDelivery delivery)
+    {
+        if (delivery.SourceType != DeliverySources.FromActual) return "";
+        var execution = Db.ProductionExecutions.AsNoTracking().FirstOrDefault(e => e.Id == delivery.SourceId);
+        if (execution == null) throw new DomainException("جلسة الإنتاج الفعلي المرتبطة بأمر التسليم غير موجودة.", "ACTUAL_MISSING");
+        var order = Db.ProductionOrders.AsNoTracking().FirstOrDefault(o => o.Id == execution.OrderId);
+        if (order?.SourcePlanId == null) return "";
+        var plan = Db.ProductionPlans.Include(p => p.Items).FirstOrDefault(p => p.Id == order.SourcePlanId.Value);
+        if (plan == null) throw new DomainException("الخطة المرتبطة بالإنتاج الفعلي غير موجودة.", "PLAN_MISSING");
+        if (plan.Status == DocStatuses.Cancelled) throw new DomainException("الخطة المرتبطة ملغاة — لا يمكن تحرير أمر التسليم.", "PLAN_CANCELLED");
+        if (!plan.IsApproved) throw new DomainException("الخطة المرتبطة غير معتمدة — لا يمكن تحرير أمر التسليم.", "PLAN_NOT_APPROVED");
+        if (plan.IsClosed) return $" الخطة {plan.DocumentNumber} مقفلة مسبقاً.";
+
+        plan.IsClosed = true;
+        plan.ClosedDate = DateTime.Now;
+        plan.ClosedBy = Session?.UserId;
+        plan.Status = DocStatuses.Closed;
+        foreach (var lotId in plan.Items.Where(i => i.LotId != null).Select(i => i.LotId.Value).Distinct())
+        {
+            var lot = Db.Lots.FirstOrDefault(l => l.Id == lotId);
+            if (lot == null) continue;
+            double reserved = Db.ProductionPlanItems
+                .Where(i => i.LotId == lotId && i.PlanId != plan.Id)
+                .Join(Db.ProductionPlans, i => i.PlanId, p => p.Id, (i, p) => new { i, p })
+                .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled
+                    && !x.p.IsClosed && !x.i.IsClosed)
+                .Sum(x => x.i.PlannedQtyKg - x.i.ProducedQtyKg);
+            lot.ReservedQtyKg = Math.Max(0, reserved);
+        }
+        _audit.Log("إدارة الإنتاج", "إقفال الخطة نتيجة تحرير أمر تسليم الإنتاج", "Plan", plan.DocumentNumber, plan.Id,
+            new { السبب = "ProductionDelivery.Issue", أمر_التسليم = delivery.DocumentNumber },
+            new { الحالة_الجديدة = "مقفلة", المستخدم = Session?.UserId });
+        return $" أُقفلت الخطة المرتبطة {plan.DocumentNumber} نتيجة تحرير أمر التسليم.";
     }
 
     public OpResult CancelDelivery(int deliveryId)
@@ -227,7 +354,16 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
     public DeliverySourceContext GetSourceContext(string sourceType, int sourceId)
     {
         var ctx = new DeliverySourceContext { SourceType = sourceType, SourceId = sourceId };
-        if (sourceType == DeliverySources.FromCheck)
+        if (sourceType == DeliverySources.FromActual)
+        {
+            var execution = Db.ProductionExecutions.AsNoTracking().FirstOrDefault(e => e.Id == sourceId);
+            if (execution == null) return ctx;
+            ctx.SourceNumber = execution.DocumentNumber;
+            ctx.SourceDate = UiFormat.D(execution.EndDateTime);
+            var order = Db.ProductionOrders.Include(o => o.Items).AsNoTracking().FirstOrDefault(o => o.Id == execution.OrderId);
+            ctx.Lines = BuildSourceLines(sourceType, sourceId, null, order, null, execution);
+        }
+        else if (sourceType == DeliverySources.FromCheck)
         {
             var check = Db.QualityChecks.Include(c => c.Items).AsNoTracking().FirstOrDefault(c => c.Id == sourceId);
             if (check == null) return ctx;
@@ -236,7 +372,7 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
             var order = check.OrderId != null
                 ? Db.ProductionOrders.Include(o => o.Items).AsNoTracking().FirstOrDefault(o => o.Id == check.OrderId.Value)
                 : null;
-            ctx.Lines = BuildSourceLines(sourceType, sourceId, check, order, null);
+            ctx.Lines = BuildSourceLines(sourceType, sourceId, check, order, null, null);
         }
         else if (sourceType == DeliverySources.FromPlan || sourceType == DeliverySources.FromClosing)
         {
@@ -244,13 +380,19 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
             if (plan == null) return ctx;
             ctx.SourceNumber = plan.DocumentNumber;
             ctx.SourceDate = UiFormat.D(plan.StartDate);
-            ctx.Lines = BuildSourceLines(sourceType, sourceId, null, null, plan);
+            ctx.Lines = BuildSourceLines(sourceType, sourceId, null, null, plan, null);
         }
         return ctx;
     }
 
     public List<(int Id, string Label)> GetSourceDocs(string sourceType)
     {
+        if (sourceType == DeliverySources.FromActual)
+            return Db.ProductionExecutions.AsNoTracking()
+                .Where(e => e.IsDayClosed && e.Status == DocStatuses.Completed)
+                .OrderByDescending(e => e.Id).Take(200).ToList()
+                .Select(e => (e.Id, $"{e.DocumentNumber} — {UiFormat.D(e.EndDateTime)} — {e.ActualCartons:N0} كرتون"))
+                .ToList();
         if (sourceType == DeliverySources.FromCheck)
             return Db.QualityChecks.AsNoTracking().Include(c => c.Items)
                 .Where(c => c.IsApproved && c.OrderId != null)
@@ -302,6 +444,8 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
                 LotCode = i.LotId != null ? LotCode(i.LotId) : null,
                 CustomerId = i.CustomerId,
                 CustomerName = i.CustomerId != null ? CustName(i.CustomerId) : null,
+                PackagingTypeId = i.PackagingTypeId,
+                PackageCount = i.PackageCount,
                 QtyKg = i.QtyKg,
                 ReceivedQtyKg = i.ReceivedQtyKg,
                 RemainingQtyKg = Math.Max(0, i.QtyKg - i.ReceivedQtyKg)
@@ -319,10 +463,44 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
 
     // ── سطور المصدر: المتاح (مقبول/منتَج) ناقص ما سُلِّم بأوامر غير ملغاة ──
     private List<DeliverySourceLine> BuildSourceLines(string sourceType, int sourceId,
-        QualityCheck check, ProductionOrder order, ProductionPlan plan)
+        QualityCheck check, ProductionOrder order, ProductionPlan plan, ProductionExecution execution)
     {
         var lines = new List<DeliverySourceLine>();
-        if (sourceType == DeliverySources.FromCheck)
+        if (sourceType == DeliverySources.FromActual)
+        {
+            if (order == null) return lines;
+            var actualItems = order.Items
+                .Where(i => i.ProducedQtyKg > 0.001 || i.ProducedCartons > 0)
+                .GroupBy(i => new { i.ProductId, i.LotId, CustomerId = i.CustomerId ?? order.CustomerId, i.PackagingTypeId });
+            foreach (var g in actualItems)
+            {
+                double produced = g.Sum(i => i.ProducedQtyKg);
+                int packages = g.Sum(i => i.ProducedCartons);
+                double delivered = Db.ProductionDeliveryItems.AsNoTracking()
+                    .Join(Db.ProductionDeliveries.AsNoTracking(), i => i.DeliveryId, d => d.Id, (i, d) => new { i, d })
+                    .Where(x => x.d.Status != DocStatuses.Cancelled && x.d.SourceType == DeliverySources.FromActual
+                        && x.d.SourceId == sourceId && x.i.ProductId == g.Key.ProductId && x.i.LotId == g.Key.LotId
+                        && x.i.CustomerId == g.Key.CustomerId)
+                    .Sum(x => x.i.QtyKg);
+                lines.Add(new DeliverySourceLine
+                {
+                    OrderId = order.Id,
+                    OrderNumber = order.DocumentNumber,
+                    ProductId = g.Key.ProductId,
+                    ProductName = ProdName(g.Key.ProductId),
+                    LotId = g.Key.LotId,
+                    LotCode = g.Key.LotId != null ? LotCode(g.Key.LotId) : null,
+                    CustomerId = g.Key.CustomerId,
+                    CustomerName = g.Key.CustomerId != null ? CustName(g.Key.CustomerId) : null,
+                    PackagingTypeId = g.Key.PackagingTypeId,
+                    PackageCount = packages,
+                    AvailableQtyKg = produced,
+                    DeliveredQtyKg = delivered,
+                    RemainingQtyKg = Math.Max(0, produced - delivered)
+                });
+            }
+        }
+        else if (sourceType == DeliverySources.FromCheck)
         {
             if (check == null || order == null) return lines;
             foreach (var g in check.Items.GroupBy(i => new { i.ProductId, i.LotId }))

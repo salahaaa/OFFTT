@@ -110,7 +110,7 @@ public class UnitsGoldenRuleTests
 
         // استلام التام: 90 كرتوناً (لا 720 كجم كوحدة أساسية)
         var fg = Svc<IFinishedGoodsService>(host);
-        var fr = fg.SaveReceipt(o.Id, qcId, "2026-08-21", new List<FinishedGoodsItemDto>
+        var fr = TestProductionDocumentFlow.SaveReceiptFromActual(host, o.Id, qcId, "2026-08-21", new List<FinishedGoodsItemDto>
         { new() { ProductId = 3, PackagingTypeId = 2, PackageCount = 90, NetWeightKg = 720 } });
         Assert.True(fg.Receive(fr.Id, null).Ok);
         int whFg;

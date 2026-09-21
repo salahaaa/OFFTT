@@ -90,12 +90,20 @@ public class FullWorkflowTests
         Assert.True(quality.ApproveCheck(q1.Id).Ok);
         Assert.Equal("كجم", db.ByProducts.Single(b => b.Id == 1).UnitOfMeasure);
 
-        // 6) استلام الإنتاج التام: الإصدار لا يمس الأرصدة، السند وحده يؤثر (§7)
+        // 6) أمر تسليم الإنتاج من الفعلي ثم استلام التام: الإصدار لا يمس الأرصدة، السند وحده يؤثر (§7)
+        var deliveries = host.Get<IProductionDeliveryService>();
+        var draft = deliveries.CreateDeliveryFromActual(execId, "2026-08-21", "تسليم ناتج التنفيذ الفعلي");
+        Assert.True(draft.Ok, draft.Message);
+        Assert.True(deliveries.IssueDelivery(draft.Id).Ok);
+        var deliveryCard = deliveries.GetDelivery(draft.Id);
         var fg = host.Get<IFinishedGoodsService>();
-        var f1 = fg.SaveReceipt(oid, q1.Id, "2026-08-21", new List<FinishedGoodsItemDto>
-        {
-            new() { ProductId = 3, LotId = lotId, PackageCount = 399, NetWeightKg = 2990 }
-        });
+        var f1 = fg.SaveReceipt(oid, q1.Id, "2026-08-21",
+            deliveryCard.Lines.Select(l => new FinishedGoodsItemDto
+            {
+                ProductId = l.ProductId, LotId = l.LotId, PackagingTypeId = l.PackagingTypeId,
+                PackageCount = l.PackageCount, NetWeightKg = l.QtyKg,
+                CustomerId = l.CustomerId, DeliveryItemId = l.Id
+            }).ToList(), draft.Id);
         Assert.True(f1.Ok, f1.Message);
         var did = f1.Id;
         double wfgBefore = db.StockBalances.Where(b => b.WarehouseId == 2).Sum(b => b.QtyKg);
@@ -109,20 +117,20 @@ public class FullWorkflowTests
         Assert.Equal(wfgBefore + 1500, db.StockBalances.Where(b => b.WarehouseId == 2).Sum(b => b.QtyKg), 1);
         var rec2 = fg.Receive(did, new Dictionary<int, double>());
         Assert.True(rec2.Ok, rec2.Message);
-        Assert.Equal(wfgBefore + 2990, db.StockBalances.Where(b => b.WarehouseId == 2).Sum(b => b.QtyKg), 1);
+        Assert.Equal(wfgBefore + 3000, db.StockBalances.Where(b => b.WarehouseId == 2).Sum(b => b.QtyKg), 1);
         Assert.NotNull(db.FinishedGoodsReceipts.Single(r => r.Id == did).ReceiptNumber); // سند RCV
 
         // 7) تسليم العميل من رصيده في مخزن التام
         var cd = host.Get<ICustomerDeliveryService>();
         var d1 = cd.Save(1, "2026-08-22", oid, new List<CustomerDeliveryItemDto>
         {
-            new() { ProductId = 3, LotId = lotId, PackagingTypeId = 1, PackageCount = 416, QtyKg = 2990 }
+            new() { ProductId = 3, LotId = lotId, PackagingTypeId = 1, PackageCount = 417, QtyKg = 3000 }
         });
         Assert.True(d1.Ok, d1.Message);
         var d2 = cd.Approve(d1.Id);
         Assert.True(d2.Ok, d2.Message);
         Assert.Equal(0, db.StockBalances.Where(b => b.WarehouseId == 2).Sum(b => b.QtyKg), 1); // نفد رصيد التام
-        Assert.Equal(2990, db.Lots.Single(l => l.Id == lotId).DeliveredQtyKg, 1);
+        Assert.Equal(3000, db.Lots.Single(l => l.Id == lotId).DeliveredQtyKg, 1);
 
         // 8) التتبع الكامل: كل حركة مرتبطة بمستند (§9)
         Assert.DoesNotContain(db.InventoryTransactions, t => string.IsNullOrEmpty(t.ReferenceDocNumber));
@@ -144,9 +152,9 @@ public class FullWorkflowTests
         {
             new() { ProductId = 3, LotId = lotId, PackageCount = 10, NetWeightKg = 100 }
         });
-        // لا تسليم للتام قبل الإقفال اليومي وإرسال الإنتاج للجودة (نموذج إقفال الخطة)
+        // لا استلام مباشر من الإنتاج الفعلي أو أمر الإنتاج؛ يجب إنشاء أمر التسليم أولاً.
         Assert.False(r.Ok);
-        Assert.Contains("الجودة", r.Message);
+        Assert.Contains("أمر تسليم", r.Message);
     }
 
     /// <summary>

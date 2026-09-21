@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using DatesErp.Core.Domain.Entities;
 using DatesErp.Core.Interfaces.Services;
 using DatesErp.Desktop.Services;
 using DatesErp.Infrastructure.Persistence;
@@ -38,7 +39,7 @@ public class FrLineUi : INotifyPropertyChanged
 
 /// <summary>
 /// §B96 — أوامر استلام الإنتاج (إدارة المخازن):
-/// سند من أمر تسليم محرر (العميل من بند التسليم) أو مباشر من الأمر (المسار القديم) ← إصدار ← استلام.
+/// سند من أمر تسليم إنتاج محرر (العميل من بند التسليم) ← إصدار ← استلام.
 /// </summary>
 public partial class FGReceiveView : UserControl
 {
@@ -78,7 +79,7 @@ public partial class FGReceiveView : UserControl
     {
         try
         {
-            ModeBox.ItemsSource = new List<string> { "من أمر تسليم محرر", "مباشر من أمر الإنتاج (قديم)" };
+            ModeBox.ItemsSource = new List<string> { "من أمر تسليم إنتاج محرر" };
             ModeBox.SelectedIndex = 0;
             DateBox.SelectedDate = DateTime.Now;
             NewForm();
@@ -92,29 +93,16 @@ public partial class FGReceiveView : UserControl
     {
         try
         {
-            PickLabel.Text = FromDelivery() ? "أمر التسليم المحرر:" : "أمر الإنتاج (له فحص):";
+            PickLabel.Text = "أمر تسليم الإنتاج المحرر:";
             _picks.Clear();
             _eligible.Clear();
             using var scope = AppContainer.NewScope();
             if (FromDelivery())
             {
                 var svc = scope.ServiceProvider.GetRequiredService<IProductionDeliveryService>();
-                foreach (var c in svc.GetDeliveries("Issued").Where(c => c.Lines.Any(l => l.RemainingQtyKg > 0.001)))
+                foreach (var c in svc.GetDeliveries("Issued")
+                    .Where(c => c.SourceType == DeliverySources.FromActual && c.Lines.Any(l => l.RemainingQtyKg > 0.001)))
                     _picks.Add((c.Id, $"{c.DocumentNumber} — {c.SourceTypeAr} {c.SourceNumber} — متبقي {c.Lines.Sum(l => l.RemainingQtyKg):N1} كجم"));
-            }
-            else
-            {
-                var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
-                var orders = db.ProductionOrders
-                    .Where(o => o.IsApproved && db.QualityChecks.Any(c => c.OrderId == o.Id))
-                    .OrderByDescending(o => o.Id).Take(200).ToList();
-                foreach (var o in orders)
-                {
-                    int qc = db.QualityChecks.Where(c => c.OrderId == o.Id).OrderByDescending(c => c.Id).Select(c => c.Id).First();
-                    _eligible.Add((o.Id, qc));
-                    string cust = db.Customers.Where(c => c.Id == o.CustomerId).Select(c => c.CustomerName).FirstOrDefault() ?? "—";
-                    _picks.Add((o.Id, $"{o.DocumentNumber} — {cust}"));
-                }
             }
             PickBox.ItemsSource = _picks.Select(p => p.Label).ToList();
             PickBox.SelectedIndex = _picks.Count > 0 ? 0 : -1;
@@ -157,42 +145,6 @@ public partial class FGReceiveView : UserControl
                         Qty = Math.Round(l.RemainingQtyKg, 1)
                     });
             }
-            else
-            {
-                _currentDeliveryId = 0;
-                var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
-                var (orderId, _) = _eligible[PickBox.SelectedIndex];
-                _currentOrderId = orderId;
-                foreach (var oi in db.ProductionOrderItems.Where(i => i.OrderId == orderId).ToList())
-                {
-                    // §1.50.72 P1-2: «المحجوز» = المستلَم فعلاً (ReceivedQtyKg) لا NetWeightKg
-                    // الخام — السند المعكس/الملغى كان يستمر بحجز كامل كميته.
-                    double delivered = db.FinishedGoodsReceiptItems
-                        .Join(db.FinishedGoodsReceipts, i => i.ReceiptId, r => r.Id, (i, r) => new { i, r })
-                        .Where(x => x.r.OrderId == orderId && x.i.ProductId == oi.ProductId
-                            && x.r.Status != DatesErp.Core.Common.DocStatuses.Cancelled)
-                        .Sum(x => x.i.ReceivedQtyKg);
-                    double available = oi.ProducedQtyKg - delivered;
-                    if (available <= 0.001 && oi.ProducedQtyKg <= 0) continue;
-                    // §1.50.72 P1-2: كراتين متبقية تناسبية مع الكجم المتبقي (كانت الدفعة الكاملة).
-                    int availCtn = oi.ProducedQtyKg > 0.001
-                        ? (int)Math.Round(oi.ProducedCartons * Math.Max(0, available) / oi.ProducedQtyKg)
-                        : 0;
-                    _lines.Add(new FrLineUi
-                    {
-                        ProductId = oi.ProductId,
-                        LotId = oi.LotId,
-                        ProductName = db.Products.Where(p => p.Id == oi.ProductId).Select(p => p.ProductNameAr).FirstOrDefault() ?? "-",
-                        LotCode = db.Lots.Where(l => l.Id == oi.LotId).Select(l => l.LotCode).FirstOrDefault() ?? "—",
-                        CustomerId = oi.CustomerId,
-                        CustomerName = db.Customers.Where(c => c.Id == oi.CustomerId).Select(c => c.CustomerName).FirstOrDefault() ?? "—",
-                        Remaining = Math.Max(0, Math.Round(available, 1)),
-                        Packages = availCtn,
-                        Qty = Math.Max(0, Math.Round(available, 1)),
-                        Included = available > 0.001
-                    });
-                }
-            }
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "FR.Download"); }
     }
@@ -209,7 +161,7 @@ public partial class FGReceiveView : UserControl
             using var scope = AppContainer.NewScope();
             var svc = scope.ServiceProvider.GetRequiredService<IFinishedGoodsService>();
             int? qc = null;
-            if (!FromDelivery() && PickBox.SelectedIndex >= 0) qc = _eligible[PickBox.SelectedIndex].QcId;
+            // المصدر الوحيد هنا أمر تسليم إنتاج محرر؛ لا يوجد مسار مباشر من أمر الإنتاج.
             // §1.50.72 P1-2: كراتين تناسبية مع «كمية السند» التي كتبها المستخدم —
             // إرسال الكراتين الكاملة مع كجم جزئي كان يُستبدل الكيلو بكامل المنتَج بصمت
             // (قاعدة EnsureCartonKgConsistency: الكراتين هي الصحيحة).
@@ -218,7 +170,7 @@ public partial class FGReceiveView : UserControl
                 selected.Select(l =>
                 {
                     int ctn = l.Packages;
-                    if (!FromDelivery() && l.Remaining > 0.001 && l.Qty < l.Remaining - 0.001)
+                    if (l.Remaining > 0.001 && l.Qty < l.Remaining - 0.001)
                         ctn = (int)Math.Round(l.Qty / l.Remaining * l.Packages);
                     return new FinishedGoodsItemDto
                     {
@@ -230,7 +182,7 @@ public partial class FGReceiveView : UserControl
                         DeliveryItemId = l.DeliveryItemId
                     };
                 }).ToList(),
-                FromDelivery() ? _currentDeliveryId : null);
+                _currentDeliveryId);
             if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
             AppContainer.Get<DialogService>().Info(r.Message);
             RefreshList();
@@ -308,7 +260,7 @@ public partial class FGReceiveView : UserControl
                 OrderNo = db.ProductionOrders.Where(o => o.Id == r.OrderId).Select(o => o.DocumentNumber).FirstOrDefault(),
                 DeliveryNo = r.DeliveryId != null
                     ? db.ProductionDeliveries.Where(d => d.Id == r.DeliveryId.Value).Select(d => d.DocumentNumber).FirstOrDefault() ?? "—"
-                    : "مباشر",
+                    : "تاريخي — بلا أمر تسليم",
                 Total = db.FinishedGoodsReceiptItems.Where(i => i.ReceiptId == r.Id).Sum(i => i.NetWeightKg).ToString("N1"),
                 StatusAr = Core.Common.DocStatuses.ToArabic(r.Status),
                 ReceiptAr = r.ReceiptStatus == "Full" ? "مستلم بالكامل ✅" : r.ReceiptStatus == "Partial" ? "استلام جزئي 🟠" : "بانتظار الاستلام ⏳"

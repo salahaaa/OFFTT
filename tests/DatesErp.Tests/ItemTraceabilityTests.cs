@@ -117,12 +117,12 @@ public class ItemTraceabilityTests
 
             // ── المخزون: استلام الإنتاج التام (محاولة خاطئة أولاً: خلاص بدفعة سكري) ──
             var fg = scope.ServiceProvider.GetRequiredService<IFinishedGoodsService>();
-            var wrong = fg.SaveReceipt(orderId, qc.Id, "2026-08-27", new List<FinishedGoodsItemDto>
+            var wrong = TestProductionDocumentFlow.SaveReceiptFromActual(host, orderId, qc.Id, "2026-08-27", new List<FinishedGoodsItemDto>
             { new() { ProductId = ids.FinKhalas, LotId = lotSukkari, NetWeightKg = 97.5, PackageCount = 13 } });
             Assert.False(wrong.Ok);
             Assert.Contains("تحويل", wrong.Message);
 
-            var rcpt = fg.SaveReceipt(orderId, qc.Id, "2026-08-27", new List<FinishedGoodsItemDto>
+            var rcpt = TestProductionDocumentFlow.SaveReceiptFromActual(host, orderId, qc.Id, "2026-08-27", new List<FinishedGoodsItemDto>
             {
                 new() { ProductId = ids.FinSukkari, NetWeightKg = 4950, PackageCount = 660 },
                 new() { ProductId = ids.FinKhalas, NetWeightKg = 3950, PackageCount = 527 }

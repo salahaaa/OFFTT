@@ -276,7 +276,7 @@ public class FullCycleFourCustomersAcceptanceTests
 
         // استلام تام: يدخل المقبول 280 فقط — لا 600 ولا 300
         var fg = Svc<IFinishedGoodsService>(host);
-        var fr = fg.SaveReceipt(oid, qcId, "2026-08-21", new List<FinishedGoodsItemDto>
+        var fr = TestProductionDocumentFlow.SaveReceiptFromActual(host, oid, qcId, "2026-08-21", new List<FinishedGoodsItemDto>
         { new() { ProductId = 3, PackagingTypeId = 2, PackageCount = 28, NetWeightKg = 280 } });
         Assert.True(fr.Ok, fr.Message);
         Assert.True(fg.Receive(fr.Id, null).Ok);
@@ -346,7 +346,7 @@ public class FullCycleFourCustomersAcceptanceTests
             new List<QualityItemDto> { new() { ProductId = 3, AcceptedQtyKg = 560, RejectedQtyKg = 40, AcceptedCartons = 56, RejectedCartons = 4 } }).Ok);
         Assert.True(quality.ApproveCheck(qcId).Ok);
         var fg = Svc<IFinishedGoodsService>(host);
-        var fr = fg.SaveReceipt(oid, qcId, "2026-08-21", new List<FinishedGoodsItemDto> { new() { ProductId = 3, PackagingTypeId = 2, PackageCount = 56, NetWeightKg = 560 } });
+        var fr = TestProductionDocumentFlow.SaveReceiptFromActual(host, oid, qcId, "2026-08-21", new List<FinishedGoodsItemDto> { new() { ProductId = 3, PackagingTypeId = 2, PackageCount = 56, NetWeightKg = 560 } });
         Assert.True(fg.Receive(fr.Id, null).Ok);
         var dlv = Svc<ICustomerDeliveryService>(host);
         var d = dlv.Save(cust[0], "2026-08-22", null, new List<CustomerDeliveryItemDto> { new() { ProductId = 3, PackagingTypeId = 2, PackageCount = 20, QtyKg = 200 } });

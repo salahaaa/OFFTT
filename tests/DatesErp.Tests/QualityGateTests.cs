@@ -70,7 +70,7 @@ public class QualityGateTests
         Assert.True(q.ApproveCheck(qc.Id).Ok);
 
         var fg = Svc<IFinishedGoodsService>(host);
-        var sr = fg.SaveReceipt(or.Id, qc.Id, "2026-08-21", new List<FinishedGoodsItemDto>
+        var sr = TestProductionDocumentFlow.SaveReceiptFromActual(host, or.Id, qc.Id, "2026-08-21", new List<FinishedGoodsItemDto>
             { new() { ProductId = 3, LotId = lot, PackagingTypeId = 2, PackageCount = 100, NetWeightKg = 1000 } });
         Assert.True(sr.Ok, sr.Message);
         Assert.True(fg.Issue(sr.Id).Ok);
@@ -205,7 +205,7 @@ public class UnapproveUsesReversalEntriesTests
             null, new QualityLabDto { Decision = "Passed", SampleCartons = 10 });
         q.ApproveCheck(qc.Id);
         var fg = Svc<IFinishedGoodsService>(host);
-        var sr = fg.SaveReceipt(or.Id, qc.Id, "2026-08-21", new List<FinishedGoodsItemDto>
+        var sr = TestProductionDocumentFlow.SaveReceiptFromActual(host, or.Id, qc.Id, "2026-08-21", new List<FinishedGoodsItemDto>
             { new() { ProductId=3, LotId=lot, PackagingTypeId=2, PackageCount=100, NetWeightKg=1000 } });
         fg.Issue(sr.Id); fg.Receive(sr.Id, null);
 

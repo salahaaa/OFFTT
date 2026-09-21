@@ -151,7 +151,7 @@ public class LongTermPlanTests
 
         // تسليم جزئي 1200 من 2000 ← المسلَّم يتزامن والحالة جزئي والمتبقي 800
         var fg = Svc<IFinishedGoodsService>(host);
-        var f = fg.SaveReceipt(o.Id, q.Id, "2026-11-01", new List<FinishedGoodsItemDto> { new() { ProductId = 3, LotId = lot1, PackageCount = 160, NetWeightKg = 1200 } });
+        var f = TestProductionDocumentFlow.SaveReceiptFromActual(host, o.Id, q.Id, "2026-11-01", new List<FinishedGoodsItemDto> { new() { ProductId = 3, LotId = lot1, PackageCount = 160, NetWeightKg = 1200 } });
         Assert.True(f.Ok, f.Message);
         Assert.True(fg.Issue(f.Id).Ok);
         Assert.True(fg.Receive(f.Id, new Dictionary<int, double>()).Ok);
@@ -226,7 +226,7 @@ public class LongTermPlanTests
             new List<QualityItemDto> { new() { ProductId = 3, LotId = lot1, AcceptedQtyKg = 2000, RejectedQtyKg = 0 } });
         Assert.True(q.Ok); Assert.True(quality.ApproveCheck(q.Id).Ok);
         var fg = Svc<IFinishedGoodsService>(host);
-        var f = fg.SaveReceipt(o.Id, q.Id, "2026-11-01", new List<FinishedGoodsItemDto> { new() { ProductId = 3, LotId = lot1, PackageCount = 267, NetWeightKg = 2000 } });
+        var f = TestProductionDocumentFlow.SaveReceiptFromActual(host, o.Id, q.Id, "2026-11-01", new List<FinishedGoodsItemDto> { new() { ProductId = 3, LotId = lot1, PackageCount = 267, NetWeightKg = 2000 } });
         Assert.True(f.Ok, f.Message);
         Assert.True(fg.Issue(f.Id).Ok);
         Assert.True(fg.Receive(f.Id, new Dictionary<int, double>()).Ok);

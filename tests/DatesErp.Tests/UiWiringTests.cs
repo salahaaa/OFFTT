@@ -149,7 +149,8 @@ public class UiWiringTests
     /// </summary>
     [Theory]
     [InlineData("StartOrder")]            // بدء الإنتاج من شاشة الأوامر
-    [InlineData("SaveActualProduction")]  // التسجيل الذري يجمع التنفيذ والاستلام والإحالة
+    [InlineData("SaveActualProduction")]  // تسجيل التنفيذ الفعلي فقط؛ الاستلام المخزني مسار مستقل
+    [InlineData("CreateDeliveryFromActual")] // إنشاء مسودة أمر التسليم من التنفيذ
     [InlineData("IssueTodayOrders")]             // إنشاء أمر من الخطة
     [InlineData("ApproveOrder")]          // اعتماد الأمر
             // إقفال خطة الإنتاج
@@ -186,9 +187,10 @@ public class UiWiringTests
         Assert.Matches(@"\.SaveActualProduction\s*\(", ui);
         Assert.DoesNotMatch(@"\.CloseProductionDay\s*\(", ui); // no second actual-entry form
         var coordinator = StripComments(File.ReadAllText(Path.Combine(RepoRoot(), "src", "DatesErp.Application", "Services", "ProductionDeliveryService.Actual.cs")));
-        foreach (var operation in new[] { "CloseProductionDay", "SaveReceipt", "Issue", "Receive" })
-            Assert.Matches(@"\." + operation + @"\s*\(", coordinator);
-        Assert.Contains("JoinParentTransaction = true", coordinator);
+        Assert.DoesNotContain("SaveReceipt", coordinator);
+        Assert.DoesNotContain("FinishedGoodsService", coordinator);
+        Assert.DoesNotContain("finishedgoods", coordinator);
+        Assert.DoesNotContain("JoinParentTransaction", coordinator);
     }
 
     // ═══════════════════════════════════════════════════════════════════════

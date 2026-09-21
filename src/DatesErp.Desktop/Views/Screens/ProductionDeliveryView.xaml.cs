@@ -12,13 +12,14 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace DatesErp.Desktop.Views.Screens;
 
-/// <summary>The existing screen is the sole interactive actual-production form. No catalogue, planning or QC bypass selector.</summary>
+/// <summary>التسجيل الفعلي وأمر تسليم الإنتاج مساران متتابعان في إدارة الإنتاج؛ الاستلام المخزني لا يُنشأ من هنا تلقائياً.</summary>
 public partial class ProductionDeliveryView : UserControl
 {
     public static int? PendingOrderId { get; set; }
     public ObservableCollection<ActualByProductDefinitionDto> ByProductDefinitions { get; } = new();
     private readonly ObservableCollection<ActualProductionRow> _items = new();
     private readonly ObservableCollection<ActualSecondaryRow> _secondary = new();
+    private readonly ObservableCollection<DeliveryEditRow> _deliveryItems = new();
     private bool _saving;
     private readonly Func<List<ActualDeliveryOrderDto>> _loadOrders;
     private readonly Func<List<ActualByProductDefinitionDto>> _loadDefinitions;
@@ -29,7 +30,7 @@ public partial class ProductionDeliveryView : UserControl
         Func<List<ActualByProductDefinitionDto>> loadDefinitions, Func<ActualProductionDto, OpResult> saveActual)
     {
         _loadOrders = loadOrders; _loadDefinitions = loadDefinitions; _saveActual = saveActual;
-        InitializeComponent(); ItemsGrid.ItemsSource = _items; SecondaryGrid.ItemsSource = _secondary;
+        InitializeComponent(); ItemsGrid.ItemsSource = _items; SecondaryGrid.ItemsSource = _secondary; DeliveryItemsGrid.ItemsSource = _deliveryItems;
         // §v1.50.38: الإحصاءات الحية في شريط السياق — تتحدث مع كل كتابة في عمود الفعلي.
         _items.CollectionChanged += (_, e) =>
         {
@@ -82,10 +83,14 @@ public partial class ProductionDeliveryView : UserControl
         _items.Clear(); _secondary.Clear(); RawBox.Text = ""; DowntimeBox.Text = "0"; ReasonBox.Text = ""; NotesBox.Text = "";
         var order = OrderBox.SelectedItem as ActualDeliveryOrderDto;
         SaveButton.IsEnabled = order?.CanRecord == true;
+        CreateDeliveryButton.IsEnabled = order?.CanCreateDelivery == true;
+        DeliveryOrderPanel.Visibility = order?.ProductionDeliveryId > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _deliveryItems.Clear();
+        if (order?.ProductionDeliveryId > 0) LoadDelivery(order.ProductionDeliveryId);
         // §v1.50.24: لوحة الإدخال تظهر فقط للأمر القابل للتسجيل — بدل لوحة ضخمة معطّلة.
         // والمساحة المتبقية تعرض إرشاداً واضحاً بدل حقول ميتة.
         ActualFieldsOuter.Visibility = order?.CanRecord == true ? Visibility.Visible : Visibility.Collapsed;
-        EmptyGuide.Visibility = order?.CanRecord == true ? Visibility.Collapsed : Visibility.Visible;
+        EmptyGuide.Visibility = order?.CanRecord == true || order?.Recorded == true ? Visibility.Collapsed : Visibility.Visible;
         ItemsGrid.IsReadOnly = order?.CanRecord != true;
         // §v1.50.38: شرائح السياق بلا رموز تعبيرية — الهوية البصرية من الثيم لا من النص
         CustChip.Text = $"العميل: {order?.Customer ?? "—"}";
@@ -104,7 +109,7 @@ public partial class ProductionDeliveryView : UserControl
             _secondary.Add(new ActualSecondaryRow { Definition = ByProductDefinitions.FirstOrDefault(d => d.Id == b.ByProductId)
                 ?? new ActualByProductDefinitionDto { Id = b.ByProductId, Name = $"مخرج محفوظ #{b.ByProductId} (موقوف)", Unit = "راجع التعريف" },
                 Quantity = b.QtyKg.ToString(CultureInfo.CurrentCulture) });
-        StatusLabel.Text += $"\nسند الاستلام: {order.ReceiptNumber ?? "—"}  |  الفحص: {order.QualityNumber ?? "—"}";
+        StatusLabel.Text += $"\nأمر تسليم الإنتاج: {order.ProductionDeliveryNumber ?? "لم يُنشأ بعد"}  |  الحالة: {order.ProductionDeliveryStatus ?? "—"}  |  الفحص: {order.QualityNumber ?? "—"}";
     }
     // §v1.50.38: أي كتابة في عمود «المنتج فعليًا» تعيد حساب شريط الإحصاءات فوراً.
     private void Row_Changed(object sender, PropertyChangedEventArgs e)
@@ -152,8 +157,88 @@ public partial class ProductionDeliveryView : UserControl
         }
         catch (ArgumentException ex) { StatusLabel.Text = ex.Message; }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.Save"); }
-        finally { _saving = false; SaveButton.IsEnabled = (OrderBox.SelectedItem as ActualDeliveryOrderDto)?.CanRecord == true; }
+        finally
+        {
+            _saving = false;
+            SaveButton.IsEnabled = (OrderBox.SelectedItem as ActualDeliveryOrderDto)?.CanRecord == true;
+            CreateDeliveryButton.IsEnabled = (OrderBox.SelectedItem as ActualDeliveryOrderDto)?.CanCreateDelivery == true;
+        }
     }
+    private void LoadDelivery(int deliveryId)
+    {
+        try
+        {
+            var card = WithService(s => s.GetDelivery(deliveryId));
+            if (card == null) return;
+            DeliveryStatusLabel.Text = $"{card.DocumentNumber} — {card.StatusAr} — المصدر: {card.SourceNumber} ({card.SourceTypeAr})";
+            SaveDeliveryButton.IsEnabled = card.Status == "Draft";
+            IssueDeliveryButton.IsEnabled = card.Status == "Draft";
+            foreach (var line in card.Lines)
+                _deliveryItems.Add(new DeliveryEditRow
+                {
+                    ItemId = line.Id, ProductId = line.ProductId, LotId = line.LotId,
+                    CustomerId = line.CustomerId, PackagingTypeId = line.PackagingTypeId,
+                    Product = line.ProductName, Customer = line.CustomerName ?? "—",
+                    ActualKg = line.QtyKg + line.ReceivedQtyKg,
+                    RemainingKg = line.RemainingQtyKg, QtyKg = line.QtyKg,
+                    PackageCount = line.PackageCount
+                });
+        }
+        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.LoadDelivery"); }
+    }
+
+    private void SaveDelivery_Click(object sender, RoutedEventArgs e)
+    {
+        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto { ProductionDeliveryId: > 0 } order) return;
+        try
+        {
+            DeliveryItemsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
+            DeliveryItemsGrid.CommitEdit(DataGridEditingUnit.Row, true);
+            var items = _deliveryItems.Where(x => x.QtyKg > 0.001).Select(x => new ProductionDeliveryItemDto
+            {
+                ProductId = x.ProductId, LotId = x.LotId, CustomerId = x.CustomerId,
+                PackagingTypeId = x.PackagingTypeId, PackageCount = x.PackageCount, QtyKg = x.QtyKg
+            }).ToList();
+            var result = WithService(s => s.UpdateDelivery(order.ProductionDeliveryId,
+                DateTime.Now.ToString("dd/MM/yyyy"), items, order.Notes));
+            if (!result.Ok) { DeliveryStatusLabel.Text = result.Message; return; }
+            LoadOrders(order.OrderId);
+            StatusLabel.Text = result.Message;
+        }
+        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.UpdateDelivery"); }
+    }
+
+    private void IssueDelivery_Click(object sender, RoutedEventArgs e)
+    {
+        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto { ProductionDeliveryId: > 0 } order) return;
+        try
+        {
+            var result = WithService(s => s.IssueDelivery(order.ProductionDeliveryId));
+            if (!result.Ok) { DeliveryStatusLabel.Text = result.Message; return; }
+            LoadOrders(order.OrderId);
+            StatusLabel.Text = result.Message;
+        }
+        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.IssueDelivery"); }
+    }
+
+    private void CreateDelivery_Click(object sender, RoutedEventArgs e)
+    {
+        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto { Recorded: true, CanCreateDelivery: true } order || order.ExecutionId <= 0)
+        {
+            StatusLabel.Text = "احفظ الإنتاج الفعلي أولاً، ثم أنشئ أمر التسليم من التنفيذ المحفوظ.";
+            return;
+        }
+        try
+        {
+            var result = WithService(s => s.CreateDeliveryFromActual(order.ExecutionId,
+                DateTime.Now.ToString("dd/MM/yyyy"), order.Notes));
+            if (!result.Ok) { StatusLabel.Text = result.Message; return; }
+            LoadOrders(order.OrderId);
+            StatusLabel.Text = result.Message + "\nأمر التسليم مسودة قابلة للتعديل قبل تحريرها للمخزن.";
+        }
+        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.CreateDelivery"); }
+    }
+
     // §v1.50.32: سطر الإضافة الفارغ يهدأ ويتوضح — لا تظليل صارخ يُقرأ كخطأ برمجي.
     private void Secondary_LoadingRow(object sender, DataGridRowEventArgs e)
     {
@@ -178,10 +263,15 @@ public partial class ProductionDeliveryView : UserControl
     }
     private void Print()
     {
-        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto { Recorded: true } order) { StatusLabel.Text = "الطباعة من تنفيذ محفوظ فقط، وليست من مدخلات الشاشة."; return; }
+        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto { Recorded: true } order)
+        {
+            StatusLabel.Text = "الطباعة من تنفيذ محفوظ فقط، وليست من مدخلات الشاشة.";
+            return;
+        }
         try
         {
-            using var scope = AppContainer.NewScope(); var db = scope.ServiceProvider.GetRequiredService<DatesErp.Infrastructure.Persistence.DatesErpDbContext>();
+            using var scope = AppContainer.NewScope();
+            var db = scope.ServiceProvider.GetRequiredService<DatesErp.Infrastructure.Persistence.DatesErpDbContext>();
             var model = Printing.StoredPrintModels.Execution(db, order.OrderId);
             new PrintPreviewWindow(PhasePrint.Build(model), $"{model.DocTitle} {model.DocNo}") { Owner = Window.GetWindow(this) }.ShowDialog();
         }

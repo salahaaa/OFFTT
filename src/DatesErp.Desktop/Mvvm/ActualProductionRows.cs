@@ -29,6 +29,23 @@ public sealed class ActualProductionRow : INotifyPropertyChanged, IDataErrorInfo
             : c == '٫' ? CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator[0] : c).ToArray());
     public static bool TryNonnegative(string text, out double value) => double.TryParse(Normalize(text), NumberStyles.Float, CultureInfo.CurrentCulture, out value) && double.IsFinite(value) && value >= 0;
 }
+public sealed class DeliveryEditRow : INotifyPropertyChanged
+{
+    public int ItemId { get; init; }
+    public int ProductId { get; init; }
+    public int? LotId { get; init; }
+    public int? CustomerId { get; init; }
+    public int? PackagingTypeId { get; init; }
+    public string Product { get; init; }
+    public string Customer { get; init; }
+    public double ActualKg { get; init; }
+    public double RemainingKg { get; init; }
+    private double _qtyKg;
+    public double QtyKg { get => _qtyKg; set { _qtyKg = value; PropertyChanged?.Invoke(this, new(nameof(QtyKg))); } }
+    private int _packageCount;
+    public int PackageCount { get => _packageCount; set { _packageCount = value; PropertyChanged?.Invoke(this, new(nameof(PackageCount))); } }
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
 public sealed class ActualSecondaryRow : INotifyPropertyChanged
 {
     private ActualByProductDefinitionDto _definition;

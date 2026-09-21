@@ -13,7 +13,7 @@ namespace DatesErp.Tests;
 
 /// <summary>
 /// §B96 — فصل أمر تسليم الإنتاج (إدارة الإنتاج) عن أمر الاستلام (المخازن):
-/// مصادر التسليم (محضر/خطة/إقفال) + التجاوز بصلاحية وسبب + تعدد العملاء على مستوى البنود.
+/// مصدر التسليم التشغيلي (الإنتاج الفعلي) + فصل الاستلام + إقفال الخطة عند التحرير + حراس الصلاحيات.
 /// </summary>
 public class B96DeliveryTests
 {
@@ -102,30 +102,34 @@ public class B96DeliveryTests
         return q.Id;
     }
 
-    // ── 1) التسليم من محضر معتمد: ملء آلي بالمقبول + سقف المتبقي ──
+    // ── 1) المصدر التشغيلي الجديد: الإنتاج الفعلي المكتمل فقط + سقف المتبقي ──
     [Fact]
-    public void Delivery_FromApprovedCheck_AutoFill_And_Caps_Remaining()
+    public void Delivery_FromActual_AutoFill_And_Caps_Remaining()
     {
         using var host = new TestHost();
         host.LoginAsAdmin();
         var (oid, lot) = SeedAndClose(host);
-        int checkId = SaveApprovedCheck(host, oid, new List<QualityItemDto>
-        { new() { ProductId = 3, LotId = lot, CheckedQtyKg = 500, AcceptedQtyKg = 490, RejectedQtyKg = 10 } });
-
+        var db = host.Get<DatesErpDbContext>();
         var del = host.Get<IProductionDeliveryService>();
-        var ctx = del.GetSourceContext(DeliverySources.FromCheck, checkId);
+        int executionId = db.ProductionExecutions.Single(e => e.OrderId == oid).Id;
+        var ctx = del.GetSourceContext(DeliverySources.FromActual, executionId);
         var line = Assert.Single(ctx.Lines);
-        Assert.Equal(490, line.RemainingQtyKg, 1);
+        Assert.Equal(500, line.RemainingQtyKg, 1);
         Assert.Equal(1, line.CustomerId);
 
-        var r = del.SaveDelivery(DeliverySources.FromCheck, checkId, "2026-08-24", new List<ProductionDeliveryItemDto>
-        { new() { OrderId = oid, ProductId = 3, LotId = lot, CustomerId = 1, QtyKg = 490 } });
+        var r = del.CreateDeliveryFromActual(executionId, "2026-08-24");
         Assert.True(r.Ok, r.Message);
+        var card = del.GetDelivery(r.Id);
+        Assert.Equal(500, Assert.Single(card.Lines).QtyKg, 1);
 
-        var over = del.SaveDelivery(DeliverySources.FromCheck, checkId, "2026-08-24", new List<ProductionDeliveryItemDto>
-        { new() { ProductId = 3, LotId = lot, CustomerId = 1, QtyKg = 1 } });
+        var over = del.UpdateDelivery(r.Id, "2026-08-24", new List<ProductionDeliveryItemDto>
+        { new() { OrderId = oid, ProductId = 3, LotId = lot, CustomerId = 1, QtyKg = 501 } });
         Assert.False(over.Ok);
         Assert.Contains("المتبقي", over.Message);
+
+        var legacy = del.SaveDelivery(DeliverySources.FromCheck, 999999, "2026-08-24", new List<ProductionDeliveryItemDto>
+        { new() { ProductId = 3, LotId = lot, CustomerId = 1, QtyKg = 1 } });
+        Assert.False(legacy.Ok);
     }
 
     // ── 2) لا تسليم من محضر غير معتمد ولا من فحص يدوي ──
@@ -185,25 +189,24 @@ public class B96DeliveryTests
         Assert.Contains("استعجال", db.ProductionDeliveries.Single(d => d.Id == ok.Id).BypassReason);
     }
 
-    // ── 4) التسليم من الإقفال يتطلب خطة مقفلة ──
+    // ── 4) إقفال الخطة نتيجة تحرير أمر التسليم، وليس إجراءً مستقلاً ──
     [Fact]
-    public void Delivery_FromClosing_Requires_ClosedPlan()
+    public void Plan_Closes_Only_After_Issued_Actual_Delivery()
     {
         using var host = new TestHost();
         host.LoginAsAdmin();
-        var (planId, orderId, lot) = SeedPlanWithProduction(host);
+        var (planId, orderId, _) = SeedPlanWithProduction(host);
+        var db = host.Get<DatesErpDbContext>();
+        var closure = host.Get<IPlanClosureService>();
+        Assert.False(closure.ClosePlanFinal(planId).Ok);
+        Assert.False(db.ProductionPlans.Single(p => p.Id == planId).IsClosed);
+
         var del = host.Get<IProductionDeliveryService>();
-        List<ProductionDeliveryItemDto> Items() => new()
-        { new() { ProductId = 3, LotId = lot, CustomerId = 1, QtyKg = 500 } };
-
-        var early = del.SaveDelivery(DeliverySources.FromClosing, planId, "2026-08-24", Items(), "تسوية إقفال");
-        Assert.False(early.Ok);
-        Assert.Contains("مقفلة", early.Message);
-
-        Assert.True(host.Get<IProductionOrderService>().CloseOrder(orderId).Ok);
-        Assert.True(host.Get<IPlanClosureService>().ClosePlanFinal(planId).Ok);
-        var ok = del.SaveDelivery(DeliverySources.FromClosing, planId, "2026-08-24", Items(), "تسوية إقفال");
-        Assert.True(ok.Ok, ok.Message);
+        int executionId = db.ProductionExecutions.Single(e => e.OrderId == orderId).Id;
+        var draft = del.CreateDeliveryFromActual(executionId, "2026-08-24");
+        Assert.True(draft.Ok, draft.Message);
+        Assert.True(del.IssueDelivery(draft.Id).Ok);
+        Assert.True(db.ProductionPlans.Single(p => p.Id == planId).IsClosed);
     }
 
     // ── 5) تعدد العملاء: بند لكل عميل ← التام يُقيَّد بعميل البند ──
@@ -218,21 +221,11 @@ public class B96DeliveryTests
             .CloseProductionDay(oid, 1000, 134, 0, 0, 0, false, new List<DowntimeDto>(), false, null);
         Assert.True(close.Ok, close.Message);
 
-        int checkId = SaveApprovedCheck(host, oid, new List<QualityItemDto>
-        {
-            new() { ProductId = 3, LotId = lotA, CheckedQtyKg = 500, AcceptedQtyKg = 490, RejectedQtyKg = 10 },
-            new() { ProductId = 3, LotId = lotB, CheckedQtyKg = 500, AcceptedQtyKg = 480, RejectedQtyKg = 20 }
-        });
-
         var del = host.Get<IProductionDeliveryService>();
-        var ctx = del.GetSourceContext(DeliverySources.FromCheck, checkId);
+        int executionId = db.ProductionExecutions.Single(e => e.OrderId == oid).Id;
+        var ctx = del.GetSourceContext(DeliverySources.FromActual, executionId);
         Assert.Equal(2, ctx.Lines.Count);
-        var r = del.SaveDelivery(DeliverySources.FromCheck, checkId, "2026-08-24",
-            ctx.Lines.Select(l => new ProductionDeliveryItemDto
-            {
-                OrderId = l.OrderId, ProductId = l.ProductId, LotId = l.LotId,
-                CustomerId = l.CustomerId, QtyKg = l.RemainingQtyKg
-            }).ToList());
+        var r = del.CreateDeliveryFromActual(executionId, "2026-08-24");
         Assert.True(r.Ok, r.Message);
         Assert.True(del.IssueDelivery(r.Id).Ok);
 
@@ -251,9 +244,9 @@ public class B96DeliveryTests
 
         int wfg = db.Warehouses.Single(w => w.WarehouseCode == "WFG").Id;
         var balA = db.StockBalances.Single(b => b.WarehouseId == wfg && b.ProductId == 3 && b.LotId == lotA && b.CustomerId == 1);
-        Assert.Equal(490, balA.QtyKg, 1);
+        Assert.Equal(500, balA.QtyKg, 1);
         var balB = db.StockBalances.Single(b => b.WarehouseId == wfg && b.ProductId == 3 && b.LotId == lotB && b.CustomerId == custB);
-        Assert.Equal(480, balB.QtyKg, 1);
+        Assert.Equal(500, balB.QtyKg, 1);
         Assert.Equal("Full", db.ProductionDeliveries.Single(d => d.Id == r.Id).ReceiptStatus);
     }
 
@@ -265,19 +258,16 @@ public class B96DeliveryTests
         host.LoginAsAdmin();
         var db = host.Get<DatesErpDbContext>();
         var (oid, lot) = SeedAndClose(host);
-        int checkId = SaveApprovedCheck(host, oid, new List<QualityItemDto>
-        { new() { ProductId = 3, LotId = lot, CheckedQtyKg = 500, AcceptedQtyKg = 490, RejectedQtyKg = 10 } });
-
         var del = host.Get<IProductionDeliveryService>();
-        var r = del.SaveDelivery(DeliverySources.FromCheck, checkId, "2026-08-24", new List<ProductionDeliveryItemDto>
-        { new() { ProductId = 3, LotId = lot, CustomerId = 1, QtyKg = 490 } });
+        int executionId = db.ProductionExecutions.Single(e => e.OrderId == oid).Id;
+        var r = del.CreateDeliveryFromActual(executionId, "2026-08-24");
         Assert.True(r.Ok, r.Message);
         Assert.True(del.IssueDelivery(r.Id).Ok);
         int lineId = db.ProductionDeliveryItems.Single(i => i.DeliveryId == r.Id).Id;
 
         var fg = host.Get<IFinishedGoodsService>();
         var fr1 = fg.SaveReceipt(oid, null, "2026-08-24", new List<FinishedGoodsItemDto>
-        { new() { ProductId = 3, LotId = lot, PackageCount = 0, NetWeightKg = 490, CustomerId = 1, DeliveryItemId = lineId } }, r.Id);
+        { new() { ProductId = 3, LotId = lot, PackageCount = 0, NetWeightKg = 500, CustomerId = 1, DeliveryItemId = lineId } }, r.Id);
         Assert.True(fr1.Ok, fr1.Message);
         Assert.True(fg.Issue(fr1.Id).Ok);
         int item1 = db.FinishedGoodsReceiptItems.Single(i => i.ReceiptId == fr1.Id).Id;
@@ -285,15 +275,15 @@ public class B96DeliveryTests
         Assert.True(p1.Ok, p1.Message);
         Assert.Equal("Partial", db.ProductionDeliveries.Single(d => d.Id == r.Id).ReceiptStatus);
 
-        // فوق المتبقي (290) مرفوض
+        // فوق المتبقي (300) مرفوض
         var over = fg.SaveReceipt(oid, null, "2026-08-25", new List<FinishedGoodsItemDto>
-        { new() { ProductId = 3, LotId = lot, PackageCount = 0, NetWeightKg = 291, CustomerId = 1, DeliveryItemId = lineId } }, r.Id);
+        { new() { ProductId = 3, LotId = lot, PackageCount = 0, NetWeightKg = 301, CustomerId = 1, DeliveryItemId = lineId } }, r.Id);
         Assert.False(over.Ok);
         Assert.Contains("المتبقي", over.Message);
 
-        // استكمال 290 ← الأمر مكتمل
+        // استكمال 300 ← الأمر مكتمل
         var fr2 = fg.SaveReceipt(oid, null, "2026-08-25", new List<FinishedGoodsItemDto>
-        { new() { ProductId = 3, LotId = lot, PackageCount = 0, NetWeightKg = 290, CustomerId = 1, DeliveryItemId = lineId } }, r.Id);
+        { new() { ProductId = 3, LotId = lot, PackageCount = 0, NetWeightKg = 300, CustomerId = 1, DeliveryItemId = lineId } }, r.Id);
         Assert.True(fr2.Ok, fr2.Message);
         Assert.True(fg.Issue(fr2.Id).Ok);
         Assert.True(fg.Receive(fr2.Id, null).Ok);
@@ -310,18 +300,16 @@ public class B96DeliveryTests
         host.LoginAsAdmin();
         var db = host.Get<DatesErpDbContext>();
         var (oid, lot) = SeedAndClose(host);
-        int checkId = SaveApprovedCheck(host, oid, new List<QualityItemDto>
-        { new() { ProductId = 3, LotId = lot, CheckedQtyKg = 500, AcceptedQtyKg = 490, RejectedQtyKg = 10 } });
-
         var del = host.Get<IProductionDeliveryService>();
-        var r = del.SaveDelivery(DeliverySources.FromCheck, checkId, "2026-08-24", new List<ProductionDeliveryItemDto>
-        { new() { ProductId = 3, LotId = lot, CustomerId = 1, QtyKg = 490 } });
+        int executionId = db.ProductionExecutions.Single(e => e.OrderId == oid).Id;
+        var r = del.CreateDeliveryFromActual(executionId, "2026-08-24");
+        Assert.True(r.Ok, r.Message);
         Assert.True(del.IssueDelivery(r.Id).Ok);
         int lineId = db.ProductionDeliveryItems.Single(i => i.DeliveryId == r.Id).Id;
 
         var fg = host.Get<IFinishedGoodsService>();
         var fr = fg.SaveReceipt(oid, null, "2026-08-24", new List<FinishedGoodsItemDto>
-        { new() { ProductId = 3, LotId = lot, PackageCount = 0, NetWeightKg = 490, CustomerId = 1, DeliveryItemId = lineId } }, r.Id);
+        { new() { ProductId = 3, LotId = lot, PackageCount = 0, NetWeightKg = 500, CustomerId = 1, DeliveryItemId = lineId } }, r.Id);
         Assert.True(fg.Issue(fr.Id).Ok);
         Assert.True(fg.Receive(fr.Id, null).Ok);
 
@@ -339,9 +327,9 @@ public class B96DeliveryTests
         Assert.Equal(0, db.StockBalances.Where(b => b.WarehouseId == wfg && b.ProductId == 3).Sum(b => b.QtyKg), 1);
     }
 
-    // ── 8) المسار المباشر القديم يعمل كما هو (توافق) ──
+    // ── 8) المسار المباشر القديم مرفوض دائماً ──
     [Fact]
-    public void Legacy_Direct_Receipt_Path_Unchanged()
+    public void Legacy_Direct_Receipt_Path_Is_Rejected()
     {
         using var host = new TestHost();
         host.LoginAsAdmin();
@@ -351,12 +339,8 @@ public class B96DeliveryTests
 
         var fr = fg.SaveReceipt(oid, null, "2026-08-24", new List<FinishedGoodsItemDto>
         { new() { ProductId = 3, LotId = lot, PackageCount = 0, NetWeightKg = 500 } });
-        Assert.True(fr.Ok, fr.Message);
-        Assert.Contains("الجودة سمحت", fr.Message);
-        Assert.True(fg.Issue(fr.Id).Ok);
-        Assert.True(fg.Receive(fr.Id, null).Ok);
-
-        int wfg = db.Warehouses.Single(w => w.WarehouseCode == "WFG").Id;
-        Assert.Equal(500, db.StockBalances.Single(b => b.WarehouseId == wfg && b.ProductId == 3 && b.CustomerId == 1).QtyKg, 1);
+        Assert.False(fr.Ok);
+        Assert.Contains("أمر تسليم", fr.Message);
+        Assert.Empty(db.FinishedGoodsReceipts);
     }
 }

@@ -99,12 +99,7 @@ public class B100AvailabilityTests
 
         host.LoginAs("production");
         var del = host.Get<IProductionDeliveryService>();
-        var sd = del.SaveDelivery(DeliverySources.FromCheck, qcId, DateTime.Today.ToString("yyyy-MM-dd"),
-            new List<ProductionDeliveryItemDto>
-            {
-                new() { OrderId = orderId, ProductId = 3, LotId = lotA, CustomerId = 1, PackagingTypeId = 1, PackageCount = ctnA, QtyKg = qtyA },
-                new() { OrderId = orderId, ProductId = 3, LotId = lotB, CustomerId = custB, PackagingTypeId = 1, PackageCount = ctnB, QtyKg = qtyB }
-            });
+        var sd = del.CreateDeliveryFromActual(qc.ExecutionId, DateTime.Today.ToString("yyyy-MM-dd"));
         Assert.True(sd.Ok, sd.Message);
         Assert.True(del.IssueDelivery(sd.Id).Ok);
         deliveryId = sd.Id;
@@ -344,12 +339,7 @@ public class B100AvailabilityTests
 
         host.LoginAs("production");
         var del = host.Get<IProductionDeliveryService>();
-        var sd = del.SaveDelivery(DeliverySources.FromCheck, qcId, DateTime.Today.ToString("yyyy-MM-dd"),
-            new List<ProductionDeliveryItemDto>
-            {
-                new() { OrderId = oid, ProductId = 3, LotId = lotA, CustomerId = 1, PackagingTypeId = 1, PackageCount = 100, QtyKg = 500 },
-                new() { OrderId = oid, ProductId = 3, LotId = lotB, CustomerId = custB, PackagingTypeId = 1, PackageCount = 60, QtyKg = 300 }
-            });
+        var sd = del.CreateDeliveryFromActual(qc.ExecutionId, DateTime.Today.ToString("yyyy-MM-dd"));
         Assert.True(sd.Ok, sd.Message);
         Assert.True(del.IssueDelivery(sd.Id).Ok);
         deliveryId = sd.Id;

@@ -11,13 +11,8 @@ namespace DatesErp.Application.Services;
 /// <summary>§7 — تنفيذ وإقفال الإنتاج مع حراس §8 (لا تنفيذ على أمر مكتمل/غير معتمد، لا تجاوز للكميات).</summary>
 public class ExecutionService : ServiceBase, IExecutionService
 {
-    private readonly IPlanningService _planning;
-
-    public ExecutionService(DatesErpDbContext db, ICurrentSession session, INumberingService numbering, IPlanningService planning)
-        : base(db, session, numbering)
-    {
-        _planning = planning;
-    }
+    public ExecutionService(DatesErpDbContext db, ICurrentSession session, INumberingService numbering)
+        : base(db, session, numbering) { }
 
     // The simplified screen supplies NET actual raw consumption, never a gross issue estimate.
     internal bool RecordingActualDelivery { get; init; }
@@ -537,13 +532,9 @@ public class ExecutionService : ServiceBase, IExecutionService
             }
             Db.SaveChanges();
 
-            // §إن اكتملت الخطة المصدر تُقفل تلقائياً ويُسمح بإصدار خطة اليوم التالي
+            // لا تُقفل الخطة عند تسجيل الفعلي. إقفالها يحدث فقط عند تحرير
+            // أمر تسليم الإنتاج من إدارة الإنتاج (ProductionDeliveryService.IssueDelivery).
             string planMsg = "";
-            if (order.SourcePlanId is int planId)
-            {
-                var auto = _planning.TryAutoCloseIfComplete(planId);
-                if (auto.Ok) planMsg = "\n" + auto.Message;
-            }
 
             // §B88/M13: تفصيل البنود في رسالة النجاح عند الإقفال متعدد البنود
             string itemsMsg = "";

@@ -65,12 +65,14 @@ public class CustomerDeliveryItem : BaseEntity
     public double CartonWeightKg { get; set; }
 }
 
-/// <summary>§B96 — مصادر أمر تسليم الإنتاج: محضر فحص معتمد (طبيعي) أو خطة/إقفال خطة (تجاوز بصلاحية).</summary>
+/// <summary>§B96 — المصدر التشغيلي الجديد لأمر تسليم الإنتاج هو الإنتاج الفعلي؛ تبقى قيم المصادر القديمة لقراءة المستندات التاريخية.</summary>
 public static class DeliverySources
 {
     public const string FromCheck = "FromCheck";
     public const string FromPlan = "FromPlan";
     public const string FromClosing = "FromClosing";
+    /// <summary>المسار الرسمي الجديد: أمر تسليم الإنتاج يُنشأ من جلسة الإنتاج الفعلي فقط.</summary>
+    public const string FromActual = "FromActual";
 
     public static bool IsBypass(string sourceType) => sourceType == FromPlan || sourceType == FromClosing;
 
@@ -79,6 +81,7 @@ public static class DeliverySources
         FromCheck => "محضر فحص",
         FromPlan => "خطة إنتاج",
         FromClosing => "إقفال خطة",
+        FromActual => "الإنتاج الفعلي",
         _ => sourceType ?? "—"
     };
 }

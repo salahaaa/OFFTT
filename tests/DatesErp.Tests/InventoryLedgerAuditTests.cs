@@ -147,7 +147,7 @@ public class InventoryLedgerAuditTests
         AssertLedgerConsistent(host);
 
         // ── المرحلة 5: تسليم الإنتاج — الإصدار بلا أثر، الاستلام يزيد التام (وزناً وعبوات) ──
-        var f = Svc<IFinishedGoodsService>(host).SaveReceipt(o.Id, q.Id, "2026-08-20",
+        var f = TestProductionDocumentFlow.SaveReceiptFromActual(host, o.Id, q.Id, "2026-08-20",
             new List<FinishedGoodsItemDto> { new() { ProductId = 3, LotId = lotId, PackageCount = 667, NetWeightKg = 5000 } });
         Assert.True(f.Ok, f.Message);
         Assert.True(Svc<IFinishedGoodsService>(host).Issue(f.Id).Ok);
