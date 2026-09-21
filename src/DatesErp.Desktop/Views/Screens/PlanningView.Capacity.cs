@@ -82,12 +82,10 @@ public partial class PlanningView
         finally
         {
             _updatingCapacity = false;
-            // §FIX 1.50.70: زر الحفظ كان يتشفر (disabled) لأن _capacityValid يتطلب IsValid + completeRows>0
-            // المستخدم يريد أن يضغط حفظ ليرى سبب الرفض من الخلفية، لا أن يبقى الزر معطل بلا تفسير.
-            // نجعل الزر مفعلاً ما دام هناك بند واحد له هوية (Lot/Product)، والتحقق الحقيقي في Save_Click والـ Backend.
-            bool hasAnyRow = _rows.Any(r => r.LotId != null || r.ProductId != 0);
-            if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !_locked && hasAnyRow;
-            if (_toolbar?.SaveBtn != null) _toolbar.SaveBtn.IsEnabled = !_locked && hasAnyRow;
+            // §FIX نهائي: زر الحفظ يعتمد فقط على أن الخطة غير معتمدة — لا على _capacityValid ولا hasAnyRow
+            // فحص الطاقة يستمر عبر EvaluateDraft و _capacityValid لكن لا يعطل الزر قبل الضغط
+            if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !_locked;
+            if (_toolbar?.SaveBtn != null) _toolbar.SaveBtn.IsEnabled = !_locked;
         }
     }
 }

@@ -115,7 +115,8 @@ public partial class PlanningView : UserControl
 
     public void AttachChrome(Views.ErpChrome chrome)
     {
-        chrome.SetModule("خطة الإنتاج — التخطيط والجدولة (MPS)");
+        // §FIX: Module يجب أن يكون الكود الإنجليزي planning وليس العنوان العربي — ليطبق Session.Can بشكل صحيح
+        chrome.SetModule("planning");
         chrome.SetScreenCode("MRPMPS1001");
         _toolbar = new Views.ErpToolbar()
             .WithNew((_, _) => NewPlan(), "خطة إنتاج جديدة (F2)")
@@ -906,12 +907,16 @@ public partial class PlanningView : UserControl
     {
         try
         {
-            if (_locked) { AppContainer.Get<DialogService>().Error("الخطة معتمدة ومقفلة."); return; }
+            if (_locked) { AppContainer.Get<DialogService>().Error("الخطة معتمدة ومقفلة — لا يمكن الحفظ."); return; }
             RowsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
             RowsGrid.CommitEdit(DataGridEditingUnit.Row, true);
             UpdateCapacityBar();
-            if (!_capacityValid) { AppContainer.Get<DialogService>().Error(RemainingBadge.Text); return; }
-            if (string.IsNullOrWhiteSpace(TitleBox.Text)) { AppContainer.Get<DialogService>().Error("أدخل عنوان الخطة."); return; }
+
+            // §FIX نهائي: التحقق عند الضغط فقط — الزر يبقى مفعلاً دائماً ما دامت غير معتمدة
+            // 1) اكتمال بيانات الخطة
+            if (string.IsNullOrWhiteSpace(TitleBox.Text)) { AppContainer.Get<DialogService>().Error("أدخل عنوان الخطة — العنوان إجباري."); return; }
+            if (StartBox.SelectedDate == null) { AppContainer.Get<DialogService>().Error("حدد تاريخ بداية الخطة — التاريخ إجباري."); return; }
+            if (TypeBox.SelectedIndex != 0 && EndBox.SelectedDate == null) { AppContainer.Get<DialogService>().Error("حدد تاريخ نهاية الفترة — الفترة غير مكتملة."); return; }
             // §1.50.67 FIX2: عند الضغط على صنف جديد يتشفر الحفظ — تجاهل الصفوف غير المكتملة (كراتين 0) عند الحفظ
             // مثل UpdateCapacityBar: فقط البنود المكتملة (هوية + كراتين>0) تُحفظ، الصف الجديد الفارغ لا يعطل الحفظ
             var allValid = _rows.Where(r => r.LotId != null || r.ProductId != 0).ToList();
@@ -930,6 +935,14 @@ public partial class PlanningView : UserControl
                 { AppContainer.Get<DialogService>().Error($"البند ({rowD.No}) «{rowD.ProductName}» بلا تاريخ إنتاج — حدّد تاريخ كل بند في عمود «تاريخ الإنتاج»."); return; }
                 if (rdD.Date < perStart || rdD.Date > perEnd)
                 { AppContainer.Get<DialogService>().Error($"تاريخ البند ({rowD.No}) «{rowD.ProductName}» ({rowD.Date}) خارج فترة الخطة ({perStart:dd/MM/yyyy} ← {perEnd:dd/MM/yyyy})."); return; }
+            }
+
+            // §FIX نهائي: فحص الطاقة يبقى لكن لا يعطل الزر — يظهر رسالة واضحة عند الضغط فقط
+            if (!_capacityValid)
+            {
+                string capMsg = !string.IsNullOrWhiteSpace(RemainingBadge?.Text) ? RemainingBadge.Text : "طاقة الوردية/الخط لا تسمح — راجع توزيع البنود على الأيام أو قلل الكميات.";
+                AppContainer.Get<DialogService>().Error($"لا يمكن حفظ الخطة — {capMsg}");
+                return;
             }
 
             string ptype = TypeBox.SelectedIndex switch { 0 => "Daily", 1 => "Weekly", 2 => "Monthly", _ => "Period" };
@@ -1232,16 +1245,15 @@ public partial class PlanningView : UserControl
         if (ApproveRadio != null) ApproveRadio.IsEnabled = !locked;
         if (_toolbar != null)
         {
-            // §FIX 1.50.70: زر الحفظ يتشفر — فك الارتباط بـ _capacityValid، يبقى مفعلاً ما دام هناك صفوف
-            bool hasAnyRow = _rows.Any(r => r.LotId != null || r.ProductId != 0);
-            if (_toolbar.SaveBtn != null) _toolbar.SaveBtn.IsEnabled = !locked && hasAnyRow;
+            // §FIX نهائي: زر الحفظ يعتمد فقط على !_locked — لا hasAnyRow ولا _capacityValid
+            // فحص الطاقة والصفوف يتم في Save_Click برسائل واضحة
+            if (_toolbar.SaveBtn != null) _toolbar.SaveBtn.IsEnabled = !locked;
             if (_toolbar.NewBtn != null) _toolbar.NewBtn.IsEnabled = true; // خطة جديدة دائماً متاحة
             if (_toolbar.ApproveBtn != null) _toolbar.ApproveBtn.IsEnabled = !locked;
             if (_toolbar.DeleteBtn != null) _toolbar.DeleteBtn.IsEnabled = !locked;
         }
-        // §FIX 1.50.70: نفس الإصلاح لزر الحفظ الرئيسي في الشاشة
-        bool hasAny = _rows.Any(r => r.LotId != null || r.ProductId != 0);
-        if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !locked && hasAny;
+        // §FIX نهائي: نفس القاعدة للزر الرئيسي في الشاشة
+        if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !locked;
         if (ApproveActionBtn != null) ApproveActionBtn.IsEnabled = !locked;
         if (SubmitBtn != null) SubmitBtn.IsEnabled = !locked;
     }
