@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="DatesErp.Desktop.Views.Screens.ProductionAuxiliaryView"
+<UserControl x:Class="DatesErp.Desktop.Views.Screens.ProductionAuxiliaryView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              FlowDirection="RightToLeft">
@@ -19,6 +19,10 @@
                     <StackPanel Margin="0,0,14,0">
                         <TextBlock Text="أمر الإنتاج *:" Style="{StaticResource FieldLabel}"/>
                         <ComboBox x:Name="OrderBox" Width="300" DisplayMemberPath="DocumentNumber" SelectedValuePath="Id" SelectionChanged="Order_Changed"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,14,0">
+                        <TextBlock Text="🏬 مخزن المساعدات المصدر:" Style="{StaticResource FieldLabel}"/>
+                        <ComboBox x:Name="WarehouseBox" Width="210" DisplayMemberPath="WarehouseNameAr" SelectedValuePath="Id" SelectionChanged="Warehouse_Changed" ToolTip="§تعدد المخازن: اختر المخزن الذي يُصرف منه — يعرض الرصيد حسب المخزن"/>
                     </StackPanel>
                     <StackPanel Margin="0,0,14,0" VerticalAlignment="Bottom">
                         <TextBlock x:Name="OrderInfo" Text="—" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="12"/>

@@ -49,6 +49,7 @@ public static class ScreenCatalog
         new("movements", "المخازن والاستلام", "حركات المخزون", "inventory", "🔁", "MRPINV1003"),
         new("cartons", "المخازن والاستلام", "الكرتون الفارغ (عدّ/بيع)", "cartons", "📦", "MRPINV1004"),
         new("fgreceive", "المخازن والاستلام", "أوامر استلام الإنتاج", "finishedgoods", "📥", "MRPINV1006"),
+        new("whtransfer", "المخازن والاستلام", "تحويل مخزني — بين المخازن", "inventory", "🔄", "MRPWH1001"),
 
         // 🏭 الإنتاج
         new("planning", "الإنتاج", "خطط الإنتاج (MPS)", "planning", "📋", "MRPMPS1001"),

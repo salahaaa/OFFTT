@@ -95,8 +95,12 @@ public partial class ReceivingView : UserControl
             var allPacks = db.PackagingTypes.AsNoTracking().ToList();
             var packsFromUnits = allPacks.Where(pk => unitNames.Contains(pk.PackageNameAr)).ToList();
             _packagingTypes = packsFromUnits.Count > 0 ? packsFromUnits : allPacks;
-            WarehouseBox.ItemsSource = db.Warehouses.Where(w => w.IsActive && w.WarehouseType == "Raw").OrderBy(w => w.WarehouseCode == "WRM" ? 0 : 1).ThenBy(w => w.Id).ToList();
-            WarehouseBox.SelectedValue = db.Warehouses.Where(w => w.WarehouseCode == "WRM").Select(w => w.Id).FirstOrDefault();
+            var allWarehouses = db.Warehouses.Where(w => w.IsActive).OrderBy(w => w.IsDefault ? 0 : 1).ThenBy(w => w.WarehouseCode == "WRM" ? 0 : 1).ThenBy(w => w.Id).ToList();
+            var rawWarehouses = allWarehouses.Where(w => w.WarehouseType == "Raw" || w.WarehouseCode == "WRM" || w.WarehouseType == "General").ToList();
+            var listWh = rawWarehouses.Count > 0 ? rawWarehouses : allWarehouses;
+            WarehouseBox.ItemsSource = listWh;
+            var defWh = listWh.FirstOrDefault(w => w.IsDefault) ?? listWh.FirstOrDefault(w => w.WarehouseCode == "WRM") ?? listWh.FirstOrDefault();
+            if (defWh != null) WarehouseBox.SelectedValue = defWh.Id;
             _allProducts = db.Products.Where(p => p.IsActive && p.ItemType == "Raw").OrderBy(p => p.ProductNameAr).ToList();
 
             NewForm();
@@ -546,8 +550,9 @@ public partial class ReceivingView : UserControl
         ReceivedDate.SelectedDate = DateTime.Now;
         ContainerBox.Text = ""; NotesBox.Text = "";
         DuplicateWarn.Visibility = Visibility.Collapsed;
-        var wrm = (WarehouseBox.ItemsSource as List<Warehouse>)?.FirstOrDefault(w => w.WarehouseCode == "WRM");
-        if (wrm != null) WarehouseBox.SelectedValue = wrm.Id;
+        var allWhList = WarehouseBox.ItemsSource as List<Warehouse>;
+        var defWh2 = allWhList?.FirstOrDefault(w => w.IsDefault) ?? allWhList?.FirstOrDefault(w => w.WarehouseCode == "WRM") ?? allWhList?.FirstOrDefault();
+        if (defWh2 != null) WarehouseBox.SelectedValue = defWh2.Id;
         try
         {
             using var _numScope = AppContainer.NewScope();
@@ -589,7 +594,12 @@ public partial class ReceivingView : UserControl
             EmployeeBox.SelectedValue = ship.ReceivedBy;
             ContainerBox.Text = ship.ContainerNumber ?? "";
             NotesBox.Text = ship.Notes ?? "";
-            WarehouseBox.SelectedValue = ship.ReceivingWarehouseId ?? db.Warehouses.Where(w => w.WarehouseCode == "WRM").Select(w => w.Id).FirstOrDefault();
+            if (ship.ReceivingWarehouseId != null) WarehouseBox.SelectedValue = ship.ReceivingWarehouseId;
+            else
+            {
+                var fallbackWh = (WarehouseBox.ItemsSource as List<Warehouse>)?.FirstOrDefault(w => w.IsDefault) ?? db.Warehouses.Where(w => w.WarehouseCode == "WRM").FirstOrDefault();
+                if (fallbackWh != null) WarehouseBox.SelectedValue = fallbackWh.Id;
+            }
             _items.Clear();
             foreach (var it in ship.Items)
             {

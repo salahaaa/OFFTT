@@ -129,6 +129,12 @@ public partial class DeliveryView : UserControl
             using var scope = AppContainer.NewScope();
             var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
             CustomerBox.ItemsSource = db.Customers.Where(c => c.IsActive).ToList();
+            // §تعدد المخازن: قائمة مخازن الإنتاج التام (Finished) + عام — مع ترتيب الافتراضي أولاً
+            var warehouses = db.Warehouses.Where(w => w.IsActive && (w.WarehouseType == "Finished" || w.WarehouseType == "WFG" || w.WarehouseType == "General")).OrderBy(w => w.IsDefault ? 0 : 1).ThenBy(w => w.WarehouseCode == "WFG" ? 0 : 1).ThenBy(w => w.Id).ToList();
+            if (warehouses.Count == 0) warehouses = db.Warehouses.Where(w => w.IsActive).OrderBy(w => w.Id).ToList();
+            WarehouseBox.ItemsSource = warehouses;
+            var defWh = warehouses.FirstOrDefault(w => w.IsDefault) ?? warehouses.FirstOrDefault(w => w.WarehouseCode == "WFG") ?? warehouses.FirstOrDefault();
+            if (defWh != null) WarehouseBox.SelectedValue = defWh.Id;
             // §2 — الشاشة تفتح فارغة في وضع «مستند جديد» — نتائج البحث تظهر عند الضغط على «بحث»
             NewForm();
 
@@ -140,6 +146,13 @@ public partial class DeliveryView : UserControl
             }
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Delivery.Load"); }
+    }
+
+    private void Warehouse_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        // §تعدد المخازن: عند تغيير المخزن، أعد تحميل رصيد العميل حسب المخزن المختار
+        if (CustomerBox.SelectedItem is Core.Domain.Entities.Customer)
+            Customer_Changed(null, null);
     }
 
     /// <summary>§7/§8 — نتائج البحث في جدول واضح: نقرتان متتاليتان تفتحان السند في هذه الواجهة.</summary>
@@ -183,14 +196,12 @@ public partial class DeliveryView : UserControl
         {
             using var scope = AppContainer.NewScope();
             var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
-            // §أمر شاشة التسليم — القائمة تُبنى من خدمة الالتقاط: منتجات تامة فقط (§12)،
-            // مرتبة FIFO (الأقدم استلاماً ثم الأقدم إنتاجاً — §2)، بحقول تتبع كاملة (§1/§6/§11)،
-            // ووزن الكرتون من السياسة المركزية (§القاعدة الذهبية — بلا بديل ثابت 7.5).
+            // §تعدد المخازن: فلترة حسب المخزن المختار إن حدد
+            int? whId = WarehouseBox.SelectedValue as int?;
             var pick = scope.ServiceProvider.GetRequiredService<DatesErp.Application.Services.DeliveryPickService>();
-            var rows = pick.GetPickList(cust.Id, DateTime.Now);
+            var rows = pick.GetPickList(cust.Id, DateTime.Now, whId);
             foreach (var r in rows)
             {
-                // §B105/P4 — حالة فحص كل سطر رصيد (للعرض والمنع المبكر — القرار النهائي عند الاعتماد)
                 var (ready, qcLabel) = DatesErp.Application.Services.QualityGate.DeliveryReadiness(db, r.LotId, r.ProductId);
                 _balances.Add(new DelivBalanceRow
                 {
@@ -216,7 +227,8 @@ public partial class DeliveryView : UserControl
                     OrderNo = r.OrderNo
                 });
             }
-            BalanceChip.Text = $"رصيد العميل: {rows.Sum(r => r.AvailableCartons)} كرتون / {rows.Sum(r => r.AvailableKg):N1} كجم";
+            string whName = whId != null ? db.Warehouses.Where(w => w.Id == whId).Select(w => w.WarehouseNameAr).FirstOrDefault() ?? "" : "كل المخازن";
+            BalanceChip.Text = $"رصيد العميل في {whName}: {rows.Sum(r => r.AvailableCartons)} كرتون / {rows.Sum(r => r.AvailableKg):N1} كجم";
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Delivery.Balance"); }
     }
@@ -280,7 +292,8 @@ public partial class DeliveryView : UserControl
                 .ToList();
             using var scope = AppContainer.NewScope();
             var pick = scope.ServiceProvider.GetRequiredService<DatesErp.Application.Services.DeliveryPickService>();
-            var allocated = pick.AllocateFifo(_currentCustomerId, requests, DateTime.Now);
+            int? whAlloc = WarehouseBox.SelectedValue as int?;
+            var allocated = pick.AllocateFifo(_currentCustomerId, requests, DateTime.Now, whAlloc);
             if (allocated.Count == 0) { AppContainer.Get<DialogService>().Error("لا توجد كميات للتسليم."); return; }
 
             // §7 — شاشة المراجعة: الصنف | الصفة | المتاح | المسلَّم
@@ -366,10 +379,11 @@ public partial class DeliveryView : UserControl
                 ProductId = i.ProductId, LotId = i.LotId, PackagingTypeId = i.PackagingTypeId,
                 QtyKg = i.Qty, PackageCount = i.Packages
             }).ToList();
-            // §B105/P2 — سند مسودة محفوظ ومفتوح ← تحديث نفس السند (لا إنشاء مكرر)
+            int? whId = WarehouseBox.SelectedValue as int?;
+            // §تعدد المخازن: مرر مخزن المصدر
             OpResult r = _currentId > 0 && !_locked
-                ? svc.Update(_currentId, _currentCustomerId, (DateBox.SelectedDate ?? DateTime.Now).ToString("dd/MM/yyyy"), orderId, itemsDto)
-                : svc.Save(_currentCustomerId, (DateBox.SelectedDate ?? DateTime.Now).ToString("dd/MM/yyyy"), orderId, itemsDto);
+                ? svc.Update(_currentId, _currentCustomerId, (DateBox.SelectedDate ?? DateTime.Now).ToString("dd/MM/yyyy"), orderId, itemsDto, whId)
+                : svc.Save(_currentCustomerId, (DateBox.SelectedDate ?? DateTime.Now).ToString("dd/MM/yyyy"), orderId, itemsDto, whId);
             if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
             // §4/§5 — الحفظ ينجح ويبقى السند مفتوحاً في الواجهة كما هو
             bool wasUpdate = _currentId > 0 && _currentId == r.Id && DocNoBox.Text == r.DocumentNumber && DocNoBox.Text != "(تلقائي عند الحفظ)";
@@ -554,6 +568,7 @@ public partial class DeliveryView : UserControl
             _currentId = d.Id;
             _currentCustomerId = d.CustomerId;
             CustomerBox.SelectedValue = d.CustomerId;
+            if (d.WarehouseId != null) WarehouseBox.SelectedValue = d.WarehouseId;
             DateBox.SelectedDate = d.DeliveryDate;
             DocNoBox.Text = d.DocumentNumber;
             _items.Clear();

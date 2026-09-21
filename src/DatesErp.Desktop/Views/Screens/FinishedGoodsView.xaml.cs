@@ -78,6 +78,13 @@ public partial class FinishedGoodsView : UserControl
             using var scope = AppContainer.NewScope();
             var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
 
+            // §تعدد المخازن: مخازن الإنتاج التام + عام — افتراضي أولاً
+            var warehouses = db.Warehouses.Where(w => w.IsActive && (w.WarehouseType == "Finished" || w.WarehouseCode == "WFG" || w.WarehouseType == "General")).OrderBy(w => w.IsDefault ? 0 : 1).ThenBy(w => w.WarehouseCode == "WFG" ? 0 : 1).ThenBy(w => w.Id).ToList();
+            if (warehouses.Count == 0) warehouses = db.Warehouses.Where(w => w.IsActive).OrderBy(w => w.Id).ToList();
+            WarehouseBox.ItemsSource = warehouses;
+            var defWh = warehouses.FirstOrDefault(w => w.IsDefault) ?? warehouses.FirstOrDefault(w => w.WarehouseCode == "WFG") ?? warehouses.FirstOrDefault();
+            if (defWh != null) WarehouseBox.SelectedValue = defWh.Id;
+
             // الأوامر المؤهلة: لها فحص جودة معتمد
             var orders = db.ProductionOrders
                 .Where(o => o.IsApproved && db.QualityChecks.Any(c => c.OrderId == o.Id && c.IsApproved))
@@ -193,6 +200,7 @@ public partial class FinishedGoodsView : UserControl
 
             using var scope = AppContainer.NewScope();
             var svc = (IFinishedGoodsService)scope.ServiceProvider.GetService(typeof(IFinishedGoodsService));
+            int? whId = WarehouseBox.SelectedValue as int?;
             var r = svc.SaveReceipt(_currentOrderId, _currentQcId,
                 (DateBox.SelectedDate ?? DateTime.Now).ToString("dd/MM/yyyy"),
                 selected.Select(i => new FinishedGoodsItemDto
@@ -201,7 +209,7 @@ public partial class FinishedGoodsView : UserControl
                     LotId = i.LotId,
                     PackageCount = i.Packages,
                     NetWeightKg = i.DeliverQty
-                }).ToList());
+                }).ToList(), null, whId);
             if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
             _currentReceiptId = r.Id;
             DocNoBox.Text = r.DocumentNumber;
@@ -339,6 +347,7 @@ public partial class FinishedGoodsView : UserControl
             _currentOrderId = rcpt.OrderId;
             DocNoBox.Text = rcpt.DocumentNumber;
             DateBox.SelectedDate = rcpt.DeliveryDate;
+            if (rcpt.WarehouseId != 0) WarehouseBox.SelectedValue = rcpt.WarehouseId;
             _items.Clear();
             foreach (var it in rcpt.Items)
             {

@@ -27,14 +27,28 @@ public class DeliveryPickService
     private readonly DatesErpDbContext _db;
     public DeliveryPickService(DatesErpDbContext db) { _db = db; }
 
-    /// <summary>§1 — قائمة رصيد العميل القابل للتسليم، مرتبة FIFO (§2)، مع مدة بقاء محسوبة لحظياً (§6).</summary>
-    public List<DeliveryPickRow> GetPickList(int customerId, DateTime asOf)
+    /// <summary>§1 — قائمة رصيد العميل القابل للتسليم، مرتبة FIFO (§2)، مع مدة بقاء محسوبة لحظياً (§6). §تعدد المخازن: warehouseId اختياري</summary>
+    public List<DeliveryPickRow> GetPickList(int customerId, DateTime asOf, int? warehouseId = null)
     {
-        int whFg = _db.Warehouses.AsNoTracking().Where(w => w.WarehouseCode == "WFG").Select(w => w.Id).FirstOrDefault();
-        if (whFg == 0) return new();
+        IQueryable<int> whQuery;
+        if (warehouseId != null)
+        {
+            whQuery = _db.Warehouses.AsNoTracking().Where(w => w.Id == warehouseId && w.IsActive).Select(w => w.Id);
+        }
+        else
+        {
+            // كل مخازن الإنتاج التام النشطة + عام
+            whQuery = _db.Warehouses.AsNoTracking()
+                .Where(w => w.IsActive && (w.WarehouseType == "Finished" || w.WarehouseCode == "WFG" || w.WarehouseType == "General"))
+                .Select(w => w.Id);
+            if (!whQuery.Any())
+                whQuery = _db.Warehouses.AsNoTracking().Where(w => w.WarehouseCode == "WFG").Select(w => w.Id);
+        }
+        var whIds = whQuery.ToList();
+        if (whIds.Count == 0) return new();
 
         var balances = _db.StockBalances.AsNoTracking()
-            .Where(b => b.WarehouseId == whFg && b.CustomerId == customerId
+            .Where(b => whIds.Contains(b.WarehouseId) && b.CustomerId == customerId
                         && (b.PackageCount > 0 || b.QtyKg > 0.001))
             .ToList();
         if (balances.Count == 0) return new();
@@ -53,7 +67,7 @@ public class DeliveryPickService
         // تاريخ استلام التام = تاريخ أقدم سند استلام إنتاج تام معتمد للدفعة×الصنف (تاريخ المستند لا تاريخ الحركة).
         var fgIn = (from ri in _db.FinishedGoodsReceiptItems.AsNoTracking()
                     join r in _db.FinishedGoodsReceipts.AsNoTracking() on ri.ReceiptId equals r.Id
-                    where r.WarehouseId == whFg && r.Status == DocStatuses.Approved
+                    where whIds.Contains(r.WarehouseId) && r.Status == DocStatuses.Approved
                           && ri.LotId != null && lotIds.Contains(ri.LotId.Value)
                     group r by new { ri.LotId, ri.ProductId } into g
                     select new { g.Key.LotId, g.Key.ProductId, First = g.Min(x => x.DeliveryDate) })
@@ -121,10 +135,11 @@ public class DeliveryPickService
     /// <summary>§3/§4/§5 — توزيع الطلبات بالكرتون توزيعاً آلياً FIFO عبر دفعات كل صنف.
     /// أي طلب ≤ المتاح يُنفَّذ (كلي أو جزئي)؛ الطلب الزائد يُرفض فوراً برسالة الأمر حرفياً.
     /// كل سطر ناتج يحمل LotId الخاص بدفعته — لا دمج ولا فقدان تتبع إطلاقاً.
-    /// §1.50.66 — التوزيع يحترم PackagingTypeId كجزء من مفتاح الرصيد: 4كجم لا يخلط مع 8كجم.</summary>
-    public List<CustomerDeliveryItemDto> AllocateFifo(int customerId, List<(int ProductId, int Cartons)> requests, DateTime asOf)
+    /// §1.50.66 — التوزيع يحترم PackagingTypeId كجزء من مفتاح الرصيد: 4كجم لا يخلط مع 8كجم.
+    /// §تعدد المخازن: warehouseId اختياري</summary>
+    public List<CustomerDeliveryItemDto> AllocateFifo(int customerId, List<(int ProductId, int Cartons)> requests, DateTime asOf, int? warehouseId = null)
     {
-        var list = GetPickList(customerId, asOf);
+        var list = GetPickList(customerId, asOf, warehouseId);
         var result = new List<CustomerDeliveryItemDto>();
         foreach (var (pid, cartons) in requests)
         {

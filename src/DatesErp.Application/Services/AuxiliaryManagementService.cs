@@ -181,7 +181,7 @@ public class AuxiliaryManagementService : ServiceBase
     // ثالثًا ورابعًا: حساب المطلوب وعرضه عند أمر الإنتاج
     // ═══════════════════════════════════════════════════════════════
 
-    public List<AuxiliaryNeedDto> CalculateNeedsForOrder(int orderId)
+    public List<AuxiliaryNeedDto> CalculateNeedsForOrder(int orderId, int? warehouseId = null)
     {
         var order = Db.ProductionOrders.AsNoTracking().Include(o => o.Items).FirstOrDefault(o => o.Id == orderId);
         if (order == null) throw new DomainException("أمر الإنتاج غير موجود.");
@@ -251,7 +251,15 @@ public class AuxiliaryManagementService : ServiceBase
 
         var materials = Db.ProductionOrderMaterials.AsNoTracking().Where(m => m.OrderId == orderId).ToList();
         var auxConfigs = Db.AuxiliaryProductConfigs.AsNoTracking().ToDictionary(c => c.ProductId);
-        var whAux = Db.Warehouses.AsNoTracking().FirstOrDefault(w => w.WarehouseCode == "WAUX")?.Id ?? 0;
+        // §تعدد المخازن: إذا محدد مخزن استخدمه، وإلا الافتراضي أو WAUX
+        int? whAuxId = warehouseId;
+        if (whAuxId == null)
+        {
+            whAuxId = Db.Warehouses.AsNoTracking().Where(w => w.IsActive && w.IsDefault && (w.WarehouseType == "Auxiliary" || w.WarehouseType == "General")).Select(w => w.Id).FirstOrDefault();
+            if (whAuxId == 0) whAuxId = Db.Warehouses.AsNoTracking().Where(w => w.WarehouseCode == "WAUX").Select(w => (int?)w.Id).FirstOrDefault();
+            if (whAuxId == 0) whAuxId = null;
+        }
+        int whAux = whAuxId ?? 0;
 
         foreach (var need in needs.Values)
         {
@@ -344,7 +352,7 @@ public class AuxiliaryManagementService : ServiceBase
     // خامسًا وسادسًا: التحقق من المخزون والصرف الجزئي
     // ═══════════════════════════════════════════════════════════════
 
-    public OpResult IssueAuxiliary(int orderId, int auxiliaryProductId, double qty, string notes = null)
+    public OpResult IssueAuxiliary(int orderId, int auxiliaryProductId, double qty, string notes = null, int? warehouseId = null)
     {
         Require("materials", "Post");
         if (qty <= 0.001) return OpResult.Fail("كمية الصرف يجب أن تكون أكبر من صفر.");
@@ -353,7 +361,7 @@ public class AuxiliaryManagementService : ServiceBase
         if (order == null) return OpResult.Fail("أمر الإنتاج غير موجود.");
         if (!order.IsApproved) return OpResult.Fail("لا يمكن صرف مواد لأمر غير معتمد.");
 
-        var needs = CalculateNeedsForOrder(orderId);
+        var needs = CalculateNeedsForOrder(orderId, warehouseId);
         var need = needs.FirstOrDefault(n => n.AuxiliaryProductId == auxiliaryProductId);
         if (need == null) return OpResult.Fail("هذا الصنف المساعد غير مطلوب لهذا الأمر.");
 
@@ -365,7 +373,10 @@ public class AuxiliaryManagementService : ServiceBase
 
         return RunOp(() =>
         {
-            var whAux = Db.Warehouses.FirstOrDefault(w => w.WarehouseCode == "WAUX");
+            Warehouse whAux = null;
+            if (warehouseId != null) whAux = Db.Warehouses.FirstOrDefault(w => w.Id == warehouseId.Value && w.IsActive);
+            if (whAux == null) whAux = Db.Warehouses.FirstOrDefault(w => w.IsActive && w.IsDefault && (w.WarehouseType == "Auxiliary" || w.WarehouseType == "General"));
+            if (whAux == null) whAux = Db.Warehouses.FirstOrDefault(w => w.WarehouseCode == "WAUX");
             if (whAux == null) throw new DomainException("مخزن الأصناف المساعدة WAUX غير موجود — أنشئه من شاشة المخازن.");
 
             var balance = Db.StockBalances.FirstOrDefault(b => b.WarehouseId == whAux.Id && b.ProductId == auxiliaryProductId && b.LotId == null && b.CustomerId == null && b.PackagingTypeId == null);
@@ -378,7 +389,7 @@ public class AuxiliaryManagementService : ServiceBase
 
             if (availableD + 0.001 < qty)
             {
-                throw new DomainException($"غير كافٍ للصرف\nالمطلوب: {qty:N3} {need.Unit}\nالمتاح: {availableD:N3}\nالعجز: {(qty - availableD):N3}");
+                throw new DomainException($"غير كافٍ للصرف في المخزن {whAux.WarehouseNameAr}\nالمطلوب: {qty:N3} {need.Unit}\nالمتاح: {availableD:N3}\nالعجز: {(qty - availableD):N3}");
             }
 
             double before = availableD;
@@ -392,7 +403,7 @@ public class AuxiliaryManagementService : ServiceBase
                 PackageCount = isKg ? 0 : -(int)Math.Round(qty),
                 ReferenceDocType = ReferenceDocType.MaterialIssue,
                 ReferenceDocNumber = $"{order.DocumentNumber}#AUX-{auxiliaryProductId}-{DateTime.Now:yyyyMMddHHmmss}",
-                Notes = notes ?? $"صرف {qty:N3} {need.Unit} من {need.AuxiliaryProductName} لأمر {order.DocumentNumber}",
+                Notes = notes ?? $"صرف {qty:N3} {need.Unit} من {need.AuxiliaryProductName} لأمر {order.DocumentNumber} من {whAux.WarehouseNameAr}",
                 CreatedBy = Session?.UserId
             };
             Db.InventoryTransactions.Add(txn);
@@ -451,14 +462,14 @@ public class AuxiliaryManagementService : ServiceBase
             Db.AuxiliaryIssueTransactions.Add(issueTxn);
 
             Db.SaveChanges();
-            return OpResult.Success($"تم صرف {qty:N3} {need.Unit} من {need.AuxiliaryProductName} لأمر {order.DocumentNumber}.\nالمتبقي: {(need.RequiredQty - mat.ActualIssuedQty):N3}", mat.Id, txn.ReferenceDocNumber);
+            return OpResult.Success($"تم صرف {qty:N3} {need.Unit} من {need.AuxiliaryProductName} من {whAux.WarehouseNameAr} لأمر {order.DocumentNumber}.\nالمتبقي: {(need.RequiredQty - mat.ActualIssuedQty):N3}", mat.Id, txn.ReferenceDocNumber);
         });
     }
 
-    public OpResult IssueAllRemaining(int orderId)
+    public OpResult IssueAllRemaining(int orderId, int? warehouseId = null)
     {
         Require("materials", "Post");
-        var needs = CalculateNeedsForOrder(orderId);
+        var needs = CalculateNeedsForOrder(orderId, warehouseId);
         var remaining = needs.Where(n => n.RemainingQty > 0.001 && n.AuxiliaryProductId != null).ToList();
         if (remaining.Count == 0) return OpResult.Fail("لا يوجد متبقي للصرف — جميع الاحتياجات مصروفة.");
 
@@ -466,7 +477,7 @@ public class AuxiliaryManagementService : ServiceBase
         var errors = new List<string>();
         foreach (var need in remaining)
         {
-            var r = IssueAuxiliary(orderId, need.AuxiliaryProductId!.Value, need.RemainingQty, "صرف جماعي للمتبقي");
+            var r = IssueAuxiliary(orderId, need.AuxiliaryProductId!.Value, need.RemainingQty, "صرف جماعي للمتبقي", warehouseId);
             if (r.Ok) success++;
             else errors.Add($"{need.AuxiliaryProductName}: {r.Message}");
         }

@@ -152,6 +152,7 @@ public static class ScreenFactory
         // المخازن والتام
         "finishedgoods" => FinishedGoodsScreen(),
         "fgreceive" => FGReceiveScreen(),
+        "whtransfer" => WrapPlain(new WarehouseTransferView(), "تحويل مخزني — بين المخازن", "المخازن والأرصدة", "MRPWH1001"),
         "balances" => Wrap(GenericListView.ForBalances(), "أرصدة المخزون", "المخازن والأرصدة", "MRPINV1001"),
         "movements" => Wrap(GenericListView.ForMovements(), "حركات المخزون", "المخازن والأرصدة", "MRPINV1003"),
 

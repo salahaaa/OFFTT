@@ -91,13 +91,14 @@ public class CustomerAvailabilityService : ServiceBase, ICustomerAvailabilitySer
                 };
             }).ToList();
 
-        // ── الدفعات المتاحة فعلياً في مخزن التام (بالحركة، لا بالمحاسبة) ──
-        int wfg = WarehouseId("WFG");
+        // ── الدفعات المتاحة فعلياً في مخازن التام (تعدد المخازن: كل مخازن Finished/WFG/General) ──
+        var fgWhIds = Db.Warehouses.AsNoTracking().Where(w => w.IsActive && (w.WarehouseType == "Finished" || w.WarehouseCode == "WFG" || w.WarehouseType == "General")).Select(w => w.Id).ToList();
+        if (fgWhIds.Count == 0) fgWhIds = new List<int> { WarehouseId("WFG") };
         var products = Db.Products.AsNoTracking().ToDictionary(x => x.Id, x => x.ProductNameAr);
         var packs = Db.PackagingTypes.AsNoTracking().ToDictionary(x => x.Id, x => x.PackageNameAr);
         var lots = Db.Lots.AsNoTracking().ToDictionary(x => x.Id, x => x.LotCode);
         detail.Stocks = Db.StockBalances.AsNoTracking()
-            .Where(b => b.WarehouseId == wfg && b.CustomerId == customerId && b.QtyKg > 0.001)
+            .Where(b => fgWhIds.Contains(b.WarehouseId) && b.CustomerId == customerId && b.QtyKg > 0.001)
             .OrderBy(b => b.ProductId).ThenBy(b => b.LotId ?? 0)
             .ToList()   // §سحب: الإسقاط في الذاكرة — TryGetValue/out و?. غير قابلة للترجمة في شجرة EF
             .Select(b => new CustomerLotStockDto

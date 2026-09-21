@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="DatesErp.Desktop.Views.Screens.FinishedGoodsView"
+<UserControl x:Class="DatesErp.Desktop.Views.Screens.FinishedGoodsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              FlowDirection="RightToLeft">
@@ -14,6 +14,10 @@
                         <StackPanel Margin="0,0,16,0">
                             <TextBlock Text="أمر الإنتاج (له فحص معتمد):" Style="{StaticResource FieldLabel}"/>
                             <ComboBox x:Name="OrderBox" Width="320" SelectionChanged="Order_Changed"/>
+                        </StackPanel>
+                        <StackPanel Margin="0,0,16,0">
+                            <TextBlock Text="🏬 مخزن الإدخال (الوجهة):" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox x:Name="WarehouseBox" Width="220" DisplayMemberPath="WarehouseNameAr" SelectedValuePath="Id" ToolTip="§تعدد المخازن: اختر المخزن الذي سيدخل إليه الإنتاج التام"/>
                         </StackPanel>
                         <StackPanel Margin="0,0,16,0">
                             <TextBlock Text="رقم السند (تلقائي):" Style="{StaticResource FieldLabel}"/>

@@ -40,11 +40,19 @@ public partial class ProductionAuxiliaryView : UserControl
             OrderBox.ItemsSource = orders;
             OrderBox.DisplayMemberPath = "DocumentNumber";
             OrderBox.SelectedValuePath = "Id";
+
+            // §تعدد المخازن: مخازن المساعدات + عام
+            var warehouses = db.Warehouses.Where(w => w.IsActive && (w.WarehouseType == "Auxiliary" || w.WarehouseCode == "WAUX" || w.WarehouseType == "General")).OrderBy(w => w.IsDefault ? 0 : 1).ThenBy(w => w.WarehouseCode == "WAUX" ? 0 : 1).ThenBy(w => w.Id).ToList();
+            if (warehouses.Count == 0) warehouses = db.Warehouses.Where(w => w.IsActive).OrderBy(w => w.Id).ToList();
+            WarehouseBox.ItemsSource = warehouses;
+            var defWh = warehouses.FirstOrDefault(w => w.IsDefault) ?? warehouses.FirstOrDefault(w => w.WarehouseCode == "WAUX") ?? warehouses.FirstOrDefault();
+            if (defWh != null) WarehouseBox.SelectedValue = defWh.Id;
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ProdAux.LoadOrders"); }
     }
 
     private void Order_Changed(object sender, SelectionChangedEventArgs e) => Refresh();
+    private void Warehouse_Changed(object sender, SelectionChangedEventArgs e) => Refresh();
 
     private void Refresh()
     {
@@ -63,7 +71,8 @@ public partial class ProductionAuxiliaryView : UserControl
                 OrderInfo.Text = $"الأمر {order.DocumentNumber} — {totalCartons:N0} كرتون — {items.Count} بنداً";
             }
 
-            var needs = svc.CalculateNeedsForOrder(oid);
+            int? whId = WarehouseBox.SelectedValue as int?;
+            var needs = svc.CalculateNeedsForOrder(oid, whId);
             NeedsGrid.ItemsSource = needs;
 
             var history = db.AuxiliaryIssueTransactions.AsNoTracking().Where(t => t.OrderId == oid).OrderByDescending(t => t.IssueDate).ToList();
@@ -116,7 +125,8 @@ public partial class ProductionAuxiliaryView : UserControl
             {
                 using var scope = AppContainer.NewScope();
                 var svc = scope.ServiceProvider.GetRequiredService<AuxiliaryManagementService>();
-                var r = svc.IssueAuxiliary(oid, need.AuxiliaryProductId.Value, qty, $"صرف يدوي من شاشة الأصناف المساعدة");
+                int? whId = WarehouseBox.SelectedValue as int?;
+                var r = svc.IssueAuxiliary(oid, need.AuxiliaryProductId.Value, qty, $"صرف يدوي من شاشة الأصناف المساعدة", whId);
                 if (!r.Ok) AppContainer.Get<DialogService>().Error(r.Message);
                 else
                 {
@@ -141,7 +151,8 @@ public partial class ProductionAuxiliaryView : UserControl
         {
             using var scope = AppContainer.NewScope();
             var svc = scope.ServiceProvider.GetRequiredService<AuxiliaryManagementService>();
-            var r = svc.IssueAllRemaining(oid);
+            int? whId = WarehouseBox.SelectedValue as int?;
+            var r = svc.IssueAllRemaining(oid, whId);
             if (!r.Ok) AppContainer.Get<DialogService>().Error(r.Message);
             else AppContainer.Get<DialogService>().Info(r.Message);
             Refresh();
