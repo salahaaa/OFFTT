@@ -48,6 +48,7 @@ public static class AppContainer
         services.AddScoped<CartonService>();
         services.AddScoped<IBackupService, BackupService>();
         services.AddScoped<ISystemSettingsService, SystemSettingsService>(); // §44
+        services.AddScoped<IThemeSettingsService, ThemeSettingsService>(); // مدير الثيم المركزي
         services.AddScoped<IInventoryIntegrityService, InventoryIntegrityService>(); // §45
         services.AddScoped<MasterDataService>();
         services.AddScoped<ICapacityService, CapacityService>();

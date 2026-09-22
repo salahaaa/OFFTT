@@ -4,10 +4,10 @@
         Title="نظام التصنيع — النظام المتكامل لإدارة عمليات التصنيع"
         Height="800" Width="1360"
         WindowStartupLocation="CenterScreen" WindowState="Maximized"
-        FlowDirection="RightToLeft" Background="#F1F5F9">
+        FlowDirection="RightToLeft" Background="{DynamicResource ThemeBackgroundBrush}">
     <DockPanel>
         <!-- ═══ الشريط العلوي الكحلي (المعتمد #0F172A) ═══ -->
-        <Border DockPanel.Dock="Top" Height="56" Background="#0F172A">
+        <Border DockPanel.Dock="Top" Height="56" Background="{DynamicResource ThemeTitleBarBrush}">
             <DockPanel Margin="20,0">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                     <Border Width="32" Height="32" CornerRadius="16" Background="#C9A227">
@@ -61,7 +61,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- ═══ القائمة الجانبية (المعتمدة #1E293B) ═══ -->
-            <Border x:Name="SideBar" Grid.Column="0" Background="#1E293B" BorderBrush="#334155" BorderThickness="0,0,1,0">
+            <Border x:Name="SideBar" Grid.Column="0" Background="{DynamicResource ThemeTitleBarBrush}" BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="0,0,1,0">
                 <DockPanel Margin="10,12">
                     <StackPanel DockPanel.Dock="Top">
                         <Border CornerRadius="8" Background="#0FFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" Padding="14,10" Margin="0,0,0,12">
@@ -86,7 +86,7 @@
             </Border>
 
             <!-- ═══ المحتوى ═══ -->
-            <DockPanel Grid.Column="1" Background="#F1F5F9">
+            <DockPanel Grid.Column="1" Background="{DynamicResource ThemeBackgroundBrush}">
                 <!-- شريط المسار -->
                 <Border DockPanel.Dock="Top" Background="White" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="24,8">
                     <StackPanel Orientation="Horizontal">

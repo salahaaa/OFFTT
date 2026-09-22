@@ -33,6 +33,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // الثيم يُحمّل بعد تسجيل الدخول من الكتالوج المحفوظ، ثم يُطبّق على موارد التطبيق كلها.
+        ThemeManager.LoadSaved();
         // §ختم البناء: يظهر في شريط العنوان لمعرفة أي نسخة تعمل فعلاً على جهاز المستخدم
         Title = "DateERP — إصدار " + Services.BuildInfo.Stamp;
         BuildNav();
@@ -253,6 +255,7 @@ public partial class MainWindow : Window
     {
         if (code == "treatment") code = "receiving"; // مسار قديم: يخضع لصلاحية الاستلام نفسها.
         if (code == "dashboard" || code.StartsWith("dashboard:")) return true;
+        if (code == "theme") return PermissionGate.Can(PermissionModules.Settings, "Edit");
         var def = ScreenCatalog.All.FirstOrDefault(s => s.Code == code);
         string module = def?.Module;
         if (string.IsNullOrEmpty(module) || !GatedModules.Contains(module)) return true;
@@ -265,6 +268,11 @@ public partial class MainWindow : Window
         if (code == "treatment") code = "receiving"; // مسار قديم: يخضع لصلاحية الاستلام نفسها.
         if (code == "dashboard" || code.StartsWith("dashboard:")) return true;
         var def = ScreenCatalog.All.FirstOrDefault(s => s.Code == code);
+        if (code == "theme" && !PermissionGate.Can(PermissionModules.Settings, "Edit"))
+        {
+            AppContainer.Get<DialogService>().Error("لا تملك صلاحية إدارة تخصيص النظام والمظهر.");
+            return false;
+        }
         string module = def?.Module;
         if (string.IsNullOrEmpty(module) || !GatedModules.Contains(module)) return true;
         bool ok = true;
@@ -395,6 +403,16 @@ public partial class MainWindow : Window
             }
         }
         catch { }
+    }
+
+    /// <summary>تطبيق إعدادات تخطيط الثيم على الصدفة الرئيسية دون تغيير وظائف التنقل.</summary>
+    public void ApplyThemeLayout(DatesErp.Core.Interfaces.Services.ThemeProfileDto theme)
+    {
+        if (theme == null) return;
+        NavColumn.Width = new GridLength(theme.ShowSidebar ? Math.Max(0, theme.SidebarWidth) : 0);
+        SideBar.Visibility = theme.ShowSidebar ? Visibility.Visible : Visibility.Collapsed;
+        ContentArea.MaxWidth = theme.ContentWidth > 0 ? theme.ContentWidth : double.PositiveInfinity;
+        ContentArea.HorizontalAlignment = theme.ContentWidth > 0 ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
     }
 
     private void UpdateStatus()

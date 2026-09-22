@@ -72,6 +72,22 @@ public static class ScreenFactory
         return c;
     }
 
+    private static UIElement StockTransferScreen()
+    {
+        var v = new StockTransferView();
+        var c = new ErpChrome { TitleText = "[MAIN] - [نظام إدارة وتصنيع التمور - التحويلات المخزنية] - (" + Company + ")" };
+        v.AttachChrome(c);
+        return c;
+    }
+
+    private static UIElement ThemeSettingsScreen()
+    {
+        var v = new ThemeSettingsView();
+        var c = new ErpChrome { TitleText = "[MAIN] - [نظام إدارة وتصنيع التمور - تخصيص النظام والمظهر] - (" + Company + ")" };
+        v.AttachChrome(c);
+        return c;
+    }
+
     private static UIElement PlanningScreen()
     {
         var v = new PlanningView();
@@ -154,6 +170,7 @@ public static class ScreenFactory
         "fgreceive" => FGReceiveScreen(),
         "balances" => Wrap(GenericListView.ForBalances(), "أرصدة المخزون", "المخازن والأرصدة", "MRPINV1001"),
         "movements" => Wrap(GenericListView.ForMovements(), "حركات المخزون", "المخازن والأرصدة", "MRPINV1003"),
+        "transfers" => StockTransferScreen(),
 
         // التسليم
         "delivery" => DeliveryScreen(),
@@ -173,6 +190,7 @@ public static class ScreenFactory
         "audit" => WrapPlain(new AuditFilterView(), "سجل التدقيق (فلاتر)", "الإدارة", "MRPRPT1010"),
         "backup" => WrapPlain(new BackupView(), "النسخ الاحتياطي والاستعادة", "النسخ الاحتياطي والصيانة", "MRPSYS1001"),
         "systeminfo" => WrapPlain(new SystemInfoView(), "معلومات النظام والإعدادات", "إدارة النظام", "MRPSYS1002"),
+        "theme" => ThemeSettingsScreen(),
         "whvars" => WrapPlain(new WarehouseVariablesView(), "متغيرات المخازن", "إدارة النظام", "MRPSYS1003"),
         "items" => WrapPlain(new ItemsView(), "الأصناف", "إدارة النظام", "MRPMAS1001"),
         "caps" => WrapPlain(new ItemsCapacitiesView(), "طاقات الأصناف", "إدارة النظام", "MRPMAS1011"),

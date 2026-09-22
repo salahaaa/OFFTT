@@ -47,6 +47,7 @@ public static class ScreenCatalog
         // §المعالجة والتعقيم — بجوار الدفعات: هي دورة على الخام المستلم
         new("balances", "المخازن والاستلام", "أرصدة المخزون", "inventory", "⚖", "MRPINV1001"),
         new("movements", "المخازن والاستلام", "حركات المخزون", "inventory", "🔁", "MRPINV1003"),
+        new("transfers", "المخازن والاستلام", "التحويلات المخزنية", "inventory", "↔", "MRPINV1007"),
         new("cartons", "المخازن والاستلام", "الكرتون الفارغ (عدّ/بيع)", "cartons", "📦", "MRPINV1004"),
         new("fgreceive", "المخازن والاستلام", "أوامر استلام الإنتاج", "finishedgoods", "📥", "MRPINV1006"),
 
@@ -77,7 +78,8 @@ public static class ScreenCatalog
 
         // 🛠️ النسخ الاحتياطي والصيانة
         new("backup", "النسخ الاحتياطي والصيانة", "النسخ الاحتياطي والاستعادة", "backup", "💾", "MRPSYS1001"),
-        new("systeminfo", "النسخ الاحتياطي والصيانة", "معلومات النظام والإعدادات", "settings", "⚙️", "MRPSYS1002")
+        new("systeminfo", "النسخ الاحتياطي والصيانة", "معلومات النظام والإعدادات", "settings", "⚙️", "MRPSYS1002"),
+        new("theme", "إدارة النظام", "تخصيص النظام والمظهر", "settings", "🎨", "MRPSYS1004")
     };
 
     public static IEnumerable<ScreenDef> OfDept(string deptId) => All.Where(s => s.Group == DeptTitle(deptId));
