@@ -1,0 +1,13 @@
+# Build output
+bin/
+obj/
+publish/
+*.user
+.vs/
+# Archives / packages — never commit release copies to the repo
+*.zip
+*.7z
+*.rar
+*.bak
+install_*.log
+install_log.txt

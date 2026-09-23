@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>دليل التنصيب الكامل من الصفر — نظام التصنيع (MfgSystem) 1.50.50</title>
+<style>
+ body{font-family:"Segoe UI",Tahoma,Arial;background:#F1F5F9;color:#1E293B;margin:0;padding:24px;line-height:1.8}
+ .wrap{max-width:900px;margin:auto;background:#fff;border:1px solid #CBD5E1;border-radius:12px;padding:28px 34px;box-shadow:0 2px 10px rgba(15,23,42,.08)}
+ h1{color:#0A246A;border-bottom:3px solid #C9A227;padding-bottom:10px;font-size:26px}
+ h2{color:#0A246A;margin-top:34px;font-size:19px;border-right:5px solid #C9A227;padding-right:10px}
+ table{border-collapse:collapse;width:100%;margin:12px 0}
+ th{background:#0A246A;color:#fff;padding:8px 10px;font-size:14px}
+ td{border:1px solid #CBD5E1;padding:7px 10px;font-size:14px}
+ tr:nth-child(even) td{background:#F8FAFC}
+ code,.mono{background:#F1F5F9;border:1px solid #CBD5E1;border-radius:5px;padding:1px 7px;font-family:Consolas,monospace;color:#0A246A;direction:ltr;display:inline-block}
+ .warn{background:#FEF3C7;border:1px solid #C9A227;border-radius:8px;padding:12px 16px;margin:14px 0}
+ .note{background:#F8FAFC;border:1px solid #CBD5E1;border-radius:8px;padding:12px 16px;margin:14px 0}
+ .big{font-size:17px;font-weight:bold;color:#15803D}
+ ol li,ul li{margin:6px 0}
+ .step{background:#F8FAFC;border:1px solid #CBD5E1;border-right:5px solid #0A246A;border-radius:8px;padding:10px 14px;margin:8px 0}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>🚀 دليل التنصيب الكامل من الصفر — نظام التصنيع (MfgSystem) 1.50.50</h1>
+<p class="big">ملف واحد تنقره مرتين → يُنزَّل ويُثبَّت كل شيء تلقائياً → يُبنى النظام → يفتح أمامك جاهزاً، ومعك Visual Studio 2022 ترى فيه كل الشاشات وتعدّلها.</p>
+
+<h2>0) 🔒 الانفصال التام عن كل النسخ السابقة</h2>
+<table>
+<tr><th>المورد</th><th>النسخ القديمة</th><th>نظام التصنيع الجديد</th><th>يتعارضان؟</th></tr>
+<tr><td>مجلد الإعداد والسجلات والنسخ الاحتياطية</td><td><span class="mono">%LocalAppData%\DateERP_15021</span></td><td><span class="mono">%LocalAppData%\MfgSystem</span></td><td><b>لا</b></td></tr>
+<tr><td>قاعدة البيانات (SQL)</td><td><span class="mono">DateFactory / DateFactory_15021</span></td><td><span class="mono">MfgSystemDB</span> — تُنشأ تلقائياً</td><td><b>لا</b></td></tr>
+<tr><td>القاعدة المحلية (SQLite)</td><td><span class="mono">dateerp_local.db</span></td><td><span class="mono">mfgsystem_local.db</span></td><td><b>لا</b></td></tr>
+<tr><td>الملف التنفيذي</td><td><span class="mono">DateERP.exe</span></td><td><span class="mono">MfgSystem.exe</span></td><td><b>لا</b></td></tr>
+<tr><td>مجلد التنصيب</td><td><span class="mono">D:\DateERP_...</span></td><td><span class="mono">D:\MfgSystem</span></td><td><b>لا</b></td></tr>
+</table>
+<div class="note">✅ <b>النتيجة:</b> كل نسخك القديمة تبقى تعمل كالمعتاد — النظام الجديد لا يقرأ بياناتها ولا يعدّل قواعدها ولا يلمس مجلداتها. محرك SQL Server نفسه يُعاد استخدامه كمحرك فقط، بقاعدة جديدة مستقلة <span class="mono">MfgSystemDB</span> تُنشأ من الصفر.</div>
+
+<h2>1) ماذا يثبّت السكربت؟</h2>
+<table>
+<tr><th>#</th><th>المكوّن</th><th>الحجم</th><th>الوقت</th><th>لماذا؟</th></tr>
+<tr><td>1</td><td>.NET 8 SDK</td><td>220 م.ب</td><td>3-5 د</td><td>بناء النظام وتشغيله</td></tr>
+<tr><td>2</td><td>SQL Server 2022 Express</td><td>1.5 ج.ب</td><td>10-30 د</td><td>محرك قاعدة البيانات <span class="mono">.\SQLEXPRESS</span> — القاعدة الجديدة <span class="mono">MfgSystemDB</span></td></tr>
+<tr><td>3</td><td>SSMS (اختياري)</td><td>900 م.ب</td><td>10-20 د</td><td>إدارة القاعدة بصرياً — فشله لا يوقف التنصيب</td></tr>
+<tr><td>4</td><td>Visual Studio 2022 Community</td><td>3-8 ج.ب</td><td>30-90 د</td><td>رؤية الشاشات وتعديلها — المنتج الكبير، <b>ليس VS Code</b></td></tr>
+<tr><td>5</td><td>بناء وتشغيل MfgSystem.exe</td><td>—</td><td>2-6 د</td><td>النظام جاهز فوراً</td></tr>
+</table>
+<p>الإجمالي التقريبي: 6-11 جيجابايت وساعة إلى ثلاث ساعات حسب الإنترنت. كل خطوة تطبع <span class="mono">[OK]</span> أو <span class="mono">[FAILED]</span> مع السبب.</p>
+<div class="warn">⚖️ <b>ملاحظة أمانة:</b> منتجات مايكروسوفت لا يجوز قانوناً ولا عملياً حزمها داخل ملفات المشروع (جيجابايتات + ترخيص). السكربت ينزّلها <b>تلقائياً من خوادم مايكروسوفت الرسمية</b> وأنت لا تفعل شيئاً سوى نقرة واحدة والموافقة على رسالة المسؤول UAC.</div>
+
+<h2>1.5) 📱 طريقة الجوال — حمّل الملفات الكاملة الآن: تنصيب بلا إنترنت</h2>
+<p>السكربت <b>يفحص أولاً</b> وجود ملفات التثبيت بجانبه ويستعملها <b>بدون إنترنت</b>. حمّل من متصفح الجوال (روابط مايكروسوفت الرسمية — ملفات كاملة لا محمّلات):</p>
+<table>
+<tr><th>الملف</th><th>الرابط المباشر</th><th>الحجم</th></tr>
+<tr><td><b>SQL Server 2022 Express — الملف الكامل ✅</b></td><td><span class="mono">https://download.microsoft.com/download/3/8/d/38de7036-2433-4207-8eae-06e247e17b25/SQLEXPR_x64_ENU.exe</span></td><td>~1.3 ج.ب</td></tr>
+<tr><td>‎.NET 8 SDK — كامل</td><td><span class="mono">https://aka.ms/dotnet/8.0/dotnet-sdk-win-x64.exe</span></td><td>~220 م.ب</td></tr>
+<tr><td><b>SSMS 20.2 — الملف الكامل ✅</b> (سمّه SSMS-Setup-ENU.exe)</td><td><span class="mono">https://go.microsoft.com/fwlink/?linkid=2313753&amp;clcid=0x409</span></td><td>~700 م.ب</td></tr>
+<tr><td>بديل: SSMS 19.3 — آخر نسخة مؤكدة بملف واحد كامل، متوافقة تماماً مع SQL 2022</td><td><span class="mono">https://go.microsoft.com/fwlink/?linkid=2257624&amp;clcid=0x409</span></td><td>~654 م.ب</td></tr>
+<tr><td>Visual Studio 2022 — ⚠️ محمّل فقط (4 م.ب) يسحب حزمه على الكمبيوتر، وهو اختياري</td><td><span class="mono">https://aka.ms/vs/17/release/vs_community.exe</span></td><td>4 م.ب + إنترنت لاحقاً</td></tr>
+</table>
+<div class="note">💡 <b>سبب أن روابط SQL و SSMS كانت 4 ميجا فقط:</b> روابط aka.ms المختصرة توزع «محمّلات» صغيرة (SQL2022-SSEI-Expr.exe و vs_SSMS.exe) تكمل التنزيل على الكمبيوتر. <b>كل روابط الجدول أعلاه رسمية ومباشرة للملفات الكاملة</b> وتُثبَّت بلا إنترنت (موثقة في صفحة مايكروسوفت Release history وملخص downloadsqlserverexpress.com). للجوال: <b>لا تستخدم</b> aka.ms/ssmsfullsetup — استخدم رابط SSMS 20.2 أو 19.3 وسمِّ الملف SSMS-Setup-ENU.exe. وللتحقق: دخول مجاني إلى <span class="mono">my.visualstudio.com</span> ← Downloads ← SQL Server 2022.</div>
+<div class="step">بعد النقل من الجوال: ضع الملفات كما هي داخل <span class="mono">Installer</span> بجانب SETUP-FROM-ZERO.bat (أي اسم يبدأ بـ SQLEXPR يقبله السكربت) ثم انقر <span class="mono">تنصيب_نظام_التصنيع.bat</span> — ستظهر رسالة «Offline ... found» ويُثبَّت كل شيء بلا إنترنت.</div>
+
+<h2>2) متطلبات الجهاز</h2>
+<ul>
+<li>ويندوز 10 أو 11 — <b>64 بت</b>.</li>
+<li><b>25 جيجابايت فارغة</b> على القرص C (يفضل أكثر).</li>
+<li>إنترنت مستقر + صلاحية مسؤول (نافذة UAC ← اضغط <b>Yes</b>).</li>
+</ul>
+
+<h2>3) خطوات التنفيذ — نقرة واحدة</h2>
+<div class="step">1. حمّل <span class="mono">MfgSystem_1.50.50_FULL.zip</span> من رابط التسليم.</div>
+<div class="step">2. استخرجه كاملاً إلى مجلد جديد مثل <span class="mono">D:\MfgSystem</span> — <b>استخرجه إلى مجلد جديد تماماً مثل <span class="mono">D:\MfgSystem</span> — لا فوق أي نسخة قديمة</b>.</div>
+<div class="step">3. انقر مرتين على <span class="mono">تنصيب_نظام_التصنيع.bat</span> ← وافق على UAC بـ <b>Yes</b>.</div>
+<div class="step">4. راقب نقاط التفتيش: STEP 0 صلاحية ← STEP 1 إنترنت ← STEP 3 ‏.NET ← STEP 4 ‏SQL Server ← STEP 5 ‏SSMS (اختياري) ← STEP 6 ‏Visual Studio (الأطول — قد تختفي النافذة فترات، هذا طبيعي) ← STEP 7 بناء ← STEP 8 تشغيل النظام 🎉</div>
+<div class="step">5. النهاية السعيدة: لافتة <span class="mono">ALL CHECKPOINTS PASSED - SYSTEM READY</span> والنظام مفتوح أمامك.</div>
+<div class="note">💡 <b>فشل شيء؟</b> أصلح السبب المكتوب في سطر <span class="mono">[FAILED]</span> ثم <b>أعد تشغيل نفس الملف</b> — المكتمل يُكتشف ويُتخطى تلقائياً ولا يُعاد تحميله.</div>
+
+<h2>4) أول تشغيل للنظام</h2>
+<ul>
+<li>أول تشغيل <b>ينشئ قاعدة البيانات تلقائياً</b> (جداول + بيانات أساسية + مستخدم admin) بلا أي إعداد.</li>
+<li>الوضع الأول محلي (SQLite) ليعمل فوراً، وسيقترح النظام التحويل إلى SQL Express المثبَّت — اقبل.</li>
+<li>تغيير الاتصال يدوياً: داخل النظام ← <b>معلومات النظام</b> ← <b>تعديل الاتصال</b> ← الخادم <span class="mono">.\SQLEXPRESS</span> بمصادقة Windows.</li>
+<li>كلمة سر SA الاحتياطية (لـ SSMS): <span class="mono">MfgSystem#2026Sa</span></li>
+</ul>
+
+<h2>5) رؤية الشاشات وتعديلها — Visual Studio 2022</h2>
+<ol>
+<li>من <span class="mono">Installer</span> انقر مرتين على <span class="mono">OPEN-VISUAL-STUDIO.bat</span> (يفتح Visual Studio 2022 — النافذة البنفسجية الكبيرة، <b>ليس</b> VS Code الأزرق الصغير).</li>
+<li>انتظر دقيقة حتى يظهر <b>Solution Explorer</b> على اليمين.</li>
+<li>كل الشاشات في <span class="mono">src\DatesErp.Desktop\Views\Screens\</span> — لكل شاشة ملفان: <span class="mono">.xaml</span> (التصميم — نقر مزدوج يفتح مصمماً مرئياً) و<span class="mono">.xaml.cs</span> (السلوك).</li>
+<li>تجربة حية: <b>F5</b> تشغيل مع تصحيح، أو <b>Ctrl+F5</b> تشغيل عادي.</li>
+</ol>
+<div class="warn">⚠️ <b>قواعد الأمان المتفق عليها:</b> نسخة <span class="mono">.bak</span> قبل أي تعديل · تعديلات مظهر فقط · <b>لا تغيّر أبداً</b> أسماء <span class="mono">x:Name</span> أو معالجات مثل <span class="mono">Click="Save_Click"</span> · التشغيل من المصدر يتصل <b>بقاعدة البيانات الحقيقية</b> — استعرض بحذر.</div>
+
+<h2>6) التشغيل لاحقاً</h2>
+<ul>
+<li><span class="mono">RUN-SYSTEM.bat</span> — يشغّل النظام مباشرة (ويبنيه مرة واحدة إن لزم).</li>
+<li>أو <span class="mono">OPEN-VISUAL-STUDIO.bat</span> ثم <b>Ctrl+F5</b>.</li>
+</ul>
+
+<h2>7) حل المشكلات السريع</h2>
+<table>
+<tr><th>المشكلة</th><th>الحل</th></tr>
+<tr><td>UAC لم تظهر/رُفضت</td><td>أعد تشغيل السكربت واضغط Yes</td></tr>
+<tr><td>FAILED Step 1 إنترنت</td><td>تحقق من الاتصال، أوقف VPN/Proxy، أعد</td></tr>
+<tr><td>FAILED Step 4 ‏SQL</td><td>أعد تشغيل ويندوز مرة ثم أعد السكربت</td></tr>
+<tr><td>FAILED Step 6 ‏VS</td><td>أعد السكربت؛ إن تكرر أرسل السجل</td></tr>
+<tr><td>FAILED Step 7 بناء</td><td>أرسل <span class="mono">Installer\install_log.txt</span> كاملاً</td></tr>
+<tr><td>مضاد الفيروسات حذف تحميلاً</td><td>استثنِ <span class="mono">%TEMP%\dateerp_setup</span> وأعد</td></tr>
+<tr><td>النظام على قاعدة محلية وأريد SQL</td><td>معلومات النظام ← تعديل الاتصال ← <span class="mono">.\SQLEXPRESS</span></td></tr>
+</table>
+
+<h2>8) ملاحظات أمانة</h2>
+<div class="note">
+السكربتات مبنية بمواصفات صارمة (ASCII نقية، بلا تبديل ترميز، <b>لا تلمس قاعدة البيانات أو بياناتك</b>، نقاط تفتيش OK/FAILED، توقف عند الفشل مع السبب، آمنة الإعادة) — لكنها <b>لم تُختبر في بيئة CMD حقيقية</b> لأن بيئة التطوير هنا بلا ويندوز. عند أي خطأ غير متوقع أرسل نص النافذة + <span class="mono">install_log.txt</span>.<br><br>
+الروابط رسمية من مايكروسوفت مباشرة:
+<span class="mono">aka.ms/dotnet/8.0/dotnet-sdk-win-x64.exe</span> ·
+<span class="mono">go.microsoft.com/fwlink/p/?linkid=2216019</span> ·
+<span class="mono">aka.ms/ssmsfullsetup</span> ·
+<span class="mono">aka.ms/vs/17/release/vs_community.exe</span>
+</div>
+
+</div></body></html>
