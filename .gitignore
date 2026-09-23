@@ -1,23 +1,31 @@
-# §B84/M1 — توسيع التجاهل: مخرجات البناء/النشر/الاختبارات وملفات التشغيل المحلية
+# Build and IDE outputs
 [Bb]in/
 [Oo]bj/
 [Oo]ut/
 [Ll]og/
+.vs/
 *.user
 *.suo
-.vs/
-DateERP_Publish/
+*.pdb
+
+# Local publish/install output
+MfgSystem_Publish/
+MfgSystem_FULL.zip
 publish/
-publish_1.50.71/
-UPDATE_1.50.71_PACKAGE/
+publish_*/
+artifacts/
+
+# Test and diagnostic output
 TestResults/
 *.trx
 *.log
 errors.log
-remember.txt
-reset_admin*
-appsettings.local.json
-*.zip
 
-artifacts/
+# Local configuration and caches
+appsettings.local.json
+reset_admin*
+remember.txt
 __pycache__/
+
+# Generated update archives are not source files
+*.zip

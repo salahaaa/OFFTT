@@ -1,10 +1,10 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
 REM =========================================================================
 REM  MfgSystem — Uninstall
 REM  Removes the application + shortcuts. DATA (%LocalAppData%\MfgSystem)
 REM  is KEPT by default and only deleted with explicit confirmation.
-REM  Never touches any old DateERP install, folder or database.
+REM  Keeps application data unless removal is explicitly confirmed.
 REM =========================================================================
 setlocal EnableDelayedExpansion
 

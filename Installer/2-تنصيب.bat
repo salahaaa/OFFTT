@@ -1,7 +1,7 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
 REM =========================================================================
-REM  MfgSystem — One-Click Installer  (v1.50.67)
+REM  MfgSystem — One-Click Installer  (v1.50.74)
 REM  - Self-contained: NO .NET install needed on the target machine.
 REM  - Admin detected  -> installs to %ProgramFiles%\MfgSystem
 REM  - No admin        -> installs to %LocalAppData%\Programs\MfgSystem
@@ -9,8 +9,7 @@ REM                        (no UAC prompt, works on any user account)
 REM  - Does NOT write any database config: the app's AutoDbResolver
 REM    discovers local SQL Server instances at first launch (including
 REM    .\SQLEXPRESS01) and falls back to local SQLite if none is found.
-REM  - Fully isolated from any old DateERP install: separate exe name,
-REM    separate data folder (%LocalAppData%\MfgSystem), separate DB.
+REM  - Uses the dedicated MfgSystem executable, data folder (%LocalAppData%\MfgSystem), and database.
 REM =========================================================================
 setlocal EnableDelayedExpansion
 
@@ -73,7 +72,7 @@ if "%ADMIN%"=="1" (
 )
 echo.
 
-REM ── 3) Prepare data folder (isolated from old DateERP installs) ──
+REM ── 3) Prepare application data folder ──
 echo [3/6] Preparing isolated data folder...
 if not exist "%DATADIR%" mkdir "%DATADIR%"
 if not exist "%DATADIR%\logs" mkdir "%DATADIR%\logs"
@@ -107,7 +106,7 @@ echo.
 
 REM ── 5) Shortcuts (inline — no external dependency) ──
 echo [5/6] Creating shortcuts...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws=New-Object -ComObject WScript.Shell; $d=$ws.CreateShortcut([Environment]::GetFolderPath('Desktop')+'\%APPNAME%.lnk'); $d.TargetPath='%DEST%\%APPNAME%.exe'; $d.WorkingDirectory='%DEST%'; $d.IconLocation='%DEST%\%APPNAME%.exe,0'; $d.Description='MfgSystem 1.50.67 - Manufacturing System'; $d.Save(); $s=$ws.CreateShortcut([Environment]::GetFolderPath('Programs')+'\%APPNAME%.lnk'); $s.TargetPath='%DEST%\%APPNAME%.exe'; $s.WorkingDirectory='%DEST%'; $s.IconLocation='%DEST%\%APPNAME%.exe,0'; $s.Save()" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws=New-Object -ComObject WScript.Shell; $d=$ws.CreateShortcut([Environment]::GetFolderPath('Desktop')+'\%APPNAME%.lnk'); $d.TargetPath='%DEST%\%APPNAME%.exe'; $d.WorkingDirectory='%DEST%'; $d.IconLocation='%DEST%\%APPNAME%.exe,0'; $d.Description='MfgSystem 1.50.74 - Manufacturing System'; $d.Save(); $s=$ws.CreateShortcut([Environment]::GetFolderPath('Programs')+'\%APPNAME%.lnk'); $s.TargetPath='%DEST%\%APPNAME%.exe'; $s.WorkingDirectory='%DEST%'; $s.IconLocation='%DEST%\%APPNAME%.exe,0'; $s.Save()" >nul 2>&1
 if errorlevel 1 (
     echo        [WARN] Could not create shortcuts automatically.
     echo        Create one manually to: %DEST%\%APPNAME%.exe

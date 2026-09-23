@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
 REM =========================================================================
 REM  MfgSystem — Build the install package  (run ONCE on a dev machine)
@@ -85,7 +85,7 @@ copy /y "%~dp0README_التنصيب.md"    "%OUT%\" >nul
 
 powershell -NoProfile -Command "$v=(Select-String -Path '%PROJ%' -Pattern '<Version>([^<]+)</Version>').Matches[0].Groups[1].Value; Set-Content -Path '%OUT%\VERSION.txt' -Value $v -Encoding ascii; Write-Host 'VERSION:' $v"
 if not exist "%OUT%\VERSION.txt" (
-    echo 1.50.67 > "%OUT%\VERSION.txt"
+    echo 1.50.74 > "%OUT%\VERSION.txt"
 )
 
 powershell -NoProfile -Command "Get-FileHash -Algorithm SHA256 '%OUT%\MfgSystem.exe' | Select-Object -ExpandProperty Hash | Out-File -Encoding ascii '%OUT%\SHA256.txt'"
