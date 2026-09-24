@@ -231,7 +231,12 @@ public partial class ProductionDeliveryService
             Must(execution.CloseProductionDay(order.Id, actual.Sum(i => i.ProducedKg), actual.Sum(i => i.ProducedCartons),
                 0, 0, 0, false, input.DowntimeHours > 0 ? new() { new DowntimeDto { Hours = input.DowntimeHours, ReasonAr = input.DowntimeReason.Trim() } } : new(),
                 true, input.Notes?.Trim(), secondary, input.ConsumedRawKg, actual));
-            var exe = Db.ProductionExecutions.Single(e => e.OrderId == order.Id && e.IsDayClosed);
+            var exe = Db.ProductionExecutions.AsNoTracking()
+                .FirstOrDefault(e => e.OrderId == order.Id && e.IsDayClosed);
+            if (exe == null || exe.Status != DocStatuses.Completed || exe.EndDateTime == null)
+                throw new DomainException(
+                    "تم تسجيل العملية دون تثبيت إقفال يوم الإنتاج في سجل التنفيذ — لم تُعتمد العملية.",
+                    "EXECUTION_CLOSE_NOT_PERSISTED");
             var qc = Db.QualityChecks.SingleOrDefault(q => q.ExecutionId == exe.Id);
             if (qc != null)
             {

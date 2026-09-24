@@ -249,10 +249,16 @@ public class ExecutionService : ServiceBase, IExecutionService
             }
             }
 
-            // جلسة الإقفال: تكمل جلسة جارية أو تُنشأ جديدة
-            var exe = Db.ProductionExecutions
+            // جلسة الإقفال: نحدد التنفيذ المفتوح المرتبط بهذا الأمر فقط.
+            // لا نعتمد على Status وحده؛ فقد بقيت بعض السجلات القديمة بحالة Completed
+            // مع IsDayClosed=false، وكان ذلك ينشئ سجلاً ثانياً بدلاً من إكمال السجل الصحيح.
+            var openExecutions = Db.ProductionExecutions
                 .Include(x => x.Downtimes).Include(x => x.ByProducts)
-                .FirstOrDefault(e => e.OrderId == orderId && e.Status == DocStatuses.InProgress);
+                .Where(e => e.OrderId == orderId && !e.IsDayClosed)
+                .OrderByDescending(e => e.Id).ToList();
+            if (openExecutions.Count > 1)
+                throw new DomainException("يوجد أكثر من سجل تنفيذ مفتوح لنفس أمر الإنتاج — لا يمكن تحديد جلسة واحدة للإقفال. راجع سجل التنفيذ قبل المتابعة.", "MULTIPLE_OPEN_EXECUTIONS");
+            var exe = openExecutions.SingleOrDefault();
             bool isNew = exe == null;
             if (isNew)
             {
@@ -340,7 +346,16 @@ public class ExecutionService : ServiceBase, IExecutionService
                 order.Status = DocStatuses.Completed;
 
             if (isNew) Db.ProductionExecutions.Add(exe);
+            // حفظ مبكر مقصود: يثبت سجل التنفيذ قبل متابعة الترحيلات اللاحقة،
+            // مع بقائه داخل نفس المعاملة الذرية حتى يُلغى كله إذا فشل أي حارس لاحق.
             Db.SaveChanges();
+            var persistedExecution = Db.ProductionExecutions.AsNoTracking()
+                .FirstOrDefault(e => e.Id == exe.Id && e.OrderId == orderId);
+            if (persistedExecution == null || !persistedExecution.IsDayClosed
+                || persistedExecution.Status != DocStatuses.Completed || persistedExecution.EndDateTime == null)
+                throw new DomainException(
+                    "تعذر تثبيت إقفال يوم الإنتاج في سجل التنفيذ — لم تُحفظ العملية.",
+                    "EXECUTION_CLOSE_NOT_PERSISTED");
 
             // §المسار الموحد يرجع المتبقي من الخام إلى مخزن الخام بحركة مرتجع موثقة
             // ويزيد رصيد الدفعة — فلا يختفي الخام المتبقي من الحساب. يُوزَّع بحسب الدفعات.
@@ -531,6 +546,13 @@ public class ExecutionService : ServiceBase, IExecutionService
                 });
             }
             Db.SaveChanges();
+            var finalExecution = Db.ProductionExecutions.AsNoTracking()
+                .FirstOrDefault(e => e.Id == exe.Id && e.OrderId == orderId);
+            if (finalExecution == null || !finalExecution.IsDayClosed
+                || finalExecution.Status != DocStatuses.Completed || finalExecution.EndDateTime == null)
+                throw new DomainException(
+                    "تم إيقاف العملية: سجل التنفيذ لم يثبت كإقفال مكتمل في قاعدة البيانات.",
+                    "EXECUTION_CLOSE_NOT_PERSISTED");
 
             // لا تُقفل الخطة عند تسجيل الفعلي. إقفالها يحدث فقط عند تحرير
             // أمر تسليم الإنتاج من إدارة الإنتاج (ProductionDeliveryService.IssueDelivery).
