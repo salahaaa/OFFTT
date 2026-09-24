@@ -637,18 +637,22 @@ public class InspectionService : ServiceBase, IInspectionService
         if (types.Count != typeIds.Count)
             return OpResult.Fail("صفة جودة غير معروفة — اختر من قائمة الصفات المعرفة.");
 
-        // القاعدة الصارمة: مجموع صفات كل صنف = كميته المستلمة للفحص (أقل أو أكثر = رفض صريح)
+        // القاعدة الصارمة: مجموع صفات كل بند = كميته المستلمة للفحص (أقل أو أكثر = رفض صريح).
+        // OrderItemId يمنع خلط عميلين لهما نفس الصنف والدفعة.
         var items = new List<QualityItemDto>();
-        foreach (var g in input.Rows.GroupBy(r => (r.ProductId, r.LotId)))
+        var coveredOrderItemIds = new HashSet<int>();
+        foreach (var g in input.Rows.GroupBy(r => (r.OrderItemId, r.ProductId, r.LotId)))
         {
-            var oi = order.Items.FirstOrDefault(x => x.ProductId == g.Key.ProductId && (g.Key.LotId == null || x.LotId == g.Key.LotId))
+            var oi = g.Key.OrderItemId is int explicitItemId
+                ? order.Items.FirstOrDefault(x => x.Id == explicitItemId)
+                : order.Items.FirstOrDefault(x => x.ProductId == g.Key.ProductId && (g.Key.LotId == null || x.LotId == g.Key.LotId))
                   ?? order.Items.FirstOrDefault(x => x.ProductId == g.Key.ProductId);
-            if (oi == null)
+            if (oi == null || oi.ProductId != g.Key.ProductId || (g.Key.LotId != null && oi.LotId != g.Key.LotId))
             {
                 string foreign = Db.Products.AsNoTracking().Where(p => p.Id == g.Key.ProductId).Select(p => p.ProductNameAr).FirstOrDefault() ?? $"#{g.Key.ProductId}";
-                return OpResult.Fail($"الصنف «{foreign}» ليس من بنود الأمر — الفحص يستقبل أصناف التسليم فقط.");
+                return OpResult.Fail($"الصنف «{foreign}» أو بند أمر الإنتاج المرتبط به غير صحيح — الفحص يستقبل أصناف التسليم فقط.");
             }
-            if (g.Any(r => r.Cartons < 0)) return OpResult.Fail("كميات الصفات لا تكون سالبة.");
+            if (g.Any(r => !double.IsFinite(r.Cartons) || r.Cartons < 0)) return OpResult.Fail("كميات الصفات يجب أن تكون أرقاماً صحيحة غير سالبة.");
             if (g.Any(r => !types.TryGetValue(r.ResultTypeId, out var t) || t.ResultKind is not (InspectionResultType.KindAccepted or InspectionResultType.KindRejected)))
                 return OpResult.Fail("صفات المخلفات والفاقد تُسجل في تسليم الإنتاج — هذه الشاشة لصفات المنتج (سليم/منسم/غير مطابق) فقط.");
             int produced = oi.ProducedCartons;
@@ -656,6 +660,7 @@ public class InspectionService : ServiceBase, IInspectionService
             string name = Db.Products.AsNoTracking().Where(p => p.Id == g.Key.ProductId).Select(p => p.ProductNameAr).FirstOrDefault() ?? $"#{g.Key.ProductId}";
             if (Math.Abs(sum - produced) > 0.001)
                 return OpResult.Fail($"نتائج صفات «{name}» مجموعها {sum:N0} كرتون ≠ الكمية المستلمة للفحص {produced:N0} كرتون — عدّل حتى تتساوى.");
+            coveredOrderItemIds.Add(oi.Id);
             double acc = g.Where(r => types[r.ResultTypeId].ResultKind == InspectionResultType.KindAccepted).Sum(r => r.Cartons);
             double rej = g.Where(r => types[r.ResultTypeId].ResultKind == InspectionResultType.KindRejected).Sum(r => r.Cartons);
             double ctnW = UnitsPolicy.CartonWeight(Db, g.Key.ProductId, oi.PackagingTypeId);
@@ -667,6 +672,13 @@ public class InspectionService : ServiceBase, IInspectionService
             });
         }
 
+        var expectedOrderItems = order.Items
+            .Where(i => i.ProducedCartons > 0 || i.ProducedQtyKg > 0.001)
+            .ToList();
+        var missingOrderItems = expectedOrderItems.Where(i => !coveredOrderItemIds.Contains(i.Id)).ToList();
+        if (missingOrderItems.Count > 0)
+            return OpResult.Fail($"لا يمكن حفظ الفحص: أدخل نتائج كل بنود الإنتاج الفعلي — المتبقي {missingOrderItems.Count} بنداً.");
+
         // المعايير المعتمدة: قيمها تُحفظ سجلات، وتغذي حقول المواصفة القياسية بالمحضر
         // §1.50.72 P2-4: القرار قيمة صالحة أو رفض — كان أي قرار غير صالح يُسقط «Passed» بصمت.
         if (input.Decision is not ("Passed" or "Quarantine" or "Rejected"))
@@ -677,6 +689,10 @@ public class InspectionService : ServiceBase, IInspectionService
         {
             var def = stdById.FirstOrDefault(x => x.Id == st.StandardId);
             if (def == null) continue;
+            if (!double.IsFinite(st.Value)
+                || (def.MinValue.HasValue && st.Value < def.MinValue.Value)
+                || (def.MaxValue.HasValue && st.Value > def.MaxValue.Value))
+                return OpResult.Fail($"قيمة معيار «{def.NameAr}» خارج الحدود المعتمدة أو غير صالحة.");
             switch (def.Code)
             {
                 case "MOIST": lab.MoisturePct = st.Value; break;
@@ -692,9 +708,11 @@ public class InspectionService : ServiceBase, IInspectionService
 
         // النتائج الديناميكية: صف لكل صفة (الصفة ليست صنفاً — ResultTypeId هو الهوية)
         Db.InspectionResults.RemoveRange(Db.InspectionResults.Where(x => x.CheckId == r.Id));
-        foreach (var g in input.Rows.GroupBy(r => (r.ProductId, r.LotId)))
+        foreach (var g in input.Rows.GroupBy(r => (r.OrderItemId, r.ProductId, r.LotId)))
         {
-            var oi = order.Items.FirstOrDefault(x => x.ProductId == g.Key.ProductId && (g.Key.LotId == null || x.LotId == g.Key.LotId))
+            var oi = g.Key.OrderItemId is int explicitItemId
+                ? order.Items.First(x => x.Id == explicitItemId)
+                : order.Items.FirstOrDefault(x => x.ProductId == g.Key.ProductId && (g.Key.LotId == null || x.LotId == g.Key.LotId))
                   ?? order.Items.First(x => x.ProductId == g.Key.ProductId);
             foreach (var row in g)
             {
@@ -710,6 +728,11 @@ public class InspectionService : ServiceBase, IInspectionService
         foreach (var st in input.Standards ?? new())
             if (stdById.Any(x => x.Id == st.StandardId))
                 Db.QualityStandardRecords.Add(new QualityStandardRecord { CheckId = r.Id, StandardId = st.StandardId, Value = st.Value });
+
+        // SaveDeliveryCheck تحقّق من تغطية كل كمية الإنتاج؛ لذلك يجب أن يبقى المحضر قابلاً للاعتماد.
+        var savedCheck = Db.QualityChecks.FirstOrDefault(c => c.Id == r.Id);
+        if (savedCheck != null && savedCheck.Status != DocStatuses.Completed)
+            savedCheck.Status = DocStatuses.Completed;
         Db.SaveChanges();
         // §1.50.72 P2-4: محضر بقرار «مطابق» رغم وجود مرفوضات — يُحفظ (قرار الفاحص) لكنه لا يمرّ بصمت.
         double totalRejected = items.Sum(i => i.RejectedCartons);

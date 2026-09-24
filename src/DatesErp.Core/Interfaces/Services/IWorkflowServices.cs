@@ -867,6 +867,8 @@ public class QualitySourceDto
 /// <summary>§v1.50.28 — صف نتيجة: صفة جودة + كمية كراتين لنفس الصنف (الصفة ليست صنفاً جديداً).</summary>
 public class QualityGradeRowDto
 {
+    /// <summary>ربط نتيجة الصفة ببند أمر الإنتاج عند تكرار الصنف أو الدفعة لعدة عملاء.</summary>
+    public int? OrderItemId { get; set; }
     public int ProductId { get; set; }
     /// <summary>§التجميع بالصنف+الدفعة: بنود بنفس الصنف ودفعات مختلفة تُحاسَب كلٌّ على كميتها.</summary>
     public int? LotId { get; set; }

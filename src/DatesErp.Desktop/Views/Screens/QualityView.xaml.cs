@@ -59,8 +59,11 @@ public partial class QualityView : UserControl
         public List<AllowedResultType> Grades { get; set; } = new();
         public Dictionary<int, double> GradeQtys { get; } = new();
         public double Total => GradeQtys.Values.Sum();
-        public bool IsInvalid => Math.Abs(Total - ReceivedCartons) > 0.001;
-        public string ValidationError => IsInvalid ? $"مجموع الصفات {Total:N0} لا يساوي المستلم {ReceivedCartons:N0}" : null;
+        public bool IsInvalid => !double.IsFinite(ReceivedCartons) || !double.IsFinite(Total)
+            || Math.Abs(Total - ReceivedCartons) > 0.001;
+        public string ValidationError => IsInvalid
+            ? $"مجموع الصفات {Total:N0} لا يساوي المستلم {ReceivedCartons:N0} أو يحتوي قيمة غير صالحة"
+            : null;
         /// <summary>بعد تحرير خلية صفة: يُحدّث الإجمالي.</summary>
         public void CellEdited() { Raise("Item[]"); Raise(nameof(Total)); Raise(nameof(IsInvalid)); Raise(nameof(ValidationError)); }
     }
@@ -77,10 +80,20 @@ public partial class QualityView : UserControl
         public string MinText => Min == double.MinValue ? "—" : Min.ToString("0.##");
         public string MaxText => Max == double.MaxValue ? "—" : Max.ToString("0.##");
         private double _value;
-        public double Value { get => _value; set { if (Set(ref _value, value)) Raise(nameof(StatusAr)); } }
-        public bool IsInvalid => Value < Min || Value > Max;
-        public string ValidationError => IsInvalid ? $"القيمة {Value} خارج [{MinText} - {MaxText}]" : null;
-        public string StatusAr => Value >= Min && Value <= Max ? "مطابق ✓" : "خارج الحدود ✗";
+        public double Value
+        {
+            get => _value;
+            set
+            {
+                if (!Set(ref _value, value)) return;
+                Raise(nameof(IsInvalid));
+                Raise(nameof(ValidationError));
+                Raise(nameof(StatusAr));
+            }
+        }
+        public bool IsInvalid => !double.IsFinite(Value) || Value < Min || Value > Max;
+        public string ValidationError => IsInvalid ? $"القيمة {Value} خارج [{MinText} - {MaxText}] أو غير صالحة" : null;
+        public string StatusAr => !IsInvalid ? "مطابق ✓" : "خارج الحدود ✗";
     }
 
     private List<QualitySourceDto> _sources = new();
@@ -112,7 +125,9 @@ public partial class QualityView : UserControl
     {
         try
         {
+            ErrorLog.WriteInfo($"Quality.Load STEP=ENTER KeepOrderId={keepOrderId?.ToString() ?? "<null>"}");
             _sources = WithInsp(s => s.GetDeliverySources());
+            ErrorLog.WriteInfo($"Quality.Load STEP=RETURN_SOURCES Count={_sources.Count}");
             SourceBox.ItemsSource = _sources;
             SourceBox.DisplayMemberPath = nameof(QualitySourceDto.Label);
             _loading = true;
@@ -125,7 +140,11 @@ public partial class QualityView : UserControl
                 StatusLabel.Text = "لا توجد تسليمات إنتاج مكتملة بعد — سجّل الفعلي في «تسليم الإنتاج» وسيأتي إلى هنا تلقائياً بأصنافه.";
             Source_Changed(SourceBox, new SelectionChangedEventArgs(ComboBox.SelectionChangedEvent, new List<object>(), new List<object> { SourceBox.SelectedItem }));
         }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Quality.Load"); }
+        catch (Exception ex)
+        {
+            WriteQualityExceptionTrace("Quality.Load", ex);
+            StatusLabel.Text = $"تعذر تحميل مصادر الفحص: {ex.Message}";
+        }
     }
 
     private void Source_Changed(object sender, SelectionChangedEventArgs e)
@@ -133,13 +152,23 @@ public partial class QualityView : UserControl
         if (ResultsGrid == null || _loading) return;
         _current = SourceBox.SelectedItem as QualitySourceDto;
         _rows.Clear(); _standards.Clear();
+        // إعادة تحميل المصدر يجب ألا تضاعف شرائح الأصناف في كل تغيير أو تحديث.
+        ItemsPanel.Children.Clear();
+        ItemsPanel.Children.Add(new TextBlock
+        {
+            Text = "الأصناف المستلمة للفحص:", FontWeight = FontWeights.Bold, FontSize = 12.5,
+            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0)
+        });
+        ErrorLog.WriteInfo($"Quality.Source_Changed STEP=SELECT OrderId={_current?.OrderId.ToString() ?? "<null>"} CheckId={_current?.CheckId?.ToString() ?? "<null>"}");
         CheckNoChip.Text = _current?.CheckId != null
             ? $"🧾 فحص {_current.CheckNumber} — {QualityCheckStatuses.ToArabic(_current.CheckStatus)}{(_current.CheckApproved ? " (معتمد — للقراءة)" : "")}"
             : "— لا فحص محفوظ بعد";
         SaveButton.IsEnabled = _current != null && !_current.CheckApproved;
         ApproveButton.IsEnabled = _current?.CheckId != null && !_current.CheckApproved;
         StatusLabel.Text = _current == null
-            ? "اختر تسليم إنتاج من الأعلى — تنزل أصنافه المنتَجة تلقائياً بكمياتها."
+            ? (_sources.Count == 0
+                ? "لا توجد تسليمات إنتاج مكتملة بعد — حدّث الشاشة بعد إقفال إنتاج فعلي."
+                : "اختر تسليم إنتاج من الأعلى — تنزل أصنافه المنتَجة تلقائياً بكمياتها.")
             : $"مصدر الفحص: تسليم الإنتاج رقم {_current.OrderNumber} — إجمالي المنتَج {_current.TotalProducedCartons:N0} كرتون"
               + (_current.CheckApproved ? " — الفحص معتمد، النتائج للقراءة والطباعة." : " — النتائج تُدخل تحت مباشرة.");
         try
@@ -186,7 +215,11 @@ public partial class QualityView : UserControl
             if (_current.CheckId == null)
                 StatusLabel.Text += " — ⚠ القيم معبأة مسبقاً (كل الكمية المستلمة «مقبول» افتراضياً)؛ راجعها وعدّل المرفوض قبل الحفظ.";
         }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Quality.Source"); }
+        catch (Exception ex)
+        {
+            WriteQualityExceptionTrace("Quality.Source", ex);
+            StatusLabel.Text = $"تعذر تحميل تفاصيل مصدر الفحص: {ex.Message}";
+        }
     }
 
     /// <summary>§v1.50.29: أعمدة الشبكة = الثابتة (عميل/صنف/وزن/عبوة/المستلم/الدفعة) + عمود لكل صفة + الإجمالي.</summary>
@@ -195,26 +228,58 @@ public partial class QualityView : UserControl
         _gradeColumns = _rows.SelectMany(r2 => r2.Grades).GroupBy(g => g.ResultTypeId).Select(g => g.First())
             .OrderByDescending(g => g.ResultKind == InspectionResultType.KindAccepted).ThenBy(g => g.ResultTypeId).ToList();
         ResultsGrid.Columns.Clear();
-        void AddCol(string header, string path, double width, bool ro = true)
-            => ResultsGrid.Columns.Add(new DataGridTextColumn { Header = header, Binding = new Binding(path), IsReadOnly = ro, Width = width });
-        AddCol("العميل", nameof(ItemRowUi.CustomerName), 150);
-        AddCol("الصنف", nameof(ItemRowUi.ProductName), 150);
-        AddCol("وزن الكرتون", nameof(ItemRowUi.CartonWeight), 90);
-        AddCol("العبوة", nameof(ItemRowUi.PackageName), 100);
-        AddCol("المستلم للفحص", nameof(ItemRowUi.ReceivedCartons) + StringFormatN0, 110);
+
+        var wrapStyle = new Style(typeof(TextBlock));
+        wrapStyle.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.Wrap));
+        wrapStyle.Setters.Add(new Setter(TextBlock.PaddingProperty, new Thickness(6, 4, 6, 4)));
+        wrapStyle.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center));
+        wrapStyle.Setters.Add(new Setter(TextBlock.FontSizeProperty, 12.5));
+
+        var boldCenterStyle = new Style(typeof(TextBlock));
+        boldCenterStyle.Setters.Add(new Setter(TextBlock.HorizontalAlignmentProperty, HorizontalAlignment.Center));
+        boldCenterStyle.Setters.Add(new Setter(TextBlock.FontWeightProperty, FontWeights.Bold));
+        boldCenterStyle.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center));
+        boldCenterStyle.Setters.Add(new Setter(TextBlock.PaddingProperty, new Thickness(6, 4, 6, 4)));
+        boldCenterStyle.Setters.Add(new Setter(TextBlock.FontSizeProperty, 12.5));
+
+        void AddCol(string header, string path, double width, Style style = null, bool ro = true)
+        {
+            var col = new DataGridTextColumn { Header = header, Binding = new Binding(path), IsReadOnly = ro, Width = width };
+            if (style != null) col.ElementStyle = style;
+            ResultsGrid.Columns.Add(col);
+        }
+
+        AddCol("العميل", nameof(ItemRowUi.CustomerName), 220, wrapStyle);
+        AddCol("الصنف", nameof(ItemRowUi.ProductName), 240, wrapStyle);
+        AddCol("وزن الكرتون", nameof(ItemRowUi.CartonWeight), 100, boldCenterStyle);
+        AddCol("العبوة", nameof(ItemRowUi.PackageName), 120, wrapStyle);
+        AddCol("المستلم للفحص", nameof(ItemRowUi.ReceivedCartons) + StringFormatN0, 120, boldCenterStyle);
         foreach (var g in _gradeColumns)
-            ResultsGrid.Columns.Add(new DataGridTextColumn
+        {
+            var col = new DataGridTextColumn
             {
                 Header = g.NameAr,
                 Binding = new Binding($"GradeQtys[{g.ResultTypeId}]") { UpdateSourceTrigger = PropertyChangedTrigger, Mode = BindingModeTwoWay },
-                Width = 110,
-            });
-        AddCol("الدفعة", nameof(ItemRowUi.LotCode), 110);
-        AddCol("الإجمالي", nameof(ItemRowUi.Total) + StringFormatN0, 100);
+                Width = 115,
+                ElementStyle = boldCenterStyle
+            };
+            ResultsGrid.Columns.Add(col);
+        }
+        AddCol("الدفعة", nameof(ItemRowUi.LotCode), 120, wrapStyle);
+        AddCol("الإجمالي", nameof(ItemRowUi.Total) + StringFormatN0, 110, boldCenterStyle);
     }
     private const string StringFormatN0 = ";{0:N0}";
     private const System.Windows.Data.UpdateSourceTrigger PropertyChangedTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged;
     private const System.Windows.Data.BindingMode BindingModeTwoWay = System.Windows.Data.BindingMode.TwoWay;
+
+    private void Grid_PreparingCellForEdit(object sender, DataGridPreparingCellForEditEventArgs e)
+    {
+        if (e.EditingElement is TextBox tb)
+        {
+            tb.Focus();
+            tb.SelectAll();
+        }
+    }
 
     /// <summary>بعد تحرير خلية صفة: تحديث الإجماليات ومعادلة الحفظ الحية.</summary>
     private void Results_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
@@ -235,7 +300,8 @@ public partial class QualityView : UserControl
         foreach (var row in _rows)
         {
             double sum = row.Total;
-            bool ok = Math.Abs(sum - row.ReceivedCartons) <= 0.001;
+            bool ok = double.IsFinite(sum) && double.IsFinite(row.ReceivedCartons)
+                && Math.Abs(sum - row.ReceivedCartons) <= 0.001;
             string pcts = string.Join(" · ", _gradeColumns
                 .Where(g => row.GradeQtys.TryGetValue(g.ResultTypeId, out var q) && row.ReceivedCartons > 0 && q > 0)
                 .Select(g => $"{g.NameAr} {row.GradeQtys[g.ResultTypeId] / row.ReceivedCartons * 100:N2}٪"));
@@ -256,7 +322,8 @@ public partial class QualityView : UserControl
         EqLabel.Foreground = new System.Windows.Media.SolidColorBrush((Color)ColorConverter.ConvertFromString(allOk ? "#14532D" : "#B91C1C"));
     }
     private static bool IsRowBalanced(ItemRowUi row)
-        => Math.Abs(row.Total - row.ReceivedCartons) <= 0.001;
+        => double.IsFinite(row.Total) && double.IsFinite(row.ReceivedCartons)
+           && Math.Abs(row.Total - row.ReceivedCartons) <= 0.001;
 
     private void Grid_SingleClickEdit(object sender, MouseButtonEventArgs e)
     {
@@ -273,25 +340,47 @@ public partial class QualityView : UserControl
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
-        if (_current == null || _current.CheckApproved) return;
+        if (_current == null)
+        {
+            ErrorLog.WriteInfo("Quality.Save_Click STEP=EXIT Reason=NoSource");
+            StatusLabel.Text = "⛔ لا يمكن الحفظ: اختر مصدر فحص من تسليمات الإنتاج أولاً.";
+            return;
+        }
+        if (_current.CheckApproved)
+        {
+            ErrorLog.WriteInfo($"Quality.Save_Click STEP=EXIT Reason=AlreadyApproved CheckId={_current.CheckId}");
+            StatusLabel.Text = "⛔ لا يمكن تعديل فحص معتمد — النتائج للقراءة والطباعة.";
+            return;
+        }
         try
         {
+            ErrorLog.WriteInfo($"Quality.Save_Click STEP=ENTER OrderId={_current.OrderId} CheckId={_current.CheckId?.ToString() ?? "<new>"}");
+            ResultsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
             ResultsGrid.CommitEdit(DataGridEditingUnit.Row, true);
+            CriteriaGrid.CommitEdit(DataGridEditingUnit.Cell, true);
             CriteriaGrid.CommitEdit(DataGridEditingUnit.Row, true);
+            ErrorLog.WriteInfo($"Quality.Save_Click STEP=READ_INPUT_ROWS OrderId={_current.OrderId} Rows={_rows.Count} Standards={_standards.Count}");
             if (!_rows.All(IsRowBalanced))
             {
                 StatusLabel.Text = "⛔ الحفظ مرفوض: " + EqLabel.Text;
                 return;
             }
+            if (_standards.Any(s2 => s2.IsInvalid))
+            {
+                StatusLabel.Text = "⛔ الحفظ مرفوض: توجد قيمة مخبرية خارج حدود المواصفة أو غير صالحة.";
+                return;
+            }
             // §1.50.72 P2-4: نتائج فيها مرفوضات ← القرار يجب أن يُحدد صراحةً —
             // كان الحفظ بدون اختيار أي زر قرار يسجل «مطابق» بصمت رغم المرفوضات.
             bool hasRejected = _rows.Any(r2 => r2.GradeQtys.Any(kv =>
-                kv.Value > 0 && r2.Grades.Any(g => g.ResultTypeId == kv.Key && g.ResultKind == InspectionResultType.KindRejected)));
+                double.IsFinite(kv.Value) && kv.Value > 0
+                && r2.Grades.Any(g => g.ResultTypeId == kv.Key && g.ResultKind == InspectionResultType.KindRejected)));
             if (hasRejected && DecisionRejected.IsChecked != true && DecisionQuarantine.IsChecked != true)
             {
                 StatusLabel.Text = "⛔ هذا الفحص يحتوي كراتين مرفوضة — حدّد القرار صراحةً (مطابق / حجز / مرفوض) قبل الحفظ.";
                 return;
             }
+            ErrorLog.WriteInfo($"Quality.Save_Click STEP=BUILD_DTO OrderId={_current.OrderId}");
             var dto = new QualityDeliveryCheckDto
             {
                 OrderId = _current.OrderId,
@@ -299,44 +388,105 @@ public partial class QualityView : UserControl
                 Decision = DecisionRejected.IsChecked == true ? "Rejected" : DecisionQuarantine.IsChecked == true ? "Quarantine" : "Passed",
                 InspectorNotes = null,
                 Rows = _rows.SelectMany(r2 => r2.GradeQtys
-                        .Where(kv => kv.Key > 0 && kv.Value > 0)
-                        .Select(kv => new QualityGradeRowDto { ProductId = r2.ProductId, LotId = r2.LotId, ResultTypeId = kv.Key, Cartons = kv.Value }))
+                        .Where(kv => kv.Key > 0 && double.IsFinite(kv.Value) && kv.Value > 0)
+                        .Select(kv => new QualityGradeRowDto { OrderItemId = r2.OrderItemId, ProductId = r2.ProductId, LotId = r2.LotId, ResultTypeId = kv.Key, Cartons = kv.Value }))
                     .ToList(),
                 Standards = _standards.Select(s2 => new QualityStandardValueDto { StandardId = s2.StandardId, Value = s2.Value }).ToList(),
             };
             if (dto.Rows.Count == 0) { StatusLabel.Text = "⛔ أدخل كمية صفة واحدة على الأقل."; return; }
+            ErrorLog.WriteInfo($"Quality.Save_Click STEP=CALL_SAVE_DELIVERY_CHECK OrderId={dto.OrderId} Rows={dto.Rows.Count}");
             var r = WithInsp(s => s.SaveDeliveryCheck(dto));
+            ErrorLog.WriteInfo($"Quality.Save_Click STEP=RETURN_SAVE_DELIVERY_CHECK OrderId={dto.OrderId} Ok={r.Ok} ResultId={r.Id} Message={r.Message}");
             StatusLabel.Text = r.Ok ? "✅ " + r.Message : "⛔ " + r.Message;
             if (r.Ok) Load(_current.OrderId);
         }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Quality.Save"); }
+        catch (Exception ex)
+        {
+            WriteQualityExceptionTrace("Quality.Save", ex);
+            StatusLabel.Text = $"Quality.Save: {ex.GetType().FullName}: {ex.Message}";
+        }
     }
 
     private void Approve_Click(object sender, RoutedEventArgs e)
     {
-        if (_current?.CheckId == null || _current.CheckApproved) return;
+        if (_current == null)
+        {
+            ErrorLog.WriteInfo("Quality.Approve_Click STEP=EXIT Reason=NoSource");
+            StatusLabel.Text = "⛔ لا يمكن الاعتماد: اختر مصدر فحص من تسليمات الإنتاج أولاً.";
+            return;
+        }
+        if (_current.CheckId == null)
+        {
+            ErrorLog.WriteInfo($"Quality.Approve_Click STEP=EXIT Reason=NoSavedCheck OrderId={_current.OrderId}");
+            StatusLabel.Text = "⛔ لا يمكن الاعتماد: احفظ نتائج الفحص أولاً.";
+            return;
+        }
+        if (_current.CheckApproved)
+        {
+            ErrorLog.WriteInfo($"Quality.Approve_Click STEP=EXIT Reason=AlreadyApproved CheckId={_current.CheckId}");
+            StatusLabel.Text = "الفحص معتمد مسبقاً — النتائج للقراءة والطباعة.";
+            return;
+        }
         try
         {
-            if (!AppContainer.Get<DialogService>().Confirm($"اعتماد فحص الجودة {_current.CheckNumber}؟ الاعتماد يُقفل النتائج.")) return;
+            ErrorLog.WriteInfo($"Quality.Approve_Click STEP=ENTER OrderId={_current.OrderId} CheckId={_current.CheckId}");
+            if (!AppContainer.Get<DialogService>().Confirm($"اعتماد فحص الجودة {_current.CheckNumber}؟ الاعتماد يُقفل النتائج."))
+            {
+                ErrorLog.WriteInfo($"Quality.Approve_Click STEP=EXIT Reason=UserCancelled CheckId={_current.CheckId}");
+                StatusLabel.Text = "لم يتم اعتماد الفحص — أُلغي التأكيد.";
+                return;
+            }
             using var scope = AppContainer.NewScope();
             var qc = scope.ServiceProvider.GetRequiredService<IQualityService>();
+            ErrorLog.WriteInfo($"Quality.Approve_Click STEP=CALL_APPROVE CheckId={_current.CheckId}");
             var r = qc.ApproveCheck(_current.CheckId.Value);
+            ErrorLog.WriteInfo($"Quality.Approve_Click STEP=RETURN_APPROVE CheckId={_current.CheckId} Ok={r.Ok} Message={r.Message}");
             StatusLabel.Text = r.Ok ? "✅ " + r.Message : "⛔ " + r.Message;
             if (r.Ok) Load(_current.OrderId);
         }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Quality.Approve"); }
+        catch (Exception ex)
+        {
+            WriteQualityExceptionTrace("Quality.Approve", ex);
+            StatusLabel.Text = $"Quality.Approve: {ex.GetType().FullName}: {ex.Message}";
+        }
     }
 
     private void Print_Click(object sender, RoutedEventArgs e)
     {
-        if (_current?.CheckId == null) { StatusLabel.Text = "الطباعة بعد حفظ الفحص — احفظ النتائج أولاً."; return; }
+        if (_current?.CheckId == null)
+        {
+            ErrorLog.WriteInfo("Quality.Print_Click STEP=EXIT Reason=NoSavedCheck");
+            StatusLabel.Text = "الطباعة بعد حفظ الفحص — احفظ النتائج أولاً.";
+            return;
+        }
         try
         {
+            ErrorLog.WriteInfo($"Quality.Print_Click STEP=ENTER CheckId={_current.CheckId}");
             using var scope = AppContainer.NewScope();
             var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
             var m = Printing.StoredPrintModels.Quality(db, _current.CheckId.Value);
+            if (m == null)
+            {
+                StatusLabel.Text = "⛔ تعذر الطباعة: نموذج الفحص غير موجود.";
+                return;
+            }
             new PrintPreviewWindow(PhasePrint.Build(m), $"{m.DocTitle} {m.DocNo}") { Owner = Window.GetWindow(this) }.ShowDialog();
+            ErrorLog.WriteInfo($"Quality.Print_Click STEP=SUCCESS CheckId={_current.CheckId}");
+            StatusLabel.Text = "✅ تم فتح محضر الفحص للطباعة.";
         }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Quality.Print"); }
+        catch (Exception ex)
+        {
+            WriteQualityExceptionTrace("Quality.Print", ex);
+            StatusLabel.Text = $"Quality.Print: {ex.GetType().FullName}: {ex.Message}";
+        }
+    }
+
+    private static void WriteQualityExceptionTrace(string source, Exception ex)
+    {
+        var parts = new List<string>();
+        for (var cur = ex; cur != null; cur = cur.InnerException)
+            parts.Add($"{cur.GetType().FullName}: {cur.Message}\n{cur.StackTrace}");
+        ErrorLog.WriteInfo($"{source} EXCEPTION\n{string.Join(Environment.NewLine + "--- INNER ---" + Environment.NewLine, parts)}");
+        ErrorLog.Write(ex, source);
     }
 }

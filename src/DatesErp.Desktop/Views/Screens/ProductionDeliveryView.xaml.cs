@@ -235,6 +235,15 @@ public partial class ProductionDeliveryView : UserControl
         }
         ErrorLog.WriteInfo($"ActualDelivery.Save_Click EXCEPTION\n{string.Join(Environment.NewLine, parts)}");
     }
+
+    private static void WriteDeliveryExceptionTrace(string source, Exception ex)
+    {
+        var parts = new List<string>();
+        for (var current = ex; current != null; current = current.InnerException)
+            parts.Add($"Type={current.GetType().FullName} Message={current.Message} StackTrace={current.StackTrace ?? "<null>"}");
+        ErrorLog.WriteInfo($"{source} EXCEPTION\n{string.Join(Environment.NewLine + "--- INNER ---" + Environment.NewLine, parts)}");
+        ErrorLog.Write(ex, source);
+    }
     private void LoadDelivery(int deliveryId)
     {
         try
@@ -256,14 +265,25 @@ public partial class ProductionDeliveryView : UserControl
                     PackageCount = line.PackageCount
                 });
         }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.LoadDelivery"); }
+        catch (Exception ex)
+        {
+            WriteDeliveryExceptionTrace("ActualDelivery.LoadDelivery", ex);
+            DeliveryStatusLabel.Text = $"تعذر تحميل أمر التسليم: {ex.Message}";
+            StatusLabel.Text = $"ActualDelivery.LoadDelivery: {ex.Message}";
+        }
     }
 
     private void SaveDelivery_Click(object sender, RoutedEventArgs e)
     {
-        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto { ProductionDeliveryId: > 0 } order) return;
+        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto { ProductionDeliveryId: > 0 } order)
+        {
+            ErrorLog.WriteInfo("ActualDelivery.SaveDelivery_Click STEP=EXIT Reason=NoDraftSelected");
+            DeliveryStatusLabel.Text = "⛔ لا يمكن حفظ التعديل: اختر أمر تسليم إنتاج مسودة أولاً.";
+            return;
+        }
         try
         {
+            ErrorLog.WriteInfo($"ActualDelivery.SaveDelivery_Click STEP=ENTER DeliveryId={order.ProductionDeliveryId} OrderId={order.OrderId}");
             DeliveryItemsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
             DeliveryItemsGrid.CommitEdit(DataGridEditingUnit.Row, true);
             var items = _deliveryItems.Where(x => x.QtyKg > 0.001).Select(x => new ProductionDeliveryItemDto
@@ -274,42 +294,76 @@ public partial class ProductionDeliveryView : UserControl
             }).ToList();
             var result = WithService(s => s.UpdateDelivery(order.ProductionDeliveryId,
                 DateTime.Now.ToString("dd/MM/yyyy"), items, order.Notes));
-            if (!result.Ok) { DeliveryStatusLabel.Text = result.Message; return; }
+            ErrorLog.WriteInfo($"ActualDelivery.SaveDelivery_Click STEP=RETURN_UPDATE DeliveryId={order.ProductionDeliveryId} Ok={result.Ok} Message={result.Message}");
+            if (!result.Ok) { DeliveryStatusLabel.Text = result.Message; StatusLabel.Text = "⛔ " + result.Message; return; }
             LoadOrders(order.OrderId, true);
-            StatusLabel.Text = result.Message;
+            StatusLabel.Text = "✅ " + result.Message;
         }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.UpdateDelivery"); }
+        catch (Exception ex)
+        {
+            WriteDeliveryExceptionTrace("ActualDelivery.UpdateDelivery", ex);
+            DeliveryStatusLabel.Text = $"تعذر حفظ تعديل أمر التسليم: {ex.Message}";
+            StatusLabel.Text = $"ActualDelivery.UpdateDelivery: {ex.Message}";
+        }
     }
 
     private void IssueDelivery_Click(object sender, RoutedEventArgs e)
     {
-        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto { ProductionDeliveryId: > 0 } order) return;
-        try
+        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto { ProductionDeliveryId: > 0 } order)
         {
-            var result = WithService(s => s.IssueDelivery(order.ProductionDeliveryId));
-            if (!result.Ok) { DeliveryStatusLabel.Text = result.Message; return; }
-            LoadOrders(order.OrderId, true);
-            StatusLabel.Text = result.Message;
-        }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.IssueDelivery"); }
-    }
-
-    private void CreateDelivery_Click(object sender, RoutedEventArgs e)
-    {
-        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto { Recorded: true, CanCreateDelivery: true } order || order.ExecutionId <= 0)
-        {
-            StatusLabel.Text = "احفظ الإنتاج الفعلي أولاً، ثم أنشئ أمر التسليم من التنفيذ المحفوظ.";
+            ErrorLog.WriteInfo("ActualDelivery.IssueDelivery_Click STEP=EXIT Reason=NoDraftSelected");
+            DeliveryStatusLabel.Text = "⛔ لا يمكن التحرير: اختر أمر تسليم إنتاج مسودة أولاً.";
             return;
         }
         try
         {
+            ErrorLog.WriteInfo($"ActualDelivery.IssueDelivery_Click STEP=ENTER DeliveryId={order.ProductionDeliveryId}");
+            var result = WithService(s => s.IssueDelivery(order.ProductionDeliveryId));
+            ErrorLog.WriteInfo($"ActualDelivery.IssueDelivery_Click STEP=RETURN_ISSUE DeliveryId={order.ProductionDeliveryId} Ok={result.Ok} Message={result.Message}");
+            if (!result.Ok) { DeliveryStatusLabel.Text = result.Message; StatusLabel.Text = "⛔ " + result.Message; return; }
+            LoadOrders(order.OrderId, true);
+            StatusLabel.Text = "✅ " + result.Message;
+        }
+        catch (Exception ex)
+        {
+            WriteDeliveryExceptionTrace("ActualDelivery.IssueDelivery", ex);
+            DeliveryStatusLabel.Text = $"تعذر تحرير أمر التسليم: {ex.Message}";
+            StatusLabel.Text = $"ActualDelivery.IssueDelivery: {ex.Message}";
+        }
+    }
+
+    private void CreateDelivery_Click(object sender, RoutedEventArgs e)
+    {
+        ErrorLog.WriteInfo($"ActualDelivery.CreateDelivery_Click STEP=ENTER SelectedType={OrderBox.SelectedItem?.GetType().FullName ?? "<null>"}");
+        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto order)
+        {
+            ErrorLog.WriteInfo("ActualDelivery.CreateDelivery_Click STEP=EXIT Reason=NoOrderSelected");
+            StatusLabel.Text = "⛔ اختر أمر إنتاج مسجلاً فعلياً أولاً.";
+            return;
+        }
+        if (!order.Recorded || !order.CanCreateDelivery || order.ExecutionId <= 0)
+        {
+            ErrorLog.WriteInfo($"ActualDelivery.CreateDelivery_Click STEP=EXIT Reason=NotEligible OrderId={order.OrderId} Recorded={order.Recorded} CanCreate={order.CanCreateDelivery} ExecutionId={order.ExecutionId}");
+            StatusLabel.Text = order.ProductionDeliveryId > 0
+                ? "يوجد أمر تسليم إنتاج لهذا التنفيذ — افتحه من لوحة المسودة وعدّله قبل تحريره للمخزن."
+                : "احفظ الإنتاج الفعلي وأقفله أولاً، ثم أنشئ أمر التسليم من التنفيذ المحفوظ.";
+            return;
+        }
+        try
+        {
+            ErrorLog.WriteInfo($"ActualDelivery.CreateDelivery_Click STEP=CALL_CREATE_FROM_ACTUAL ExecutionId={order.ExecutionId} OrderId={order.OrderId}");
             var result = WithService(s => s.CreateDeliveryFromActual(order.ExecutionId,
                 DateTime.Now.ToString("dd/MM/yyyy"), order.Notes));
-            if (!result.Ok) { StatusLabel.Text = result.Message; return; }
+            ErrorLog.WriteInfo($"ActualDelivery.CreateDelivery_Click STEP=RETURN_CREATE_FROM_ACTUAL ExecutionId={order.ExecutionId} Ok={result.Ok} DeliveryId={result.Id} Message={result.Message}");
+            if (!result.Ok) { StatusLabel.Text = "⛔ " + result.Message; return; }
             LoadOrders(order.OrderId, true);
-            StatusLabel.Text = result.Message + "\nأمر التسليم مسودة قابلة للتعديل قبل تحريرها للمخزن.";
+            StatusLabel.Text = "✅ " + result.Message + "\nأمر التسليم مسودة قابلة للتعديل قبل تحريرها للمخزن؛ لم تُنشأ حركة أو استلام مخزني.";
         }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.CreateDelivery"); }
+        catch (Exception ex)
+        {
+            WriteDeliveryExceptionTrace("ActualDelivery.CreateDelivery", ex);
+            StatusLabel.Text = $"ActualDelivery.CreateDelivery: {ex.GetType().FullName}: {ex.Message}";
+        }
     }
 
     // §v1.50.32: سطر الإضافة الفارغ يهدأ ويتوضح — لا تظليل صارخ يُقرأ كخطأ برمجي.

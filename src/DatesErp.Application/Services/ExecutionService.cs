@@ -697,6 +697,9 @@ public class QualityService : ServiceBase, IQualityService
                 check.ExpectedCheckDate = (UiFormat.TryParseDate(checkDate, out var cd2) ? cd2 : DateTime.Today).AddDays(2);
             foreach (var it in items)
             {
+                if (!double.IsFinite(it.CheckedQtyKg) || !double.IsFinite(it.AcceptedQtyKg) || !double.IsFinite(it.RejectedQtyKg)
+                    || !double.IsFinite(it.CheckedCartons) || !double.IsFinite(it.AcceptedCartons) || !double.IsFinite(it.RejectedCartons))
+                    throw new DomainException("كميات الفحص يجب أن تكون أرقاماً صالحة.");
                 if (it.AcceptedQtyKg < 0 || it.RejectedQtyKg < 0) throw new DomainException("الكميات لا يمكن أن تكون سالبة.");
                 // §B95 — الكراتين (وحدة التام الأساسية): لا سالب
                 if (it.CheckedCartons < 0 || it.AcceptedCartons < 0 || it.RejectedCartons < 0)
