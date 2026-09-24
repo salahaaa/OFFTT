@@ -1,5 +1,6 @@
 param(
-    [string]$ArchiveUrl = 'https://github.com/salahaaa/OFFTT/archive/refs/heads/arena/01a0ac34-offtt.zip'
+    [string]$ArchiveUrl = 'https://github.com/salahaaa/OFFTT/archive/refs/heads/arena/01a0ac34-offtt.zip',
+    [string]$LocalPackageRoot = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,20 +28,35 @@ if (-not $hasSource) {
     if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { exit 0 }
 }
 
-$answer = Show-Message "سيتم تحديث ملفات المشروع في:`n$target`n`nسيتم حذف ملفات الأرشيف والتحديثات القديمة المعروفة فقط. هل تريد المتابعة؟" 'تحديث المشروع' ([System.Windows.Forms.MessageBoxButtons]::YesNo) ([System.Windows.Forms.MessageBoxIcon]::Question)
+if ($LocalPackageRoot -and (Test-Path $LocalPackageRoot)) {
+    $localRoot = [System.IO.Path]::GetFullPath($LocalPackageRoot).TrimEnd('\')
+    if ($localRoot -eq $target) {
+        Show-Message 'اختر مجلد Source القديم المراد تحديثه، وليس مجلد الحزمة التي شغّلت منها الأداة.' 'المجلد غير صحيح' | Out-Null
+        exit 0
+    }
+}
+
+$answer = Show-Message "سيتم تحديث ملفات المصدر في:`n$target`n`nسيتم حذف ملفات الأرشيف والتحديثات القديمة المعروفة فقط. هل تريد المتابعة؟" 'تحديث المشروع' ([System.Windows.Forms.MessageBoxButtons]::YesNo) ([System.Windows.Forms.MessageBoxIcon]::Question)
 if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { exit 0 }
 
-$temp = Join-Path ([System.IO.Path]::GetTempPath()) ('MfgSystemUpdate_' + [guid]::NewGuid().ToString('N'))
-$zip = Join-Path $temp 'current.zip'
-$extract = Join-Path $temp 'extract'
-New-Item -ItemType Directory -Path $temp, $extract -Force | Out-Null
-
+$temp = $null
+$sourceRoot = $null
 try {
-    Show-Message 'سيتم تنزيل النسخة الحالية ثم تحديث المشروع. اضغط موافق للبدء.' 'بدء التحديث' | Out-Null
-    Invoke-WebRequest -Uri $ArchiveUrl -OutFile $zip -UseBasicParsing
-    Expand-Archive -Path $zip -DestinationPath $extract -Force
+    if ($LocalPackageRoot -and (Test-Path (Join-Path $LocalPackageRoot 'DateERP.sln'))) {
+        $sourceRoot = Get-Item -LiteralPath $LocalPackageRoot
+        Show-Message 'سيتم استخدام ملفات الحزمة المحلية الموجودة بجانب أداة التحديث.' 'بدء التحديث' | Out-Null
+    }
+    else {
+        Show-Message 'سيتم تنزيل النسخة الحالية ثم تحديث المشروع. اضغط موافق للبدء.' 'بدء التحديث' | Out-Null
+        $temp = Join-Path ([System.IO.Path]::GetTempPath()) ('MfgSystemUpdate_' + [guid]::NewGuid().ToString('N'))
+        $zip = Join-Path $temp 'current.zip'
+        $extract = Join-Path $temp 'extract'
+        New-Item -ItemType Directory -Path $temp, $extract -Force | Out-Null
+        Invoke-WebRequest -Uri $ArchiveUrl -OutFile $zip -UseBasicParsing
+        Expand-Archive -Path $zip -DestinationPath $extract -Force
+        $sourceRoot = Get-ChildItem -Path $extract -Directory | Select-Object -First 1
+    }
 
-    $sourceRoot = Get-ChildItem -Path $extract -Directory | Select-Object -First 1
     if ($null -eq $sourceRoot -or -not (Test-Path (Join-Path $sourceRoot.FullName 'DateERP.sln'))) {
         throw 'لم يتم العثور على مصدر المشروع الحالي داخل الحزمة.'
     }
@@ -89,12 +105,12 @@ try {
         if (Test-Path $path) { Remove-Item -LiteralPath $path -Recurse -Force }
     }
 
-    Show-Message "تم تحديث المشروع بنجاح.`n`nالمجلد:`n$target`n`nافتح DateERP.sln للبناء، أو استخدم Installer\\1-بناء_الحزمة.bat على Windows." 'اكتمل التحديث' | Out-Null
+    Show-Message "تم تحديث مصدر المشروع بنجاح.`n`nالمجلد:`n$target`n`nلم يتم تغيير مجلد publish أو MfgSystem.exe.`n`nافتح DateERP.sln للبناء على Windows." 'اكتمل التحديث' | Out-Null
 }
 catch {
     Show-Message ("فشل التحديث:`n" + $_.Exception.Message) 'خطأ في التحديث' ([System.Windows.Forms.MessageBoxButtons]::OK) ([System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
     exit 1
 }
 finally {
-    if (Test-Path $temp) { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
+    if ($temp -and (Test-Path $temp)) { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
 }
