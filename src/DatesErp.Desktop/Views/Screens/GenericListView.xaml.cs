@@ -578,9 +578,15 @@ public partial class GenericListView : UserControl
 
     // §v1.50.33: عمودا «المستخدم/الجهاز» أُزيلا (مطلوب المستخدم — متاحان في سجل التدقيق)،
     // وأُضيفت «الوحدة» و«العميل صاحب الشحنة» (من الحركة أو من دفعتها).
-    public static GenericListView ForMovements() => new("حركات المخزون (تتبع كامل)", db => (
-        new() { "الحركة", "التاريخ", "المخزن", "الصنف", "الوحدة", "الدفعة", "العميل صاحب الشحنة", "النوع", "الكمية (كجم)", "المستند المرجعي" },
-        db.InventoryTransactions.OrderByDescending(t => t.TxnDate).Take(1000).ToList().Select(t =>
+    public static GenericListView ForMovements() => new("حركات المخزون (تتبع كامل)", db => MovementRows(db, false));
+
+    public static GenericListView ForTransfers() => new("التحويلات المخزنية", db => MovementRows(db, true));
+
+    private static (List<string> columns, List<object[]> rows) MovementRows(DatesErpDbContext db, bool transfersOnly)
+    {
+        var query = db.InventoryTransactions.AsQueryable();
+        if (transfersOnly) query = query.Where(t => t.MovementType == Core.Domain.Enums.MovementType.Transfer);
+        var rows = query.OrderByDescending(t => t.TxnDate).Take(1000).ToList().Select(t =>
         {
             var product = t.ProductId != null ? db.Products.Where(p => p.Id == t.ProductId).Select(p => new { p.ProductNameAr, p.UnitOfMeasure }).FirstOrDefault() : null;
             var material = t.MaterialId != null ? db.AuxiliaryMaterials.Where(m => m.Id == t.MaterialId).Select(m => new { m.MaterialNameAr, m.UnitOfMeasure }).FirstOrDefault() : null;
@@ -595,10 +601,13 @@ public partial class GenericListView : UserControl
                 product?.UnitOfMeasure ?? material?.UnitOfMeasure ?? "كجم",
                 db.Lots.Where(l => l.Id == t.LotId).Select(l => l.LotCode).FirstOrDefault() ?? "—",
                 customer ?? "—",
-                t.MovementType == Core.Domain.Enums.MovementType.Inbound ? "وارد" : "صادر",
+                t.MovementType == Core.Domain.Enums.MovementType.Inbound ? "وارد"
+                    : t.MovementType == Core.Domain.Enums.MovementType.Transfer ? "تحويل" : "صادر",
                 t.QtyKg, $"{t.ReferenceDocType}: {t.ReferenceDocNumber}"
             };
-        }).ToList()));
+        }).ToList();
+        return (new() { "الحركة", "التاريخ", "المخزن", "الصنف", "الوحدة", "الدفعة", "العميل صاحب الشحنة", "النوع", "الكمية (كجم)", "المستند المرجعي" }, rows);
+    }
 
     public static GenericListView ForMachines() => new("الأجهزة المتصلة بالنظام", db => (
         new() { "معرف الجهاز", "اسم الجهاز", "مستخدم ويندوز", "إصدار التطبيق", "آخر دخول", "آخر ظهور", "الحالة" },

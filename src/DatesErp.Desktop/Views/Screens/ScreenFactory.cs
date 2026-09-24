@@ -74,10 +74,7 @@ public static class ScreenFactory
 
     private static UIElement StockTransferScreen()
     {
-        var v = new StockTransferView();
-        var c = new ErpChrome { TitleText = "[MAIN] - [نظام إدارة وتصنيع التمور - التحويلات المخزنية] - (" + Company + ")" };
-        v.AttachChrome(c);
-        return c;
+        return Wrap(GenericListView.ForTransfers(), "التحويلات المخزنية", "المخازن والأرصدة", "MRPINV1007");
     }
 
     private static UIElement ThemeSettingsScreen()

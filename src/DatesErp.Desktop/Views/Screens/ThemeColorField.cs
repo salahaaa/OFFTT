@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using DatesErp.Desktop.Services;
 
@@ -34,7 +35,7 @@ public sealed class ThemeColorField : Border
         Padding = new Thickness(8);
         Margin = new Thickness(4);
         Background = Brushes.Transparent;
-        BorderBrush = (Brush)Application.Current?.TryFindResource("BorderBrushStd") ?? Brushes.LightGray;
+        BorderBrush = (Brush)System.Windows.Application.Current?.TryFindResource("BorderBrushStd") ?? Brushes.LightGray;
         BorderThickness = new Thickness(1);
         CornerRadius = new CornerRadius(5);
 
@@ -123,9 +124,9 @@ internal sealed class ThemeColorPickerWindow : Window
         }
         root.Children.Add(grid);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left };
-        var ok = new Button { Content = "موافق", Style = (Style)Application.Current.TryFindResource("ErpPrimaryButton"), MinWidth = 85, Margin = new Thickness(3) };
+        var ok = new Button { Content = "موافق", Style = (Style)System.Windows.Application.Current.TryFindResource("ErpPrimaryButton"), MinWidth = 85, Margin = new Thickness(3) };
         ok.Click += (_, _) => { if (!IsValid()) { MessageBox.Show("أدخل لوناً بصيغة HEX صحيحة.", "لون غير صالح", MessageBoxButton.OK, MessageBoxImage.Warning); return; } Value = _hex.Text.Trim(); DialogResult = true; Close(); };
-        var cancel = new Button { Content = "إلغاء", Style = (Style)Application.Current.TryFindResource("ErpButton"), MinWidth = 85, Margin = new Thickness(3) };
+        var cancel = new Button { Content = "إلغاء", Style = (Style)System.Windows.Application.Current.TryFindResource("ErpButton"), MinWidth = 85, Margin = new Thickness(3) };
         cancel.Click += (_, _) => { DialogResult = false; Close(); };
         actions.Children.Add(ok); actions.Children.Add(cancel); root.Children.Add(actions);
         Content = root;

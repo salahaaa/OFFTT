@@ -64,7 +64,7 @@ public static class ThemeManager
         if (profile == null) return;
         Current = profile.Clone();
         var visual = VisualProfile(Current);
-        var resources = Application.Current?.Resources;
+        var resources = System.Windows.Application.Current?.Resources;
         if (resources == null) return;
 
         foreach (var pair in ColorKeys)
@@ -158,7 +158,7 @@ public static class ThemeManager
         resources["ThemeShowSidebar"] = visual.ShowSidebar;
         resources["ThemeTextAlignment"] = ParseAlignment(visual.TableTextAlignment);
 
-        foreach (Window window in Application.Current.Windows)
+        foreach (Window window in System.Windows.Application.Current.Windows)
             if (window is Views.MainWindow main) main.ApplyThemeLayout(visual);
         if (notify) Changed?.Invoke(null, EventArgs.Empty);
     }
