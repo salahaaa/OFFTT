@@ -1,3 +1,4 @@
+using DatesErp.Core.Common;
 using DatesErp.Core.Domain.Entities;
 using DatesErp.Core.Domain.Enums;
 using DatesErp.Core.Interfaces.Services;

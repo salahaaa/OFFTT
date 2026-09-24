@@ -195,7 +195,7 @@ public class B99QualityTests
         // الإنتاج: أمر تسليم من التنفيذ الفعلي + تحريره (الجودة لا تنشئ الاستلام)
         host.LoginAs("production");
         var del = host.Get<IProductionDeliveryService>();
-        var sd = del.CreateDeliveryFromActual(qc.ExecutionId, DateTime.Today.ToString("yyyy-MM-dd"));
+        var sd = del.CreateDeliveryFromActual(qc.ExecutionId.Value, DateTime.Today.ToString("yyyy-MM-dd"));
         Assert.True(sd.Ok, sd.Message);
         Assert.True(del.IssueDelivery(sd.Id).Ok);
 
@@ -251,7 +251,7 @@ public class B99QualityTests
 
         host.LoginAs("production");
         var del = host.Get<IProductionDeliveryService>();
-        var sd = del.CreateDeliveryFromActual(qc.ExecutionId, DateTime.Today.ToString("yyyy-MM-dd"));
+        var sd = del.CreateDeliveryFromActual(qc.ExecutionId.Value, DateTime.Today.ToString("yyyy-MM-dd"));
         Assert.True(sd.Ok, sd.Message);
         Assert.True(del.IssueDelivery(sd.Id).Ok);
 
@@ -316,7 +316,7 @@ public class B99QualityTests
 
         // أمر تسليم محرَّر ← المخزن يرى «أمر تسليم بانتظار الاستلام»
         var del = host.Get<IProductionDeliveryService>();
-        var sd = del.CreateDeliveryFromActual(qc.ExecutionId, DateTime.Today.ToString("yyyy-MM-dd"));
+        var sd = del.CreateDeliveryFromActual(qc.ExecutionId.Value, DateTime.Today.ToString("yyyy-MM-dd"));
         Assert.True(sd.Ok, sd.Message);
         Assert.True(del.IssueDelivery(sd.Id).Ok);
 

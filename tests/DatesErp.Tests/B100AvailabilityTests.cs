@@ -99,7 +99,7 @@ public class B100AvailabilityTests
 
         host.LoginAs("production");
         var del = host.Get<IProductionDeliveryService>();
-        var sd = del.CreateDeliveryFromActual(qc.ExecutionId, DateTime.Today.ToString("yyyy-MM-dd"));
+        var sd = del.CreateDeliveryFromActual(qc.ExecutionId.Value, DateTime.Today.ToString("yyyy-MM-dd"));
         Assert.True(sd.Ok, sd.Message);
         Assert.True(del.IssueDelivery(sd.Id).Ok);
         deliveryId = sd.Id;
@@ -339,7 +339,7 @@ public class B100AvailabilityTests
 
         host.LoginAs("production");
         var del = host.Get<IProductionDeliveryService>();
-        var sd = del.CreateDeliveryFromActual(qc.ExecutionId, DateTime.Today.ToString("yyyy-MM-dd"));
+        var sd = del.CreateDeliveryFromActual(qc.ExecutionId.Value, DateTime.Today.ToString("yyyy-MM-dd"));
         Assert.True(sd.Ok, sd.Message);
         Assert.True(del.IssueDelivery(sd.Id).Ok);
         deliveryId = sd.Id;
