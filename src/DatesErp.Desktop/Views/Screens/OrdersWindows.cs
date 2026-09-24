@@ -291,6 +291,8 @@ public class OrderDocumentPanel : UserControl
         if (st is DocStatuses.Approved or DocStatuses.Scheduled)
         {
             _actionsPanel.Children.Add(Btn("🏭 بدء الإنتاج", "ErpPrimaryButton", () => Do(s => s.StartOrder(_orderId)), Can("execution", "Create")));
+            // التسجيل من أمر متأخر لا يحتاج خطوة بدء منفصلة؛ الخدمة تبدأه ذرياً عند الحفظ.
+            _actionsPanel.Children.Add(Btn("📤 تسجيل فعلي اليوم (بدء وإقفال اليوم)", "ErpPrimaryButton", CloseDay, Can("execution", "Edit")));
             _actionsPanel.Children.Add(Btn("↩ إلغاء الاعتماد", "ErpDangerButton", () => Do(s => s.UnapproveOrder(_orderId)), Can("production", "Cancel")));
         }
         if (st == DocStatuses.InProgress)
@@ -299,7 +301,10 @@ public class OrderDocumentPanel : UserControl
             _actionsPanel.Children.Add(Btn("📤 تسجيل فعلي اليوم (إقفال اليوم)", "ErpPrimaryButton", CloseDay, Can("execution", "Edit")));
         }
         if (st == DocStatuses.Stopped)
+        {
             _actionsPanel.Children.Add(Btn("▶ استئناف الإنتاج", "ErpApproveButton", () => Do(s => s.ResumeOrder(_orderId)), Can("execution", "Edit")));
+            _actionsPanel.Children.Add(Btn("📤 تسجيل فعلي اليوم (إقفال اليوم)", "ErpPrimaryButton", CloseDay, Can("execution", "Edit")));
+        }
         if (st is DocStatuses.Draft or DocStatuses.Approved or DocStatuses.Scheduled)
             _actionsPanel.Children.Add(Btn("✖ إلغاء الأمر", "ErpDangerButton", CancelWithReason, Can("production", "Cancel")));
         if (st is DocStatuses.Completed or DocStatuses.InProgress)

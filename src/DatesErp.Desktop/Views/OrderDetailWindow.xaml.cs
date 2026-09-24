@@ -110,16 +110,22 @@ public partial class OrderDetailWindow : Window
                 }).ToList();
 
             // ── شريط الإجراء: الدور × الحالة ──
-            bool isTodayOrder = session.Can("production", "View") && scope.ServiceProvider.GetRequiredService<IProductionOrderService>().GetTodayProduction().Rows.Any(r => r.OrderId == order.Id);
-            bool canStart = isTodayOrder && session.Can("execution", "Create");
+            // بطاقة الأمر قد تكون ليوم سابق؛ «التسجيل الفعلي» يسمح بالأمر المتأخر
+            // بينما «بدء التنفيذ» يظل رافضاً للمستقبل عبر حارس الخدمة.
+            bool isScheduledOrder = session.Can("production", "View") && scope.ServiceProvider.GetRequiredService<IProductionOrderService>().GetScheduledProduction().Rows.Any(r => r.OrderId == order.Id);
+            bool canStart = isScheduledOrder && session.Can("execution", "Create");
             bool canStop = session.Can("execution", "Edit");
             bool canCancel = session.Can("production", "Cancel");
             bool started = _status == DocStatuses.InProgress || _status == DocStatuses.Stopped || _status == DocStatuses.Completed || _status == DocStatuses.Closed;
 
             BtnStart.Visibility = (canStart && order.IsApproved && !order.IsClosed && (_status == DocStatuses.Scheduled || _status == DocStatuses.Approved)) ? Visibility.Visible : Visibility.Collapsed;
             BtnStop.Visibility = (canStop && _status == DocStatuses.InProgress) ? Visibility.Visible : Visibility.Collapsed;
-            BtnResume.Visibility = (isTodayOrder && canStop && _status == DocStatuses.Stopped) ? Visibility.Visible : Visibility.Collapsed;
-            BtnClose.Visibility = (canStop && (_status == DocStatuses.InProgress || _status == DocStatuses.Stopped) && order.IsApproved) ? Visibility.Visible : Visibility.Collapsed;
+            BtnResume.Visibility = (isScheduledOrder && canStop && _status == DocStatuses.Stopped) ? Visibility.Visible : Visibility.Collapsed;
+            // يفتح مسار التسجيل مباشرة للأمر المعتمد المجدول أو المتوقف؛ الحفظ
+            // يبدأ جلسة التنفيذ تلقائياً ثم ينفذ الإقفال مرة واحدة.
+            BtnClose.Visibility = (canStop && order.IsApproved && !order.IsClosed
+                && (_status == DocStatuses.InProgress || _status == DocStatuses.Stopped
+                    || _status == DocStatuses.Scheduled || _status == DocStatuses.Approved)) ? Visibility.Visible : Visibility.Collapsed;
             BtnCancel.Visibility = (canCancel && !order.IsClosed && _status != DocStatuses.Cancelled && !started) ? Visibility.Visible : Visibility.Collapsed;
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "OrderDetail.Load"); }

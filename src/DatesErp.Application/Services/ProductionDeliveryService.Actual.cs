@@ -20,6 +20,62 @@ public partial class ProductionDeliveryService
             .Select(b => new ActualByProductDefinitionDto { Id = b.Id, Name = b.ByProductNameAr, Unit = b.UnitOfMeasure }).ToList();
     }
 
+    private List<TodayProductionRowDto> GetFallbackPlanRows(IReadOnlyCollection<int> orderIds)
+    {
+        var ids = orderIds.Distinct().ToList();
+        if (ids.Count == 0) return new();
+
+        var orders = Db.ProductionOrders.AsNoTracking().Where(o => ids.Contains(o.Id)).ToDictionary(o => o.Id);
+        var items = Db.ProductionOrderItems.AsNoTracking().Where(i => ids.Contains(i.OrderId)).OrderBy(i => i.Id).ToList();
+        var planItemIds = items.Where(i => i.PlanItemId != null).Select(i => i.PlanItemId.Value).Distinct().ToList();
+        var planItems = Db.ProductionPlanItems.AsNoTracking().Where(i => planItemIds.Contains(i.Id)).ToDictionary(i => i.Id);
+        var planIds = planItems.Values.Select(i => i.PlanId).Distinct().ToList();
+        var plans = Db.ProductionPlans.AsNoTracking().Where(p => planIds.Contains(p.Id)
+            && p.IsApproved && p.Status == DocStatuses.Approved && !p.IsClosed).ToDictionary(p => p.Id);
+        var productIds = planItems.Values.Select(i => i.ProductId).Distinct().ToList();
+        var productNames = Db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id))
+            .ToDictionary(p => p.Id, p => p.ProductNameAr);
+        var customerIds = planItems.Values.Where(i => i.CustomerId != null).Select(i => i.CustomerId.Value).Distinct().ToList();
+        var customerNames = Db.Customers.AsNoTracking().Where(c => customerIds.Contains(c.Id))
+            .ToDictionary(c => c.Id, c => c.CustomerName);
+        var shiftIds = planItems.Values.Select(i => i.SuggestedShiftId).Concat(orders.Values.Select(o => o.ShiftId))
+            .Where(i => i != null).Select(i => i.Value).Distinct().ToList();
+        var shifts = Db.Shifts.AsNoTracking().Where(s => shiftIds.Contains(s.Id))
+            .ToDictionary(s => s.Id, s => s.ShiftNameAr);
+        var lineIds = planItems.Values.Select(i => i.SuggestedLineId).Concat(orders.Values.Select(o => o.LineId))
+            .Where(i => i != null).Select(i => i.Value).Distinct().ToList();
+        var lines = Db.ProductionLines.AsNoTracking().Where(l => lineIds.Contains(l.Id))
+            .ToDictionary(l => l.Id, l => l.LineNameAr);
+        var closed = Db.ProductionExecutions.AsNoTracking().Where(e => ids.Contains(e.OrderId) && e.IsDayClosed)
+            .Select(e => e.OrderId).ToHashSet();
+
+        return items.Where(i => orders.ContainsKey(i.OrderId) && i.PlanItemId is int pid && planItems.ContainsKey(pid)
+                && plans.ContainsKey(planItems[pid].PlanId))
+            .Select(i =>
+            {
+                var order = orders[i.OrderId];
+                var plan = planItems[i.PlanItemId!.Value];
+                var scheduled = plan.ScheduledDate?.Date;
+                var shift = plan.SuggestedShiftId ?? order.ShiftId;
+                var line = plan.SuggestedLineId ?? order.LineId;
+                var customer = plan.CustomerId is int cid && customerNames.TryGetValue(cid, out var cn)
+                    ? cn : "غير محدد في الخطة";
+                return new TodayProductionRowDto
+                {
+                    PlanId = plan.PlanId, PlanItemId = plan.Id, PlanNumber = plans[plan.PlanId].DocumentNumber,
+                    CustomerId = plan.CustomerId, CustomerName = customer,
+                    ProductId = plan.ProductId, ProductName = productNames.GetValueOrDefault(plan.ProductId, "صنف غير موجود"),
+                    PlannedCartons = plan.PlannedCartons, PlannedKg = plan.PlannedQtyKg,
+                    ScheduledDate = scheduled?.ToString("dd/MM/yyyy"), IsToday = scheduled == Db.BusinessNow.Date,
+                    ShiftId = shift, ShiftName = shift is int sid ? shifts.GetValueOrDefault(sid, "وردية غير موجودة") : "غير محددة في الخطة",
+                    LineId = line, LineName = line is int lid ? lines.GetValueOrDefault(lid, "خط غير موجود") : "غير محدد في الخطة",
+                    OrderId = order.Id, OrderNumber = order.DocumentNumber,
+                    IsPending = false, DayClosed = closed.Contains(order.Id),
+                    Status = closed.Contains(order.Id) ? "مقفل" : DocStatuses.ToArabic(order.Status)
+                };
+            }).ToList();
+    }
+
     public List<ActualDeliveryOrderDto> GetActualDeliveryOrders(int? selectedOrderId = null)
     {
         // الشاشة العامة تعرض أوامر اليوم غير المقفلة فقط. أما بطاقة أمر الإنتاج التي
@@ -32,6 +88,26 @@ public partial class ProductionDeliveryService
         var rows = sheet.Rows.Where(r => r.OrderId != null
             && (!r.DayClosed || (selectedOrderId.HasValue && r.OrderId == selectedOrderId.Value))
             && (!selectedOrderId.HasValue || r.OrderId == selectedOrderId.Value)).ToList();
+
+        // بعض الأوامر القديمة/متعددة العملاء لا تمر عبر OrderId المشتق من ورقة
+        // العرض بسبب اختلاف عميل رأس الأمر عن عميل أحد البنود. نعيد بناء صفوفها
+        // من روابط الأمر ← بند الخطة، دون السماح بأمر يدوي أو خطة غير معتمدة.
+        var businessDay = Db.BusinessNow.Date;
+        var candidates = Db.ProductionOrders.AsNoTracking()
+            .Where(o => o.SourceType == "FromPlan" && o.SourcePlanId != null && o.IsApproved
+                && (selectedOrderId.HasValue
+                    ? o.Id == selectedOrderId.Value
+                    : o.ProductionDate >= businessDay && o.ProductionDate < businessDay.AddDays(1) && !o.IsClosed))
+            .Join(Db.ProductionPlans.AsNoTracking().Where(p => p.IsApproved && p.Status == DocStatuses.Approved && !p.IsClosed),
+                o => o.SourcePlanId, p => p.Id, (o, p) => o.Id)
+            .Distinct().ToList();
+        var missing = candidates.Except(rows.Select(r => r.OrderId!.Value)).ToList();
+        if (missing.Count > 0)
+        {
+            var fallback = GetFallbackPlanRows(missing);
+            rows.AddRange(fallback.Where(r => !r.DayClosed || (selectedOrderId.HasValue && r.OrderId == selectedOrderId.Value)));
+        }
+
         var result = new List<ActualDeliveryOrderDto>();
         foreach (var group in rows.GroupBy(r => r.OrderId.Value))
         {
@@ -112,9 +188,11 @@ public partial class ProductionDeliveryService
             if (canonical.Any(r => !UiFormat.TryParseDate(r.ScheduledDate, out var day) || day.Date > Db.BusinessNow.Date))
                 throw new DomainException("لا يمكن تسجيل تنفيذ قبل يوم الخطة؛ يمكن تسجيل الأمر المتأخر حتى تاريخ اليوم.");
             var order = Db.ProductionOrders.Include(o => o.Items).Single(o => o.Id == input.OrderId);
-            // §v1.50.24: أمر مسودة معتمد يبدأ تنفيذه تلقائياً ضمن نفس العملية —
-            // لا مطالبة المستخدم بالذهاب إلى شاشة الأوامر لبدء التنفيذ أولاً.
-            if (order.Status == DocStatuses.Draft && order.IsApproved && !order.IsClosed)
+            // §v1.50.24/§v1.50.75: التسجيل من بطاقة الأمر يبدأ التنفيذ تلقائياً
+            // للأمر المعتمد المجدول أو المسودة المعتمدة، فلا يُجبر المستخدم على
+            // تشغيل أمر متأخر من زر منفصل يمنعه تاريخ الجهاز.
+            if (order.IsApproved && !order.IsClosed
+                && order.Status is (DocStatuses.Draft or DocStatuses.Approved or DocStatuses.Scheduled))
                 order.Status = DocStatuses.InProgress;
             if (!order.IsApproved || order.IsClosed || order.Status is not (DocStatuses.InProgress or DocStatuses.Stopped))
                 throw new DomainException("يلزم أمر اليوم المعتمد غير المقفل (الملغى أو المقفل لا يُسجَّل).");

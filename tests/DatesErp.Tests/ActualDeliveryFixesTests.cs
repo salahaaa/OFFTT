@@ -25,13 +25,13 @@ public class ActualDeliveryFixesTests
     public void Save_Auto_Starts_Draft_Orders_And_Listing_Accepts_Them()
     {
         string svc = Read("src/DatesErp.Application/Services/ProductionDeliveryService.Actual.cs");
-        // البدء التلقائي قبل فحص الحالة
-        int auto = svc.IndexOf("order.Status == DocStatuses.Draft && order.IsApproved && !order.IsClosed", StringComparison.Ordinal);
+        // البدء التلقائي قبل فحص الحالة: المسودة/المعتمد/المجدول المعتمد.
+        int auto = svc.IndexOf("order.Status is (DocStatuses.Draft or DocStatuses.Approved or DocStatuses.Scheduled)", StringComparison.Ordinal);
         // §v1.50.26: نص استثناء الحفظ كاملاً — ليختلط بالرسالة الجديدة لغير القابل للتسجيل
         int check = svc.IndexOf("يلزم أمر اليوم المعتمد غير المقفل (الملغى أو المقفل لا يُسجَّل)", StringComparison.Ordinal);
         Assert.True(auto > 0 && check > auto, "البدء التلقائي يجب أن يسبق فحص الحالة");
         Assert.Contains("order.Status = DocStatuses.InProgress;", svc);
-        // القائمة تقبل المسودة المعتمدة غير المقفلة (بلا شرط InProgress/Stopped)
+        // القائمة تقبل الأمر المعتمد غير المقفل قبل بدء التنفيذ.
         Assert.Contains("bool can = exe == null && order.IsApproved && !order.IsClosed;", svc);
     }
 
