@@ -65,7 +65,7 @@ jobs:
           $out = "artifacts/MfgSystem_Publish"
           dotnet publish "src/DatesErp.Desktop/DatesErp.Desktop.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o $out
           if (-not (Test-Path "$out/MfgSystem.exe")) { throw "MfgSystem.exe not produced" }
-          Copy-Item "Installer/2-تنصيب.bat" "Installer/فحص_المتطلبات.bat" "Installer/إلغاء_التنصيب.bat" "Installer/README_التنصيب.md" "Installer/تحديث_مباشر.bat" "Installer/تحديث_مباشر.ps1" "Installer/update-manifest.json" "Installer/README_التحديث_المباشر.md" -Destination $out
+          Copy-Item "Installer/2-تنصيب.bat" "Installer/فحص_المتطلبات.bat" "Installer/إلغاء_التنصيب.bat" "Installer/README_التنصيب.md" "Installer/تحديث_مباشر.bat" "Installer/LiveUpdate.bat" "Installer/تحديث_مباشر.ps1" "Installer/update-manifest.json" "Installer/README_التحديث_المباشر.md" -Destination $out
           $ver = (Select-String -Path "src/DatesErp.Desktop/DatesErp.Desktop.csproj" -Pattern '<Version>([^<]+)</Version>').Matches[0].Groups[1].Value
           Set-Content -Path "$out/VERSION.txt" -Value $ver
           $sha = (Get-FileHash "$out/MfgSystem.exe" -Algorithm SHA256).Hash
