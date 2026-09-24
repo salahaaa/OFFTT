@@ -70,13 +70,13 @@ public partial class ProductionDeliveryView : UserControl
         {
             _activeDefinitions = _loadDefinitions?.Invoke() ?? WithService(s => s.GetActualByProducts());
             ByProductDefinitions.Clear(); foreach (var b in _activeDefinitions) ByProductDefinitions.Add(b);
-            var orders = _loadOrders?.Invoke() ?? WithService(s => includeSelectedOrder
-                ? s.GetActualDeliveryOrders(selected)
-                : s.GetActualDeliveryOrders());
+            // الإصدار الحالي من IProductionDeliveryService يعرّض API بدون معامل.
+            // لا نغيّر توقيع الخدمة؛ نحمّل القائمة عبر الاستدعاء الموجود فعلياً.
+            var orders = _loadOrders?.Invoke() ?? WithService(s => s.GetActualDeliveryOrders());
             OrderBox.ItemsSource = orders;
             OrderBox.SelectedItem = orders.FirstOrDefault(o => o.OrderId == selected) ?? orders.FirstOrDefault(o => o.CanRecord) ?? orders.FirstOrDefault();
             PendingOrderId = null;
-            if (orders.Count == 0) StatusLabel.Text = "لا توجد أوامر مطابقة لخطة اليوم المعتمدة. لا تُضاف أصناف أو خطط من هذه الشاشة.";
+            if (orders.Count() == 0) StatusLabel.Text = "لا توجد أوامر مطابقة لخطة اليوم المعتمدة. لا تُضاف أصناف أو خطط من هذه الشاشة.";
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.Load"); }
     }
