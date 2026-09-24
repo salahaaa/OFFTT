@@ -131,21 +131,42 @@ public partial class ProductionDeliveryView : UserControl
     }
     private void Save_Click(object sender, RoutedEventArgs e)
     {
-        if (_saving) return;
-        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto order) return;
-        // §v1.50.24: لا صمت أبداً — سبب تعذّر الحفظ يظهر في بانر الحالة.
-        if (!order.CanRecord)
-        {
-            StatusLabel.Text = "تنبيه — لا يمكن الحفظ: " + (order.Status ?? "الأمر غير قابل للتسجيل.");
-            return;
-        }
         try
         {
+            ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=ENTER Saving={_saving}");
+            if (_saving)
+            {
+                ErrorLog.WriteInfo("ActualDelivery.Save_Click STEP=EXIT Reason=AlreadySaving");
+                return;
+            }
+
+            var selectedItem = OrderBox.SelectedItem;
+            ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=READ_ORDER_SELECTED SelectedItemType={selectedItem?.GetType().FullName ?? "<null>"}");
+            if (selectedItem is not ActualDeliveryOrderDto order)
+            {
+                ErrorLog.WriteInfo("ActualDelivery.Save_Click STEP=EXIT Reason=SelectedItemIsNotActualDeliveryOrderDto");
+                return;
+            }
+
+            ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=READ_ORDER_ID OrderId={order.OrderId}");
+            ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=LOAD_ORDER OrderId={order.OrderId} CanRecord={order.CanRecord} Recorded={order.Recorded} Items={order.Items?.Count ?? 0}");
+            // §v1.50.24: لا صمت أبداً — سبب تعذّر الحفظ يظهر في بانر الحالة.
+            if (!order.CanRecord)
+            {
+                ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=EXIT Reason=OrderCannotRecord OrderId={order.OrderId} Status={order.Status}");
+                StatusLabel.Text = "تنبيه — لا يمكن الحفظ: " + (order.Status ?? "الأمر غير قابل للتسجيل.");
+                return;
+            }
+
+            ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=COMMIT_GRID_EDITS OrderId={order.OrderId}");
             ItemsGrid.CommitEdit(DataGridEditingUnit.Cell, true); ItemsGrid.CommitEdit(DataGridEditingUnit.Row, true);
             SecondaryGrid.CommitEdit(DataGridEditingUnit.Cell, true); SecondaryGrid.CommitEdit(DataGridEditingUnit.Row, true);
+            ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=READ_ACTUAL_ROWS OrderId={order.OrderId} Items={_items.Count} SecondaryItems={_secondary.Count} RawText={RawBox.Text} DowntimeText={DowntimeBox.Text}");
             if (_items.Any(i => !i.TryQuantity(out _))) throw new ArgumentException("أدخل الفعلي لكل بند، كراتين صحيحة لا تتجاوز المخطط. الصفر يُدخل صراحةً.");
             if (!ActualProductionRow.TryNonnegative(RawBox.Text, out var raw) || raw <= 0) throw new ArgumentException("أدخل الخام المستهلك فعليًا — كجم، دون استنتاج من الخطة.");
             if (!ActualProductionRow.TryNonnegative(DowntimeBox.Text, out var hours)) throw new ArgumentException("أدخل ساعات توقف صحيحة غير سالبة.");
+
+            ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=BUILD_DTO OrderId={order.OrderId}");
             var input = new ActualProductionDto { OrderId = order.OrderId, ConsumedRawKg = raw, DowntimeHours = hours, DowntimeReason = ReasonBox.Text, Notes = NotesBox.Text };
             foreach (var i in _items) { i.TryQuantity(out var q); input.Items.Add(new() { OrderItemId = i.Source.OrderItemId, ActualCartons = q }); }
             foreach (var b in _secondary)
@@ -154,21 +175,45 @@ public partial class ProductionDeliveryView : UserControl
                 if (b.Definition == null || !ActualProductionRow.TryNonnegative(b.Quantity, out var q) || q <= 0) throw new ArgumentException("اختر المخرج الثانوي وأدخل كميته الموجبة، أو احذف السطر غير المستخدم.");
                 input.ByProducts.Add(new() { ByProductId = b.Definition.Id, QtyKg = q });
             }
+            ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=DTO_BUILT OrderId={input.OrderId} Items={input.Items.Count} ByProducts={input.ByProducts.Count} ConsumedRawKg={input.ConsumedRawKg} DowntimeHours={input.DowntimeHours}");
+
             _saving = true; SaveButton.IsEnabled = false;
-            ErrorLog.WriteInfo($"ActualDelivery.Save_Click ENTER OrderId={input.OrderId} Items={input.Items.Count} ConsumedRawKg={input.ConsumedRawKg}");
+            ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=CALL_SAVE_ACTUAL_PRODUCTION OrderId={input.OrderId}");
             var r = _saveActual?.Invoke(input) ?? WithService(s => s.SaveActualProduction(input));
-            ErrorLog.WriteInfo($"ActualDelivery.Save_Click EXIT OrderId={input.OrderId} Ok={r.Ok} ResultId={r.Id} Message={r.Message}");
+            ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=RETURN_SAVE_ACTUAL_PRODUCTION OrderId={input.OrderId} Ok={r.Ok} ResultId={r.Id} Message={r.Message}");
             if (!r.Ok) { StatusLabel.Text = r.Message; return; }
             LoadOrders(order.OrderId, true); StatusLabel.Text = r.Message;
         }
-        catch (ArgumentException ex) { StatusLabel.Text = ex.Message; }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.Save"); }
+        catch (ArgumentException ex)
+        {
+            WriteSaveExceptionTrace(ex);
+            StatusLabel.Text = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            WriteSaveExceptionTrace(ex);
+            StatusLabel.Text = $"ActualDelivery.Save: {ex.GetType().FullName}: {ex.Message}";
+        }
         finally
         {
             _saving = false;
             SaveButton.IsEnabled = (OrderBox.SelectedItem as ActualDeliveryOrderDto)?.CanRecord == true;
             CreateDeliveryButton.IsEnabled = (OrderBox.SelectedItem as ActualDeliveryOrderDto)?.CanCreateDelivery == true;
         }
+    }
+
+    private static void WriteSaveExceptionTrace(Exception ex)
+    {
+        var parts = new List<string>();
+        var current = ex;
+        var level = 0;
+        while (current != null)
+        {
+            parts.Add($"InnerExceptionLevel={level} Type={current.GetType().FullName} Message={current.Message} StackTrace={current.StackTrace ?? "<null>"}");
+            current = current.InnerException;
+            level++;
+        }
+        ErrorLog.WriteInfo($"ActualDelivery.Save_Click EXCEPTION\n{string.Join(Environment.NewLine, parts)}");
     }
     private void LoadDelivery(int deliveryId)
     {
