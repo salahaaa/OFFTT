@@ -11,13 +11,19 @@ function Show-Message([string]$Text, [string]$Title, [System.Windows.Forms.Messa
 }
 
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'اختر مجلد المشروع الحالي الذي تريد تحديثه'
+$dialog.Description = 'اختر مجلد Source الذي يحتوي على DateERP.sln أو مجلد src — لا تختر مجلد publish'
 $dialog.ShowNewFolderButton = $false
 if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { exit 0 }
 
 $target = [System.IO.Path]::GetFullPath($dialog.SelectedPath).TrimEnd('\')
-if (-not (Test-Path (Join-Path $target 'src'))) {
-    $answer = Show-Message 'المجلد المختار لا يحتوي على مجلد src. هل تريد المتابعة؟' 'تأكيد مجلد المشروع' ([System.Windows.Forms.MessageBoxButtons]::YesNo) ([System.Windows.Forms.MessageBoxIcon]::Warning)
+$hasSource = (Test-Path (Join-Path $target 'src')) -or (Test-Path (Join-Path $target 'DateERP.sln')) -or (Test-Path (Join-Path $target 'DatesErp.sln'))
+$hasPublishedExe = Test-Path (Join-Path $target 'MfgSystem.exe')
+if ($hasPublishedExe -and -not $hasSource) {
+    Show-Message 'هذا مجلد تشغيل publish ويحتوي على MfgSystem.exe. اختر مجلد Source الذي يحتوي على ملف الحل، وليس مجلد publish.' 'المجلد غير صحيح' | Out-Null
+    exit 0
+}
+if (-not $hasSource) {
+    $answer = Show-Message 'المجلد المختار لا يبدو مجلد مصدر؛ يجب اختيار مجلد Source الذي يحتوي على DateERP.sln أو src. هل تريد المتابعة؟' 'تأكيد مجلد المشروع' ([System.Windows.Forms.MessageBoxButtons]::YesNo) ([System.Windows.Forms.MessageBoxIcon]::Warning)
     if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { exit 0 }
 }
 
