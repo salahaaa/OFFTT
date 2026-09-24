@@ -1,9 +1,14 @@
 param(
     [string]$ArchiveUrl = 'https://github.com/salahaaa/OFFTT/archive/refs/heads/arena/01a0ac34-offtt.zip',
-    [string]$LocalPackageRoot = ''
+    [string]$LocalPackageRoot = '',
+    [string]$LogPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
+$transcriptStarted = $false
+if ($LogPath) {
+    try { Start-Transcript -Path $LogPath -Force | Out-Null; $transcriptStarted = $true } catch { }
+}
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
@@ -113,4 +118,5 @@ catch {
 }
 finally {
     if ($temp -and (Test-Path $temp)) { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
+    if ($transcriptStarted) { try { Stop-Transcript | Out-Null } catch { } }
 }
