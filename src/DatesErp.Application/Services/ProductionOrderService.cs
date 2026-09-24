@@ -839,6 +839,13 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
         // المخطط في الخطة للبنود المرتبطة (كجم + كرتون)
         var planItemIds = order.Items.Where(i => i.PlanItemId != null).Select(i => i.PlanItemId.Value).Distinct().ToList();
         var planItems = Db.ProductionPlanItems.AsNoTracking().Where(i => planItemIds.Contains(i.Id)).ToList();
+        var customerNames = order.Items.Where(i => i.CustomerId != null)
+            .Select(i => Db.Customers.AsNoTracking().Where(c => c.Id == i.CustomerId)
+                .Select(c => c.CustomerName).FirstOrDefault())
+            .Where(n => !string.IsNullOrWhiteSpace(n)).Distinct(StringComparer.Ordinal).ToList();
+        var customerSummary = customerNames.Count <= 1
+            ? customerNames.FirstOrDefault() ?? "-"
+            : $"عدة عملاء ({customerNames.Count}): {string.Join("، ", customerNames)}";
 
         double acceptedKg = 0;
         var qcItems = Db.QualityCheckItems.AsNoTracking()
@@ -872,9 +879,7 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
             OrderNumber = order.DocumentNumber,
             Status = order.IsClosed ? DocStatuses.Closed : order.Status,
             StatusAr = DocStatuses.ToArabic(order.IsClosed ? DocStatuses.Closed : order.Status),
-            CustomerName = order.CustomerId != null
-                ? Db.Customers.AsNoTracking().Where(c => c.Id == order.CustomerId).Select(c => c.CustomerName).FirstOrDefault() ?? "-"
-                : "-",
+            CustomerName = customerSummary,
             RawName = lot != null
                 ? Db.Products.AsNoTracking().Where(p => p.Id == lot.ProductId).Select(p => p.ProductNameAr).FirstOrDefault() ?? "-"
                 : "-",

@@ -20,11 +20,20 @@ public partial class ProductionDeliveryService
             .Select(b => new ActualByProductDefinitionDto { Id = b.Id, Name = b.ByProductNameAr, Unit = b.UnitOfMeasure }).ToList();
     }
 
-    public List<ActualDeliveryOrderDto> GetActualDeliveryOrders()
+    public List<ActualDeliveryOrderDto> GetActualDeliveryOrders(int? selectedOrderId = null)
     {
-        var sheet = new ProductionOrderService(Db, Session, Numbering).GetTodayProduction();
+        // الشاشة العامة تعرض أوامر اليوم غير المقفلة فقط. أما بطاقة أمر الإنتاج التي
+        // فتحت منها نافذة الإقفال فتمرر رقم الأمر، حتى لو كان تاريخ الجدولة سابقاً،
+        // ثم يبقى الأمر المقفول ظاهراً مرة واحدة لإتاحة إنشاء أمر تسليم الإنتاج.
+        var orderService = new ProductionOrderService(Db, Session, Numbering);
+        var sheet = selectedOrderId.HasValue
+            ? orderService.GetScheduledProduction()
+            : orderService.GetTodayProduction();
+        var rows = sheet.Rows.Where(r => r.OrderId != null
+            && (!r.DayClosed || (selectedOrderId.HasValue && r.OrderId == selectedOrderId.Value))
+            && (!selectedOrderId.HasValue || r.OrderId == selectedOrderId.Value)).ToList();
         var result = new List<ActualDeliveryOrderDto>();
-        foreach (var group in sheet.Rows.Where(r => r.OrderId != null).GroupBy(r => r.OrderId.Value))
+        foreach (var group in rows.GroupBy(r => r.OrderId.Value))
         {
             var order = Db.ProductionOrders.AsNoTracking().Single(o => o.Id == group.Key);
             var lines = Db.ProductionOrderItems.AsNoTracking().Where(i => i.OrderId == order.Id).OrderBy(i => i.Id).ToList();
@@ -34,13 +43,18 @@ public partial class ProductionDeliveryService
             var productionDelivery = exe == null ? null : Db.ProductionDeliveries.AsNoTracking()
                 .FirstOrDefault(d => d.SourceType == DeliverySources.FromActual && d.SourceId == exe.Id && d.Status != DocStatuses.Cancelled);
             var first = group.First();
+            var customerNames = group.Select(r => r.CustomerName).Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.Ordinal).ToList();
+            var customerSummary = customerNames.Count <= 1
+                ? customerNames.FirstOrDefault() ?? "—"
+                : $"عدة عملاء ({customerNames.Count}): {string.Join("، ", customerNames)}";
             // §v1.50.24: أمر مسودة معتمد مقبول للتسجيل — الحفظ يبدأ تنفيذه تلقائياً،
             // فلا يحتاج المستخدم خطوة «بدء التنفيذ» من شاشة الأوامر.
             bool can = exe == null && order.IsApproved && !order.IsClosed;
             result.Add(new ActualDeliveryOrderDto
             {
-                OrderId = order.Id, Label = $"{order.DocumentNumber} — {first.CustomerName} — {first.ShiftName}",
-                Customer = first.CustomerName, Shift = first.ShiftName, PlanNumber = first.PlanNumber,
+                OrderId = order.Id, Label = $"{order.DocumentNumber} — {customerSummary} — {first.ShiftName}",
+                Customer = customerSummary, Shift = first.ShiftName, PlanNumber = first.PlanNumber,
                 ExecutionId = exe?.Id ?? 0, ProductionDeliveryId = productionDelivery?.Id ?? 0,
                 Recorded = exe != null, CanRecord = can,
                 CanCreateDelivery = exe != null && productionDelivery == null,
@@ -55,10 +69,17 @@ public partial class ProductionDeliveryService
                 RecordedByProductDefinitions = exe == null ? new() : exe.ByProducts.Select(b => Db.ByProducts.AsNoTracking()
                     .Where(d => d.Id == b.ByProductId).Select(d => new ActualByProductDefinitionDto { Id = d.Id, Name = d.ByProductNameAr, Unit = d.UnitOfMeasure }).Single()).ToList(),
                 ByProducts = exe?.ByProducts.Select(b => new ByProductQtyDto { ByProductId = b.ByProductId, QtyKg = (double)b.Qty }).ToList() ?? new(),
-                Items = lines.Select(i => new ActualDeliveryItemDto
+                Items = lines.Select(i =>
                 {
-                    OrderItemId = i.Id, Product = group.Single(r => r.PlanItemId == i.PlanItemId).ProductName,
-                    Customer = first.CustomerName, PlannedCartons = i.PlannedCartons, ActualCartons = i.ProducedCartons
+                    var planRow = group.Single(r => r.PlanItemId == i.PlanItemId);
+                    return new ActualDeliveryItemDto
+                    {
+                        OrderItemId = i.Id,
+                        Product = planRow.ProductName,
+                        Customer = planRow.CustomerName,
+                        PlannedCartons = i.PlannedCartons,
+                        ActualCartons = i.ProducedCartons
+                    };
                 }).ToList()
             });
         }
@@ -84,9 +105,12 @@ public partial class ProductionDeliveryService
                 throw new DomainException("أدخل ساعات التوقف أو أفرغ سببه عندما لا يوجد توقف.");
             // Fresh authoritative read under SERIALIZABLE: stale UI/context and competing clients cannot repost.
             Db.ChangeTracker.Clear();
-            var canonical = new ProductionOrderService(Db, Session, Numbering).GetTodayProduction().Rows
-                .Where(r => r.OrderId == input.OrderId).ToList();
-            if (canonical.Count == 0) throw new DomainException("الأمر ليس نسخة مطابقة لخطة معتمدة مجدولة لليوم؛ حدّث الشاشة.");
+            var canonical = new ProductionOrderService(Db, Session, Numbering).GetScheduledProduction().Rows
+                .Where(r => r.OrderId == input.OrderId && !r.DayClosed).ToList();
+            if (canonical.Count == 0)
+                throw new DomainException("الأمر ليس نسخة مطابقة لخطة معتمدة مجدولة وغير مقفلة؛ حدّث الشاشة.");
+            if (canonical.Any(r => !UiFormat.TryParseDate(r.ScheduledDate, out var day) || day.Date > Db.BusinessNow.Date))
+                throw new DomainException("لا يمكن تسجيل تنفيذ قبل يوم الخطة؛ يمكن تسجيل الأمر المتأخر حتى تاريخ اليوم.");
             var order = Db.ProductionOrders.Include(o => o.Items).Single(o => o.Id == input.OrderId);
             // §v1.50.24: أمر مسودة معتمد يبدأ تنفيذه تلقائياً ضمن نفس العملية —
             // لا مطالبة المستخدم بالذهاب إلى شاشة الأوامر لبدء التنفيذ أولاً.

@@ -37,14 +37,14 @@ public partial class ProductionDeliveryView : UserControl
             if (e.NewItems != null) foreach (ActualProductionRow r in e.NewItems) r.PropertyChanged += Row_Changed;
             UpdateStats();
         };
-        Loaded += (_, _) => LoadOrders(PendingOrderId);
+        Loaded += (_, _) => LoadOrders(PendingOrderId, PendingOrderId.HasValue);
     }
     public void AttachChrome(Views.ErpChrome chrome)
     {
         chrome.SetModule("تسليم الإنتاج — تسجيل الفعلي"); chrome.SetScreenCode("MRPMPS1021");
         chrome.SetToolbar(new Views.ErpToolbar()
             .WithPrint((_, _) => Print(), "طباعة التنفيذ المحفوظ من قاعدة البيانات")
-            .WithList((_, _) => LoadOrders((OrderBox.SelectedItem as ActualDeliveryOrderDto)?.OrderId), "تحديث أوامر اليوم")
+            .WithList((_, _) => LoadOrders((OrderBox.SelectedItem as ActualDeliveryOrderDto)?.OrderId, false), "تحديث أوامر اليوم")
             .WithExit((_, _) => (Window.GetWindow(this) as MainWindow)?.OpenScreen("dashboard")));
         chrome.SetBody(this);
         chrome.CloseRequested += (_, _) => (Window.GetWindow(this) as MainWindow)?.OpenScreen("dashboard");
@@ -63,13 +63,16 @@ public partial class ProductionDeliveryView : UserControl
         using var scope = AppContainer.NewScope();
         return action(scope.ServiceProvider.GetRequiredService<IProductionDeliveryService>());
     }
-    private void LoadOrders(int? selected)
+    private void LoadOrders(int? selected, bool includeSelectedOrder)
     {
         try
         {
             _activeDefinitions = _loadDefinitions?.Invoke() ?? WithService(s => s.GetActualByProducts());
             ByProductDefinitions.Clear(); foreach (var b in _activeDefinitions) ByProductDefinitions.Add(b);
-            var orders = _loadOrders?.Invoke() ?? WithService(s => s.GetActualDeliveryOrders()); OrderBox.ItemsSource = orders;
+            var orders = _loadOrders?.Invoke() ?? WithService(s => includeSelectedOrder
+                ? s.GetActualDeliveryOrders(selected)
+                : s.GetActualDeliveryOrders());
+            OrderBox.ItemsSource = orders;
             OrderBox.SelectedItem = orders.FirstOrDefault(o => o.OrderId == selected) ?? orders.FirstOrDefault(o => o.CanRecord) ?? orders.FirstOrDefault();
             PendingOrderId = null;
             if (orders.Count == 0) StatusLabel.Text = "لا توجد أوامر مطابقة لخطة اليوم المعتمدة. لا تُضاف أصناف أو خطط من هذه الشاشة.";
@@ -153,7 +156,7 @@ public partial class ProductionDeliveryView : UserControl
             _saving = true; SaveButton.IsEnabled = false;
             var r = _saveActual?.Invoke(input) ?? WithService(s => s.SaveActualProduction(input));
             if (!r.Ok) { StatusLabel.Text = r.Message; return; }
-            LoadOrders(order.OrderId); StatusLabel.Text = r.Message;
+            LoadOrders(order.OrderId, true); StatusLabel.Text = r.Message;
         }
         catch (ArgumentException ex) { StatusLabel.Text = ex.Message; }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.Save"); }
@@ -202,7 +205,7 @@ public partial class ProductionDeliveryView : UserControl
             var result = WithService(s => s.UpdateDelivery(order.ProductionDeliveryId,
                 DateTime.Now.ToString("dd/MM/yyyy"), items, order.Notes));
             if (!result.Ok) { DeliveryStatusLabel.Text = result.Message; return; }
-            LoadOrders(order.OrderId);
+            LoadOrders(order.OrderId, true);
             StatusLabel.Text = result.Message;
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.UpdateDelivery"); }
@@ -215,7 +218,7 @@ public partial class ProductionDeliveryView : UserControl
         {
             var result = WithService(s => s.IssueDelivery(order.ProductionDeliveryId));
             if (!result.Ok) { DeliveryStatusLabel.Text = result.Message; return; }
-            LoadOrders(order.OrderId);
+            LoadOrders(order.OrderId, true);
             StatusLabel.Text = result.Message;
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.IssueDelivery"); }
@@ -233,7 +236,7 @@ public partial class ProductionDeliveryView : UserControl
             var result = WithService(s => s.CreateDeliveryFromActual(order.ExecutionId,
                 DateTime.Now.ToString("dd/MM/yyyy"), order.Notes));
             if (!result.Ok) { StatusLabel.Text = result.Message; return; }
-            LoadOrders(order.OrderId);
+            LoadOrders(order.OrderId, true);
             StatusLabel.Text = result.Message + "\nأمر التسليم مسودة قابلة للتعديل قبل تحريرها للمخزن.";
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.CreateDelivery"); }

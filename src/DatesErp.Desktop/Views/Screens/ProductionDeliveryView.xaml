@@ -34,7 +34,7 @@
     </StackPanel>
    </Grid>
    <StackPanel Grid.Column="1" VerticalAlignment="Center" MinWidth="430">
-    <TextBlock Text="أمر الإنتاج — من خطة اليوم المعتمدة" Style="{StaticResource FieldLabel}" Margin="0,0,0,3"/>
+    <TextBlock Text="أمر الإنتاج — من الخطة المعتمدة" Style="{StaticResource FieldLabel}" Margin="0,0,0,3"/>
     <ComboBox x:Name="OrderBox" DisplayMemberPath="Label" SelectionChanged="Order_Changed"/>
    </StackPanel>
   </Grid>
@@ -167,7 +167,7 @@
        <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
       <TextBlock Text="القياسات الفعلية — الخام والتوقف والمخلفات" FontSize="13" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
-      <TextBlock Grid.Column="1" Text="المخطط ثابت من خطة اليوم — يُدخل الفعلي فقط" FontSize="10.5" Foreground="{StaticResource GrayTextBrush}" VerticalAlignment="Center"/>
+      <TextBlock Grid.Column="1" Text="المخطط ثابت من الخطة المعتمدة — يُدخل الفعلي فقط" FontSize="10.5" Foreground="{StaticResource GrayTextBrush}" VerticalAlignment="Center"/>
      </Grid>
     </Border>
     <StackPanel Margin="12,6,12,10">
@@ -264,7 +264,7 @@
     </StackPanel>
     <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="14,0,0,0" TextWrapping="Wrap"
                FontSize="11" Foreground="{StaticResource GrayTextBrush}"
-               Text="حفظ الفعلي لا ينشئ استلاماً مخزنياً. أنشئ أمر التسليم، عدّل كمياته قبل التحرير، ثم حرره مدير الإنتاج للصرف إلى أمين مخزن التام."/>
+               Text="حفظ الفعلي يقفل جلسة الإنتاج ويرسلها للجودة، ولا ينشئ استلاماً مخزنياً تلقائياً. أنشئ أمر التسليم، عدّل كمياته قبل التحرير، ثم حرره مدير الإنتاج للصرف إلى أمين مخزن التام."/>
    </Grid>
   </Border>
  </Grid>

@@ -1093,7 +1093,8 @@ public interface IFinishedGoodsService
 /// <summary>§B96 — أوامر تسليم الإنتاج (إدارة الإنتاج — يحررها مدير الإنتاج).</summary>
 public interface IProductionDeliveryService
 {
-    List<ActualDeliveryOrderDto> GetActualDeliveryOrders() => throw new NotSupportedException();
+    /// <summary>أوامر التنفيذ لليوم؛ عند تمرير رقم أمر تُعاد بطاقة ذلك الأمر المجدول حتى يمكن إقفاله من بطاقة الأمر ولو كان يومه سابقاً.</summary>
+    List<ActualDeliveryOrderDto> GetActualDeliveryOrders(int? selectedOrderId = null) => throw new NotSupportedException();
     List<ActualByProductDefinitionDto> GetActualByProducts() => throw new NotSupportedException();
     OpResult SaveActualProduction(ActualProductionDto input) => throw new NotSupportedException();
     /// <summary>إنشاء أمر تسليم من مصدر؛ المسار التشغيلي الرسمي هو FromActual من جلسة الإنتاج الفعلي.</summary>
