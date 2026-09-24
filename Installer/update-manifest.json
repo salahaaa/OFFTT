@@ -1,0 +1,14 @@
+{
+  "product": "MfgSystem",
+  "channel": "stable",
+  "repository": "salahaaa/OFFTT",
+  "releaseApi": "https://api.github.com/repos/salahaaa/OFFTT/releases/latest",
+  "assetPattern": "MfgSystem_*_FULL.zip",
+  "executable": "MfgSystem.exe",
+  "dataFolder": "%LOCALAPPDATA%\\MfgSystem",
+  "minimumSupportedVersion": "1.50.74",
+  "preserve": [
+    "%LOCALAPPDATA%\\MfgSystem\\config.json",
+    "%LOCALAPPDATA%\\MfgSystem\\*.db"
+  ]
+}

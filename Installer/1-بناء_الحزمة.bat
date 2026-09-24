@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 REM =========================================================================
 REM  MfgSystem — Build the install package  (run ONCE on a dev machine)
@@ -82,6 +82,10 @@ copy /y "%~dp02-تنصيب.bat"        "%OUT%\" >nul
 copy /y "%~dp0فحص_المتطلبات.bat"   "%OUT%\" >nul
 copy /y "%~dp0إلغاء_التنصيب.bat"    "%OUT%\" >nul
 copy /y "%~dp0README_التنصيب.md"    "%OUT%\" >nul
+copy /y "%~dp0تحديث_مباشر.bat"       "%OUT%\" >nul
+copy /y "%~dp0تحديث_مباشر.ps1"       "%OUT%\" >nul
+copy /y "%~dp0update-manifest.json"  "%OUT%\" >nul
+copy /y "%~dp0README_التحديث_المباشر.md" "%OUT%\" >nul
 
 powershell -NoProfile -Command "$v=(Select-String -Path '%PROJ%' -Pattern '<Version>([^<]+)</Version>').Matches[0].Groups[1].Value; Set-Content -Path '%OUT%\VERSION.txt' -Value $v -Encoding ascii; Write-Host 'VERSION:' $v"
 if not exist "%OUT%\VERSION.txt" (

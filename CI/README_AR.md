@@ -2,7 +2,7 @@
 
 الملف `CI_WORKFLOW_READY.yml` هو **ملف CI الكامل** مع خطوة جديدة:
 **«Build Windows installer package»** — تنشر `MfgSystem.exe` مكتفياً ذاتياً (win-x64)،
-تضيف أدوات التنصيب، تولّد `VERSION.txt` و`SHA256.txt`، وتضغط الحزمة وترفعها كـ artifact
+تضيف أدوات التنصيب والتحديث المباشر، تولّد `VERSION.txt` و`SHA256.txt`، وتضغط الحزمة وترفعها كـ artifact
 اسمها **`mfgsystem-installer-package`** (صلاح 30 يومًا) عند كل دفع ناجح على ويندوز.
 
 ## لماذا لا يوجد في `.github/workflows/` الآن؟
