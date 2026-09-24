@@ -182,7 +182,27 @@ public partial class ProductionDeliveryView : UserControl
             var r = _saveActual?.Invoke(input) ?? WithService(s => s.SaveActualProduction(input));
             ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=RETURN_SAVE_ACTUAL_PRODUCTION OrderId={input.OrderId} Ok={r.Ok} ResultId={r.Id} Message={r.Message}");
             if (!r.Ok) { StatusLabel.Text = r.Message; return; }
-            LoadOrders(order.OrderId, true); StatusLabel.Text = r.Message;
+            string msg = r.Message;
+            int exeId = r.Id;
+            if (exeId > 0)
+            {
+                try
+                {
+                    var delRes = WithService(s => s.CreateDeliveryFromActual(exeId, DateTime.Now.ToString("dd/MM/yyyy"), input.Notes));
+                    if (delRes.Ok)
+                    {
+                        msg += "\n" + delRes.Message;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ErrorLog.WriteInfo($"ActualDelivery.Save_Click AutoCreateDeliveryFailed: {ex.Message}");
+                    WriteSaveExceptionTrace(ex);
+                }
+            }
+            MessageBox.Show(msg, "تأكيد حفظ تسجيل الفعلي وإقفال اليوم", MessageBoxButton.OK, MessageBoxImage.Information);
+            StatusLabel.Text = msg;
+            LoadOrders(null, false);
         }
         catch (ArgumentException ex)
         {
@@ -219,6 +239,7 @@ public partial class ProductionDeliveryView : UserControl
     {
         try
         {
+            _deliveryItems.Clear();
             var card = WithService(s => s.GetDelivery(deliveryId));
             if (card == null) return;
             DeliveryStatusLabel.Text = $"{card.DocumentNumber} — {card.StatusAr} — المصدر: {card.SourceNumber} ({card.SourceTypeAr})";
@@ -247,6 +268,7 @@ public partial class ProductionDeliveryView : UserControl
             DeliveryItemsGrid.CommitEdit(DataGridEditingUnit.Row, true);
             var items = _deliveryItems.Where(x => x.QtyKg > 0.001).Select(x => new ProductionDeliveryItemDto
             {
+                OrderId = order.OrderId,
                 ProductId = x.ProductId, LotId = x.LotId, CustomerId = x.CustomerId,
                 PackagingTypeId = x.PackagingTypeId, PackageCount = x.PackageCount, QtyKg = x.QtyKg
             }).ToList();

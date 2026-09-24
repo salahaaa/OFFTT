@@ -12,10 +12,10 @@ public partial class ProductionDeliveryService
     protected override bool RetryTransactionDeadlocks => true;
     protected override System.Data.IsolationLevel TransactionIsolation => System.Data.IsolationLevel.Serializable;
 
+    /// <summary>المخرجات الثانوية الرسمية تُقرأ من جدول تعريفات ByProducts، وهو المرجع الذي تستخدمه ExecutionByProduct.ByProductId.</summary>
     public List<ActualByProductDefinitionDto> GetActualByProducts()
     {
         if (Session == null || !Session.Can("production", "View")) throw new PermissionDeniedException("عرض الإنتاج");
-        // The configured secondary-output definitions (ByProducts master), NOT unrelated Products IDs.
         return Db.ByProducts.AsNoTracking().Where(b => b.IsActive).OrderBy(b => b.Id)
             .Select(b => new ActualByProductDefinitionDto { Id = b.Id, Name = b.ByProductNameAr, Unit = b.UnitOfMeasure }).ToList();
     }
@@ -79,81 +79,147 @@ public partial class ProductionDeliveryService
 
     public List<ActualDeliveryOrderDto> GetActualDeliveryOrders(int? selectedOrderId = null)
     {
-        // الشاشة العامة تعرض أوامر اليوم غير المقفلة فقط. أما بطاقة أمر الإنتاج التي
-        // فتحت منها نافذة الإقفال فتمرر رقم الأمر، حتى لو كان تاريخ الجدولة سابقاً،
-        // ثم يبقى الأمر المقفول ظاهراً مرة واحدة لإتاحة إنشاء أمر تسليم الإنتاج.
-        var orderService = new ProductionOrderService(Db, Session, Numbering);
-        var sheet = selectedOrderId.HasValue
-            ? orderService.GetScheduledProduction()
-            : orderService.GetTodayProduction();
-        var rows = sheet.Rows.Where(r => r.OrderId != null
-            && (!r.DayClosed || (selectedOrderId.HasValue && r.OrderId == selectedOrderId.Value))
-            && (!selectedOrderId.HasValue || r.OrderId == selectedOrderId.Value)).ToList();
+        var closedExeOrderIds = Db.ProductionExecutions.AsNoTracking()
+            .Where(e => e.IsDayClosed)
+            .Select(e => e.OrderId)
+            .ToHashSet();
 
-        // بعض الأوامر القديمة/متعددة العملاء لا تمر عبر OrderId المشتق من ورقة
-        // العرض بسبب اختلاف عميل رأس الأمر عن عميل أحد البنود. نعيد بناء صفوفها
-        // من روابط الأمر ← بند الخطة، دون السماح بأمر يدوي أو خطة غير معتمدة.
-        var businessDay = Db.BusinessNow.Date;
-        var candidates = Db.ProductionOrders.AsNoTracking()
+        // الأوامر التي لها تنفيذ مقفل ولم يُنشأ لها أمر تسليم بعد — تبقى ظاهرة حتى يُنشأ الأمر
+        var closedExeList = Db.ProductionExecutions.AsNoTracking()
+            .Where(e => e.IsDayClosed)
+            .Select(e => new { e.Id, e.OrderId })
+            .ToList();
+        var deliveredExeIds = Db.ProductionDeliveries.AsNoTracking()
+            .Where(d => d.SourceType == DeliverySources.FromActual && d.Status != DocStatuses.Cancelled)
+            .Select(d => d.SourceId)
+            .ToHashSet();
+        var closedExeWithNoDelivery = closedExeList
+            .Where(e => !deliveredExeIds.Contains(e.Id))
+            .Select(e => e.OrderId)
+            .ToHashSet();
+
+        var orders = Db.ProductionOrders.AsNoTracking()
             .Where(o => o.SourceType == "FromPlan" && o.SourcePlanId != null && o.IsApproved
-                && (selectedOrderId.HasValue
-                    ? o.Id == selectedOrderId.Value
-                    : o.ProductionDate >= businessDay && o.ProductionDate < businessDay.AddDays(1) && !o.IsClosed))
-            .Join(Db.ProductionPlans.AsNoTracking().Where(p => p.IsApproved && p.Status == DocStatuses.Approved && !p.IsClosed),
-                o => o.SourcePlanId, p => p.Id, (o, p) => o.Id)
+                && o.Status != DocStatuses.Cancelled
+                && (selectedOrderId.HasValue ? o.Id == selectedOrderId.Value
+                    : (!o.IsClosed && !closedExeOrderIds.Contains(o.Id) || closedExeWithNoDelivery.Contains(o.Id))))
+            .OrderByDescending(o => o.Id)
+            .ToList();
+
+        if (orders.Count == 0) return new();
+
+        var orderIds = orders.Select(o => o.Id).ToList();
+        var items = Db.ProductionOrderItems.AsNoTracking().Where(i => orderIds.Contains(i.OrderId)).ToList();
+        var productIds = items.Select(i => i.ProductId).Distinct().ToList();
+        var products = Db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id)).ToDictionary(p => p.Id, p => p.ProductNameAr);
+
+        var planItemIds = items.Where(i => i.PlanItemId != null).Select(i => i.PlanItemId!.Value).Distinct().ToList();
+        var planItems = Db.ProductionPlanItems.AsNoTracking().Where(pi => planItemIds.Contains(pi.Id)).ToDictionary(pi => pi.Id);
+
+        var planIds = orders.Where(o => o.SourcePlanId != null).Select(o => o.SourcePlanId!.Value)
+            .Concat(planItems.Values.Select(pi => pi.PlanId))
             .Distinct().ToList();
-        var missing = candidates.Except(rows.Select(r => r.OrderId!.Value)).ToList();
-        if (missing.Count > 0)
-        {
-            var fallback = GetFallbackPlanRows(missing);
-            rows.AddRange(fallback.Where(r => !r.DayClosed || (selectedOrderId.HasValue && r.OrderId == selectedOrderId.Value)));
-        }
+        var plans = Db.ProductionPlans.AsNoTracking().Where(p => planIds.Contains(p.Id)).ToDictionary(p => p.Id, p => p.DocumentNumber);
+
+        var shiftIds = orders.Where(o => o.ShiftId != null).Select(o => o.ShiftId!.Value).Distinct().ToList();
+        var shifts = Db.Shifts.AsNoTracking().Where(s => shiftIds.Contains(s.Id)).ToDictionary(s => s.Id, s => s.ShiftNameAr);
+
+        var customerIds = orders.Where(o => o.CustomerId != null).Select(o => o.CustomerId!.Value)
+            .Concat(items.Where(i => i.CustomerId != null).Select(i => i.CustomerId!.Value))
+            .Concat(planItems.Values.Where(pi => pi.CustomerId != null).Select(pi => pi.CustomerId!.Value))
+            .Distinct().ToList();
+        var customers = Db.Customers.AsNoTracking().Where(c => customerIds.Contains(c.Id)).ToDictionary(c => c.Id, c => c.CustomerName);
+
+        var executionRows = Db.ProductionExecutions.AsNoTracking()
+            .Include(e => e.Downtimes).Include(e => e.ByProducts)
+            .Where(e => orderIds.Contains(e.OrderId) && e.IsDayClosed)
+            .ToList();
+        // بيانات قديمة قد تحتوي أكثر من تنفيذ مقفل؛ لا تجعل شاشة الأوامر تنهار بسبب ToDictionary.
+        var executions = executionRows
+            .GroupBy(e => e.OrderId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(e => e.Id).First());
+
+        var exeIds = executions.Values.Select(e => e.Id).ToList();
+        var qualityChecks = Db.QualityChecks.AsNoTracking()
+            .Where(q => q.ExecutionId != null && exeIds.Contains(q.ExecutionId.Value))
+            .ToList()
+            .GroupBy(q => q.ExecutionId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(q => q.Id).First());
+        var deliveries = Db.ProductionDeliveries.AsNoTracking()
+            .Where(d => d.SourceType == DeliverySources.FromActual && exeIds.Contains(d.SourceId) && d.Status != DocStatuses.Cancelled)
+            .ToList()
+            .GroupBy(d => d.SourceId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(d => d.Id).First());
+
+        // ByProductId هو مفتاح جدول تعريفات المخرجات الثانوية، وليس ProductId.
+        var byProductDefs = Db.ByProducts.AsNoTracking()
+            .ToDictionary(b => b.Id, b => new ActualByProductDefinitionDto { Id = b.Id, Name = b.ByProductNameAr, Unit = b.UnitOfMeasure });
 
         var result = new List<ActualDeliveryOrderDto>();
-        foreach (var group in rows.GroupBy(r => r.OrderId.Value))
+        foreach (var order in orders)
         {
-            var order = Db.ProductionOrders.AsNoTracking().Single(o => o.Id == group.Key);
-            var lines = Db.ProductionOrderItems.AsNoTracking().Where(i => i.OrderId == order.Id).OrderBy(i => i.Id).ToList();
-            var exe = Db.ProductionExecutions.AsNoTracking().Include(e => e.Downtimes).Include(e => e.ByProducts)
-                .FirstOrDefault(e => e.OrderId == order.Id && e.IsDayClosed);
-            var qc = exe == null ? null : Db.QualityChecks.AsNoTracking().FirstOrDefault(q => q.ExecutionId == exe.Id);
-            var productionDelivery = exe == null ? null : Db.ProductionDeliveries.AsNoTracking()
-                .FirstOrDefault(d => d.SourceType == DeliverySources.FromActual && d.SourceId == exe.Id && d.Status != DocStatuses.Cancelled);
-            var first = group.First();
-            var customerNames = group.Select(r => r.CustomerName).Where(n => !string.IsNullOrWhiteSpace(n))
-                .Distinct(StringComparer.Ordinal).ToList();
-            var customerSummary = customerNames.Count <= 1
-                ? customerNames.FirstOrDefault() ?? "—"
-                : $"عدة عملاء ({customerNames.Count}): {string.Join("، ", customerNames)}";
-            // §v1.50.24: أمر مسودة معتمد مقبول للتسجيل — الحفظ يبدأ تنفيذه تلقائياً،
-            // فلا يحتاج المستخدم خطوة «بدء التنفيذ» من شاشة الأوامر.
-            bool can = exe == null && order.IsApproved && !order.IsClosed;
+            var orderItems = items.Where(i => i.OrderId == order.Id).OrderBy(i => i.Id).ToList();
+            executions.TryGetValue(order.Id, out var exe);
+            var qc = exe == null ? null : qualityChecks.GetValueOrDefault(exe.Id);
+            var productionDelivery = exe == null ? null : deliveries.GetValueOrDefault(exe.Id);
+
+            var planNum = order.SourcePlanId != null && plans.TryGetValue(order.SourcePlanId.Value, out var pn) ? pn : "—";
+            var shiftName = order.ShiftId != null && shifts.TryGetValue(order.ShiftId.Value, out var sn) ? sn : "وردية غير محددة";
+
+            var itemCustomerNames = orderItems.Select(i =>
+            {
+                int? cid = i.CustomerId ?? (i.PlanItemId != null && planItems.TryGetValue(i.PlanItemId.Value, out var pi) ? pi.CustomerId : null) ?? order.CustomerId;
+                return cid != null && customers.TryGetValue(cid.Value, out var cn) ? cn : null;
+            }).Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!).Distinct().ToList();
+
+            if (itemCustomerNames.Count == 0 && order.CustomerId != null && customers.TryGetValue(order.CustomerId.Value, out var orderCust))
+            {
+                itemCustomerNames.Add(orderCust);
+            }
+
+            var customerSummary = itemCustomerNames.Count == 0 ? "عام / غير محدد"
+                : itemCustomerNames.Count == 1 ? itemCustomerNames[0]
+                : $"عدة عملاء ({itemCustomerNames.Count}): {string.Join("، ", itemCustomerNames)}";
+
+            bool can = exe == null && order.IsApproved && !order.IsClosed && order.Status != DocStatuses.Cancelled;
+
             result.Add(new ActualDeliveryOrderDto
             {
-                OrderId = order.Id, Label = $"{order.DocumentNumber} — {customerSummary} — {first.ShiftName}",
-                Customer = customerSummary, Shift = first.ShiftName, PlanNumber = first.PlanNumber,
-                ExecutionId = exe?.Id ?? 0, ProductionDeliveryId = productionDelivery?.Id ?? 0,
-                Recorded = exe != null, CanRecord = can,
+                OrderId = order.Id,
+                Label = $"{order.DocumentNumber} — {customerSummary} — {shiftName}",
+                Customer = customerSummary,
+                Shift = shiftName,
+                PlanNumber = planNum,
+                ExecutionId = exe?.Id ?? 0,
+                ProductionDeliveryId = productionDelivery?.Id ?? 0,
+                Recorded = exe != null,
+                CanRecord = can,
                 CanCreateDelivery = exe != null && productionDelivery == null,
                 Status = productionDelivery != null ? $"تم إنشاء أمر تسليم الإنتاج {productionDelivery.DocumentNumber} — {DocStatuses.ToArabic(productionDelivery.Status)}"
                     : exe != null ? "إنتاج فعلي محفوظ — لا يوجد استلام مخزني تلقائي؛ أنشئ أمر التسليم من هنا"
-                    : can ? "أدخل الفعلي فقط؛ المخطط ثابت من خطة اليوم" : "يلزم أمر اليوم المعتمد غير المقفل — اختر الأمر الصحيح من القائمة",
-                ReceiptNumber = null, QualityNumber = qc?.DocumentNumber,
+                    : can ? "أدخل الفعلي فقط؛ المخطط ثابت من أمر الإنتاج" : "الأمر غير قابل للتسجيل (مغلق أو ملغى).",
+                ReceiptNumber = null,
+                QualityNumber = qc?.DocumentNumber,
                 ProductionDeliveryNumber = productionDelivery?.DocumentNumber,
                 ProductionDeliveryStatus = productionDelivery == null ? null : DocStatuses.ToArabic(productionDelivery.Status),
-                ConsumedRawKg = exe?.ConsumedRawKg ?? 0, DowntimeHours = exe?.Downtimes.Sum(d => d.Hours) ?? 0,
-                DowntimeReason = exe == null ? null : string.Join("؛ ", exe.Downtimes.Select(d => d.ReasonAr)), Notes = exe?.ClosingNotes,
-                RecordedByProductDefinitions = exe == null ? new() : exe.ByProducts.Select(b => Db.ByProducts.AsNoTracking()
-                    .Where(d => d.Id == b.ByProductId).Select(d => new ActualByProductDefinitionDto { Id = d.Id, Name = d.ByProductNameAr, Unit = d.UnitOfMeasure }).Single()).ToList(),
+                ConsumedRawKg = exe?.ConsumedRawKg ?? 0,
+                DowntimeHours = exe?.Downtimes.Sum(d => d.Hours) ?? 0,
+                DowntimeReason = exe == null ? null : string.Join("؛ ", exe.Downtimes.Select(d => d.ReasonAr)),
+                Notes = exe?.ClosingNotes,
+                RecordedByProductDefinitions = exe == null ? new() : exe.ByProducts
+                    .Where(b => byProductDefs.ContainsKey(b.ByProductId))
+                    .Select(b => byProductDefs[b.ByProductId]).ToList(),
                 ByProducts = exe?.ByProducts.Select(b => new ByProductQtyDto { ByProductId = b.ByProductId, QtyKg = (double)b.Qty }).ToList() ?? new(),
-                Items = lines.Select(i =>
+                Items = orderItems.Select(i =>
                 {
-                    var planRow = group.Single(r => r.PlanItemId == i.PlanItemId);
+                    int? itemCustId = i.CustomerId ?? (i.PlanItemId != null && planItems.TryGetValue(i.PlanItemId.Value, out var pi) ? pi.CustomerId : null) ?? order.CustomerId;
+                    string itemCustName = itemCustId != null && customers.TryGetValue(itemCustId.Value, out var cn) ? cn : customerSummary;
+
                     return new ActualDeliveryItemDto
                     {
                         OrderItemId = i.Id,
-                        Product = planRow.ProductName,
-                        Customer = planRow.CustomerName,
+                        Product = i.ProductId != 0 && products.TryGetValue(i.ProductId, out var prodName) ? prodName : "صنف غير محدد",
+                        Customer = itemCustName,
                         PlannedCartons = i.PlannedCartons,
                         ActualCartons = i.ProducedCartons
                     };
@@ -233,9 +299,10 @@ public partial class ProductionDeliveryService
             if (secondary.Any(b => b == null || !double.IsFinite(b.QtyKg) || b.QtyKg <= 0 || b.QtyKg >= 1e15 || Math.Abs(b.QtyKg - Math.Round(b.QtyKg, 4)) > 1e-9 || Math.Round(b.QtyKg, 4) <= 0)
                 || secondary.Select(b => b.ByProductId).Distinct().Count() != secondary.Count)
                 throw new DomainException("اختر كل مخرج ثانوي مرة واحدة بكمية موجبة صالحة للتخزين.");
+            // ByProductId هو مفتاح تعريف المخرج الثانوي؛ لا نخلطه مع ProductId.
             var definitions = GetActualByProducts().Select(b => b.Id).ToHashSet();
             if (secondary.Any(b => !definitions.Contains(b.ByProductId)))
-                throw new DomainException("المخرج الثانوي غير موجود أو موقوف في قائمة التعريفات.");
+                throw new DomainException("المخرج الثانوي غير معرَّف في شاشة الأصناف (نوع: مخرج ثانوي) أو موقوف — أضفه من بطاقة الأصناف.");
             var beforeExecutions = Db.ProductionExecutions.AsNoTracking()
                 .Where(e => e.OrderId == order.Id)
                 .OrderBy(e => e.Id)
@@ -259,6 +326,14 @@ public partial class ProductionDeliveryService
                 throw new DomainException(
                     "تم تسجيل العملية دون تثبيت إقفال يوم الإنتاج في سجل التنفيذ — لم تُعتمد العملية.",
                     "EXECUTION_CLOSE_NOT_PERSISTED");
+            // لا نغلق رأس الأمر عند إقفال يوم جزئي؛ يبقى قابلاً للاستكمال حتى تكتمل بنوده.
+            if (order.Items.All(i => i.IsClosed || i.ProducedQtyKg + 0.001 >= i.PlannedQtyKg))
+            {
+                order.Status = DocStatuses.Completed;
+                order.IsClosed = true;
+                order.ClosedDate = Db.BusinessNow;
+                Db.SaveChanges();
+            }
             var qc = Db.QualityChecks.SingleOrDefault(q => q.ExecutionId == exe.Id);
             if (qc != null)
             {

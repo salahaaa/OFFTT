@@ -42,6 +42,18 @@ public class ActualProductionTests
         Assert.True(execution.IsDayClosed);
         Assert.Equal(DocStatuses.Completed, execution.Status);
         Assert.NotNull(execution.EndDateTime);
+
+        // Regression guard: closing the execution must close the production order and every item too.
+        db.ChangeTracker.Clear();
+        var persistedOrder = Assert.Single(db.ProductionOrders.AsNoTracking().Include(o => o.Items).Where(o => o.Id == orderId));
+        Assert.True(persistedOrder.IsClosed);
+        Assert.Equal(DocStatuses.Completed, persistedOrder.Status);
+        Assert.NotEmpty(persistedOrder.Items);
+        Assert.All(persistedOrder.Items, item =>
+        {
+            Assert.True(item.IsClosed);
+            Assert.Equal(DocStatuses.Completed, item.Status);
+        });
     }
 
     [Theory]

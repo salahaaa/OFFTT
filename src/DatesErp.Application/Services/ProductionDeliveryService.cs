@@ -164,7 +164,7 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
                         .Where(o => o.OrderId == lineOrderId && o.ProductId == it.ProductId).Sum(o => o.ProducedQtyKg);
                     double deliveredAll = Db.ProductionDeliveryItems.AsNoTracking()
                         .Join(Db.ProductionDeliveries.AsNoTracking(), i => i.DeliveryId, d => d.Id, (i, d) => new { i, d })
-                        .Where(x => x.d.Status != DocStatuses.Cancelled && x.i.OrderId == lineOrderId && x.i.ProductId == it.ProductId)
+                        .Where(x => x.d.Status != DocStatuses.Cancelled && x.d.Id != delivery.Id && x.i.OrderId == lineOrderId && x.i.ProductId == it.ProductId)
                         .Sum(x => x.i.QtyKg);
                     // §المباشر القديم يُرى أيضاً (المربوط داخل deliveredAll أصلاً فلا ازدواج)
                     double directReceived = Db.FinishedGoodsReceiptItems.AsNoTracking()

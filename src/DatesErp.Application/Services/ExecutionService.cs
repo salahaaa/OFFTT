@@ -344,9 +344,18 @@ public class ExecutionService : ServiceBase, IExecutionService
                     if (remainingBoxes <= 0) break;
                 }
             }
-            // §حالة الأمر: اكتملت كل البنود ← «مكتمل»
+            // §حالة الأمر: يُغلق الأمر فقط بعد اكتمال جميع بنوده؛ إقفال يوم جزئي يبقى قابلاً للاستكمال.
             if (order.Items.All(i => i.IsClosed || i.ProducedQtyKg + 0.001 >= i.PlannedQtyKg))
+            {
                 order.Status = DocStatuses.Completed;
+                order.IsClosed = true;
+                order.ClosedDate = DateTime.Now;
+                foreach (var item in order.Items)
+                {
+                    item.IsClosed = true;
+                    item.Status = DocStatuses.Completed;
+                }
+            }
 
             if (isNew) Db.ProductionExecutions.Add(exe);
             // حفظ مبكر مقصود: يثبت سجل التنفيذ قبل متابعة الترحيلات اللاحقة،
