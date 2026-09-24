@@ -138,8 +138,14 @@ public static class ThemeManager
         resources["ThemeColumnDividerThickness"] = visual.ShowColumnDividers ? new Thickness(0, 0, Math.Max(0, visual.BorderThickness), Math.Max(0, visual.BorderThickness)) : new Thickness(0);
         resources["ThemeCornerRadius"] = new CornerRadius(Math.Max(0, visual.CornerRadius));
         resources["ThemeButtonCornerRadius"] = new CornerRadius(visual.ButtonStyle is "Square" or "Flat" ? 0 : Math.Max(0, visual.CornerRadius));
-        resources["ThemeInputPadding"] = new Thickness(Math.Max(0, visual.Padding), Math.Max(0, visual.Padding / 1.5));
-        resources["ThemeButtonPadding"] = new Thickness(Math.Max(4, visual.Padding * 2), Math.Max(2, visual.Padding));
+        var inputPaddingHorizontal = Math.Max(0, visual.Padding);
+        var inputPaddingVertical = Math.Max(0, visual.Padding / 1.5);
+        resources["ThemeInputPadding"] = new Thickness(inputPaddingHorizontal, inputPaddingVertical,
+            inputPaddingHorizontal, inputPaddingVertical);
+        var buttonPaddingHorizontal = Math.Max(4, visual.Padding * 2);
+        var buttonPaddingVertical = Math.Max(2, visual.Padding);
+        resources["ThemeButtonPadding"] = new Thickness(buttonPaddingHorizontal, buttonPaddingVertical,
+            buttonPaddingHorizontal, buttonPaddingVertical);
         resources["ThemeCardPadding"] = new Thickness(Math.Max(0, visual.Padding * 2));
         resources["ThemeRowHeight"] = Math.Max(18, visual.RowHeight);
         resources["ThemeTitleBarHeight"] = Math.Max(24, visual.TitleBarHeight);
