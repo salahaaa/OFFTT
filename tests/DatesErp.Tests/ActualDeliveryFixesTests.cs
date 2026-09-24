@@ -36,6 +36,17 @@ public class ActualDeliveryFixesTests
     }
 
     [Fact]
+    public void Production_Delivery_Screen_Uses_The_Compiled_Order_API()
+    {
+        string cs = Read("src/DatesErp.Desktop/Views/Screens/ProductionDeliveryView.xaml.cs");
+        // Regression guard for the build failure: the deployed API is consumed without a selected-id argument.
+        Assert.Contains("GetActualDeliveryOrders());", cs);
+        Assert.DoesNotContain("GetActualDeliveryOrders(selected)", cs);
+        // Count is an extension method for the API's enumerable result, not a property/method group comparison.
+        Assert.Contains("orders.Count()", cs);
+    }
+
+    [Fact]
     public void Save_Never_Fails_Silently_And_Input_Panel_Hides_When_Not_Recordable()
     {
         string cs = Read("src/DatesErp.Desktop/Views/Screens/ProductionDeliveryView.xaml.cs");
