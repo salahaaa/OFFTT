@@ -3,7 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              FlowDirection="RightToLeft">
     <!-- §v1.50.36 — شاشة واحدة: الخطط المجدولة + مستند الأمر أسفلها بلا تبديل واجهات. -->
-    <DockPanel x:Name="ListArea" LastChildFill="True" Margin="12">
+    <!-- المحتوى قد يتجاوز ارتفاع النافذة عند فتح مستند الأمر؛ التمرير هنا يحافظ على
+         ظهور شريط الأوامر والجدول ويتيح الوصول إلى كل بيانات المستند أسفل الجدول. -->
+    <ScrollViewer x:Name="OrdersScroll" VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+        <DockPanel x:Name="ListArea" LastChildFill="True" Margin="12">
         <!-- رأس الشاشة: شريط داكن مطابق للهوية المرئية المعتمدة في نموذج التصميم. -->
         <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Background="#071B2E" BorderBrush="#071B2E" Padding="16,11" Margin="0,0,0,6">
             <StackPanel>
@@ -114,5 +118,6 @@
                 </Grid>
             </Border>
         </Grid>
-    </DockPanel>
+        </DockPanel>
+    </ScrollViewer>
 </UserControl>

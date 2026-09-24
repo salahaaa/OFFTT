@@ -344,7 +344,8 @@
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="bd" Property="Background" Value="{DynamicResource ThemeBorderBrush}"/>
                             <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource ThemeBorderBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource ThemeBorderBrush}"/>
+                            <!-- النص يبقى مقروءاً عند تعطيل الزر؛ لون الحد كان يطابق الخلفية فيختفي -->
+                            <Setter Property="Foreground" Value="{DynamicResource ThemeSecondaryTextBrush}"/>
                             <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -389,7 +390,8 @@
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="bd" Property="Background" Value="{DynamicResource ThemeBorderBrush}"/>
                             <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource ThemeBorderBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource ThemeBorderBrush}"/>
+                            <!-- النص يبقى مقروءاً عند تعطيل الزر؛ لون الحد كان يطابق الخلفية فيختفي -->
+                            <Setter Property="Foreground" Value="{DynamicResource ThemeSecondaryTextBrush}"/>
                             <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -434,7 +436,8 @@
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="bd" Property="Background" Value="{DynamicResource ThemeBorderBrush}"/>
                             <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource ThemeBorderBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource ThemeBorderBrush}"/>
+                            <!-- النص يبقى مقروءاً عند تعطيل الزر؛ لون الحد كان يطابق الخلفية فيختفي -->
+                            <Setter Property="Foreground" Value="{DynamicResource ThemeSecondaryTextBrush}"/>
                             <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -479,7 +482,8 @@
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="bd" Property="Background" Value="{DynamicResource ThemeBorderBrush}"/>
                             <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource ThemeBorderBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource ThemeBorderBrush}"/>
+                            <!-- النص يبقى مقروءاً عند تعطيل الزر؛ لون الحد كان يطابق الخلفية فيختفي -->
+                            <Setter Property="Foreground" Value="{DynamicResource ThemeSecondaryTextBrush}"/>
                             <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>

@@ -22,7 +22,13 @@ public class LotsEditorWindow : Window
     private readonly int _lineId;
     private bool _refreshing;
     private readonly TextBox _filterBox = new() { Width = 220 };
-    private readonly ComboBox _productFilter = new() { Width = 190, MinHeight = 24 };
+    private readonly ComboBox _productFilter = new()
+    {
+        Width = 190,
+        MinHeight = 24,
+        DisplayMemberPath = nameof(ProductOption.Name),
+        SelectedValuePath = nameof(ProductOption.Id)
+    };
     private readonly CheckBox _checkAll = new() { VerticalAlignment = VerticalAlignment.Center };
     private readonly List<LotEditorRow> _rows;
     private readonly List<LotEditorRow> _all;
@@ -190,7 +196,11 @@ public class LotsEditorWindow : Window
             var selected = _all.Where(r => r.IsChecked).ToList(); // filters NEVER change consumption
             var result = Evaluate(selected);
             _capacityBar.Text = BuildBar(selected, result);
-            _capacityError.Text = _all.FirstOrDefault(r => r.QuantityError != null)?.QuantityError ?? result.Error ?? "";
+            // لا تعرض خطأ ناتجاً من بنود الخطة الحالية قبل أن يحدد المستخدم أي دفعة؛
+            // الرسالة الخضراء في هذه الحالة إرشادية وليست رفضاً للإدراج.
+            _capacityError.Text = selected.Count == 0
+                ? ""
+                : _all.FirstOrDefault(r => r.QuantityError != null)?.QuantityError ?? result.Error ?? "";
             int offset = result.Rows.Count - selected.Count; // existing parent draft precedes this selection
             for (int i = 0; i < selected.Count && offset >= 0; i++) selected[i].Capacity = result.Rows[offset + i];
             if (focus != null && !focus.IsChecked && focus.ProductId != null && _evaluate != null)
@@ -290,6 +300,14 @@ public class LotsEditorWindow : Window
         // §عدد أيام الشحنة بالمستودع — يبقى (الأقدم أولوية الإنتاج)
         _grid.Columns.Add(TextCol("أيام بالمخزن ⏳", "DaysInStockText", new DataGridLength(0.6, DataGridLengthUnitType.Star), 85));
 
+        // الخام المطلوب معلومة تشغيلية أساسية؛ وضعه بجوار بيانات الشحنة يضمن ظهوره
+        // في نافذة الاختيار قبل الأعمدة التفصيلية، مع بقائه محسوباً للقراءة فقط.
+        _grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "الخام المطلوب (كجم)", Width = 130, IsReadOnly = true,
+            Binding = new System.Windows.Data.Binding("RawRequiredKg") { StringFormat = "N1" }
+        });
+
         var prodCol = new DataGridTemplateColumn { Header = "الصنف التام (002) *", Width = 190 };
         var prodCombo = new FrameworkElementFactory(typeof(ComboBox));
         prodCombo.SetValue(ComboBox.ItemsSourceProperty, new System.Windows.Data.Binding("AllProducts"));
@@ -313,8 +331,7 @@ public class LotsEditorWindow : Window
         ctnCol.CellTemplate = new DataTemplate { VisualTree = ctnBox };
         _grid.Columns.Add(ctnCol);
 
-        // الخام المطلوب (كجم) + كفاية الخام — تُحسب تلقائياً
-        _grid.Columns.Add(new DataGridTextColumn { Header = "الخام المطلوب (كجم)", Width = 130, IsReadOnly = true, Binding = new System.Windows.Data.Binding("RawRequiredKg") { StringFormat = "N1" } });
+        // كفاية الخام — تُحسب تلقائياً بعد اختيار الصنف والكمية.
         _grid.Columns.Add(TextCol("حالة الخام", "RawStatusText", new DataGridLength(1.5, DataGridLengthUnitType.Star), 150));
         // §حالة المعالجة — تُظهر أحمر عندما يكون الخام قيد المعالجة ولا يمكن إنتاجه قبل التاريخ.
         _grid.Columns.Add(TreatmentCol());
