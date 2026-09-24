@@ -1,3 +1,4 @@
+using DatesErp.Core.Common;
 using DatesErp.Core.Domain.Entities;
 using DatesErp.Core.Interfaces.Services;
 using DatesErp.Infrastructure.Persistence;
@@ -95,6 +96,41 @@ public class NumberingTests
         // ولا يصطدم عند الحفظ الفعلي
         db.Shipments.Add(new Shipment { DocumentNumber = next, CustomerId = cust.Id, TotalWeightKg = 50 });
         db.SaveChanges(); // يجب ألا يرمي UNIQUE
+    }
+
+    [Fact]
+    public void ProductionDeliveryNumbering_SkipsExistingPureNumber()
+    {
+        using var host = new TestHost();
+        host.LoginAsAdmin();
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
+        var numbering = scope.ServiceProvider.GetRequiredService<INumberingService>();
+
+        // أمر تسليم إنتاج قديم موجود قبل إنشاء مخطط PDL أو بعد فقدان تزامن العداد.
+        db.ProductionDeliveries.Add(new ProductionDelivery
+        {
+            DocumentNumber = "1",
+            SourceType = DeliverySources.FromActual,
+            SourceId = 1,
+            DeliveryDate = DateTime.Today,
+            Status = DocStatuses.Draft,
+            ReceiptStatus = "None"
+        });
+        db.SaveChanges();
+
+        var next = numbering.Next("PDL");
+        Assert.Equal("2", next);
+        db.ProductionDeliveries.Add(new ProductionDelivery
+        {
+            DocumentNumber = next,
+            SourceType = DeliverySources.FromActual,
+            SourceId = 2,
+            DeliveryDate = DateTime.Today,
+            Status = DocStatuses.Draft,
+            ReceiptStatus = "None"
+        });
+        db.SaveChanges();
     }
 
     [Fact]
