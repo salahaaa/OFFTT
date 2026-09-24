@@ -56,6 +56,15 @@ dotnet test tests\DatesErp.Tests\DatesErp.Tests.csproj -c Release
 dotnet run --project src\DatesErp.Desktop\DatesErp.Desktop.csproj
 ```
 
+### تحديث المشروع بنقرة واحدة دون أوامر CMD
+
+1. نزّل أرشيف المشروع الحالي أو ملف `UpdateProject.vbs`.
+2. انقر نقراً مزدوجاً على `UpdateProject.vbs`.
+3. اختر مجلد المشروع الحالي.
+4. ستقوم الأداة بتنزيل النسخة الحالية، نسخ الملفات، وحذف بقايا الأرشيفات القديمة المعروفة تلقائياً.
+
+تعمل الأداة عبر نافذة Windows بسيطة ولا تفتح نافذة CMD. لا تلمس قاعدة البيانات أو إعدادات الاتصال.
+
 ### إنشاء حزمة Windows
 
 من Windows فقط:
