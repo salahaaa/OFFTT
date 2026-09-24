@@ -50,6 +50,7 @@ public partial class ProductionDeliveryService
             .Select(e => e.OrderId).ToHashSet();
 
         return items.Where(i => orders.ContainsKey(i.OrderId) && i.PlanItemId is int pid && planItems.ContainsKey(pid)
+                && orders[i.OrderId].SourcePlanId == planItems[pid].PlanId
                 && plans.ContainsKey(planItems[pid].PlanId))
             .Select(i =>
             {
@@ -166,9 +167,10 @@ public partial class ProductionDeliveryService
     {
         // One operation, not an implicit grant of warehouse or quality permissions.
         Require("production", "Create"); Require("execution", "Edit");
+        ExecutionCloseTrace.Write($"SaveActualProduction ENTER OrderId={input?.OrderId.ToString() ?? "<null>"}");
         // تسجيل الفعلي ينتهي عند جلسة التنفيذ. لا يمنح ضمنياً صلاحيات المخازن
         // ولا ينشئ أمر/سند استلام تام؛ تلك مرحلة مستقلة بعد تحرير أمر التسليم.
-        return RunOp(() =>
+        var result = RunOp(() =>
         {
             if (input == null) throw new DomainException("بيانات التنفيذ غير موجودة.");
             if (!double.IsFinite(input.ConsumedRawKg) || input.ConsumedRawKg <= 0)
@@ -183,6 +185,15 @@ public partial class ProductionDeliveryService
             Db.ChangeTracker.Clear();
             var canonical = new ProductionOrderService(Db, Session, Numbering).GetScheduledProduction().Rows
                 .Where(r => r.OrderId == input.OrderId && !r.DayClosed).ToList();
+            // GetScheduledProduction يرفض عمداً صفاً كاملاً إذا كان رأس أمر قديم
+            // يحمل عميلاً واحداً بينما بنوده تحمل أكثر من عميل. هذا لا يعني أن
+            // روابط البنود غير صالحة؛ نعيد التحقق من كل OrderItem ← PlanItem مباشرة.
+            if (canonical.Count == 0)
+            {
+                canonical = GetFallbackPlanRows(new[] { input.OrderId })
+                    .Where(r => r.OrderId == input.OrderId && !r.DayClosed).ToList();
+                ExecutionCloseTrace.Write($"SaveActualProduction FALLBACK_ROWS OrderId={input.OrderId} Count={canonical.Count}");
+            }
             if (canonical.Count == 0)
                 throw new DomainException("الأمر ليس نسخة مطابقة لخطة معتمدة مجدولة وغير مقفلة؛ حدّث الشاشة.");
             if (canonical.Any(r => !UiFormat.TryParseDate(r.ScheduledDate, out var day) || day.Date > Db.BusinessNow.Date))
@@ -225,14 +236,25 @@ public partial class ProductionDeliveryService
             var definitions = GetActualByProducts().Select(b => b.Id).ToHashSet();
             if (secondary.Any(b => !definitions.Contains(b.ByProductId)))
                 throw new DomainException("المخرج الثانوي غير موجود أو موقوف في قائمة التعريفات.");
+            var beforeExecutions = Db.ProductionExecutions.AsNoTracking()
+                .Where(e => e.OrderId == order.Id)
+                .OrderBy(e => e.Id)
+                .Select(e => $"Id={e.Id},OrderId={e.OrderId},IsDayClosed={e.IsDayClosed},Status={e.Status},EndDateTime={e.EndDateTime:O}")
+                .ToList();
+            ExecutionCloseTrace.Write($"SaveActualProduction BEFORE_CLOSE OrderId={order.Id} Executions=[{string.Join(" | ", beforeExecutions)}]");
             var execution = new ExecutionService(Db, Session, Numbering)
                 { JoinParentTransaction = true, RecordingActualDelivery = true };
-            void Must(OpResult r) { if (!r.Ok) throw new DomainException(r.Message); }
+            void Must(OpResult r)
+            {
+                ExecutionCloseTrace.Write($"CloseProductionDay RESULT OrderId={order.Id} Ok={r.Ok} Message={r.Message}");
+                if (!r.Ok) throw new DomainException(r.Message);
+            }
             Must(execution.CloseProductionDay(order.Id, actual.Sum(i => i.ProducedKg), actual.Sum(i => i.ProducedCartons),
                 0, 0, 0, false, input.DowntimeHours > 0 ? new() { new DowntimeDto { Hours = input.DowntimeHours, ReasonAr = input.DowntimeReason.Trim() } } : new(),
                 true, input.Notes?.Trim(), secondary, input.ConsumedRawKg, actual));
             var exe = Db.ProductionExecutions.AsNoTracking()
                 .FirstOrDefault(e => e.OrderId == order.Id && e.IsDayClosed);
+            ExecutionCloseTrace.Write($"SaveActualProduction AFTER_CLOSE OrderId={order.Id} ExecutionId={exe?.Id.ToString() ?? "<null>"} IsDayClosed={exe?.IsDayClosed.ToString() ?? "<null>"} Status={exe?.Status ?? "<null>"} EndDateTime={exe?.EndDateTime?.ToString("O") ?? "<null>"}");
             if (exe == null || exe.Status != DocStatuses.Completed || exe.EndDateTime == null)
                 throw new DomainException(
                     "تم تسجيل العملية دون تثبيت إقفال يوم الإنتاج في سجل التنفيذ — لم تُعتمد العملية.",
@@ -262,5 +284,7 @@ public partial class ProductionDeliveryService
                     Difference = order.Items.Sum(i => i.PlannedCartons) - exe.ActualCartons, exe.ConsumedRawKg, QualityId = qc?.Id });
             return OpResult.Success($"تم تسجيل الإنتاج الفعلي {exe.ActualCartons:N0} كرتون؛ الفرق {order.Items.Sum(i => i.PlannedCartons) - exe.ActualCartons:N0}. لا يوجد استلام مخزني تلقائي — أنشئ أمر تسليم الإنتاج من التنفيذ ثم حرره للمخزن.", exe.Id, exe.DocumentNumber);
         });
+        ExecutionCloseTrace.Write($"SaveActualProduction EXIT OrderId={input?.OrderId.ToString() ?? "<null>"} Ok={result.Ok} Message={result.Message}");
+        return result;
     }
 }

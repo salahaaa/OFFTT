@@ -146,7 +146,10 @@ public partial class OrderDetailWindow : Window
     private void Resume_Click(object sender, RoutedEventArgs e) => Do(svc => svc.ResumeOrder(_orderId), "استئناف");
 
     private void CloseDay_Click(object sender, RoutedEventArgs e)
-        => Screens.ProductionDeliveryView.OpenForOrder(_orderId, this);
+    {
+        Services.ErrorLog.WriteInfo($"OrderDetailWindow.CloseDay_Click OrderId={_orderId}");
+        Screens.ProductionDeliveryView.OpenForOrder(_orderId, this);
+    }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {

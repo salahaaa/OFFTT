@@ -51,6 +51,7 @@ public partial class ProductionDeliveryView : UserControl
     }
     public static void OpenForOrder(int orderId, Window source)
     {
+        ErrorLog.WriteInfo($"ProductionDeliveryView.OpenForOrder OrderId={orderId} Source={source?.GetType().Name ?? "<null>"}");
         PendingOrderId = orderId;
         var main = System.Windows.Application.Current.MainWindow as MainWindow;
         var taskOwner = source?.Owner as TaskWindow;
@@ -154,7 +155,9 @@ public partial class ProductionDeliveryView : UserControl
                 input.ByProducts.Add(new() { ByProductId = b.Definition.Id, QtyKg = q });
             }
             _saving = true; SaveButton.IsEnabled = false;
+            ErrorLog.WriteInfo($"ActualDelivery.Save_Click ENTER OrderId={input.OrderId} Items={input.Items.Count} ConsumedRawKg={input.ConsumedRawKg}");
             var r = _saveActual?.Invoke(input) ?? WithService(s => s.SaveActualProduction(input));
+            ErrorLog.WriteInfo($"ActualDelivery.Save_Click EXIT OrderId={input.OrderId} Ok={r.Ok} ResultId={r.Id} Message={r.Message}");
             if (!r.Ok) { StatusLabel.Text = r.Message; return; }
             LoadOrders(order.OrderId, true); StatusLabel.Text = r.Message;
         }

@@ -36,6 +36,7 @@ public class ExecutionService : ServiceBase, IExecutionService
         List<AuxActualDto> actualAux = null, double? emptyCartonsActual = null, int? cartonWarehouseId = null)
     {
         Require("execution", "Edit");
+        ExecutionCloseTrace.Write($"CloseProductionDay ENTER OrderId={orderId} ProducedKg={producedKg} ProducedCartons={producedCartons}");
         var order = Db.ProductionOrders.Include(o => o.Items).FirstOrDefault(o => o.Id == orderId);
         if (order == null) return OpResult.Fail("أمر التشغيل غير موجود.");
         if (!order.IsApproved) return OpResult.Fail("لا يمكن إقفال يوم أمر غير معتمد.");
@@ -256,6 +257,7 @@ public class ExecutionService : ServiceBase, IExecutionService
                 .Include(x => x.Downtimes).Include(x => x.ByProducts)
                 .Where(e => e.OrderId == orderId && !e.IsDayClosed)
                 .OrderByDescending(e => e.Id).ToList();
+            ExecutionCloseTrace.Write($"CloseProductionDay BEFORE_SELECT OrderId={orderId} OpenExecutions=[{string.Join(" | ", openExecutions.Select(e => $"Id={e.Id},OrderId={e.OrderId},IsDayClosed={e.IsDayClosed},Status={e.Status},EndDateTime={e.EndDateTime:O}"))}]");
             if (openExecutions.Count > 1)
                 throw new DomainException("يوجد أكثر من سجل تنفيذ مفتوح لنفس أمر الإنتاج — لا يمكن تحديد جلسة واحدة للإقفال. راجع سجل التنفيذ قبل المتابعة.", "MULTIPLE_OPEN_EXECUTIONS");
             var exe = openExecutions.SingleOrDefault();
@@ -291,6 +293,7 @@ public class ExecutionService : ServiceBase, IExecutionService
             exe.ExpectedQualityDate = sendToQuality ? DateTime.Today.AddDays(2) : null;
             exe.IsDayClosed = true;
             exe.ClosingNotes = notes;
+            ExecutionCloseTrace.Write($"CloseProductionDay MARKED OrderId={orderId} ExecutionId={exe.Id} IsDayClosed={exe.IsDayClosed} Status={exe.Status} EndDateTime={exe.EndDateTime:O}");
 
             // §المخرجات الثانوية بأصنافها المعرَّفة (لا «حشف/نوى» مفروضة)
             if (byProducts != null)
@@ -351,6 +354,7 @@ public class ExecutionService : ServiceBase, IExecutionService
             Db.SaveChanges();
             var persistedExecution = Db.ProductionExecutions.AsNoTracking()
                 .FirstOrDefault(e => e.Id == exe.Id && e.OrderId == orderId);
+            ExecutionCloseTrace.Write($"CloseProductionDay AFTER_SAVE OrderId={orderId} ExecutionId={persistedExecution?.Id.ToString() ?? "<null>"} IsDayClosed={persistedExecution?.IsDayClosed.ToString() ?? "<null>"} Status={persistedExecution?.Status ?? "<null>"} EndDateTime={persistedExecution?.EndDateTime?.ToString("O") ?? "<null>"}");
             if (persistedExecution == null || !persistedExecution.IsDayClosed
                 || persistedExecution.Status != DocStatuses.Completed || persistedExecution.EndDateTime == null)
                 throw new DomainException(
@@ -548,6 +552,7 @@ public class ExecutionService : ServiceBase, IExecutionService
             Db.SaveChanges();
             var finalExecution = Db.ProductionExecutions.AsNoTracking()
                 .FirstOrDefault(e => e.Id == exe.Id && e.OrderId == orderId);
+            ExecutionCloseTrace.Write($"CloseProductionDay FINAL OrderId={orderId} ExecutionId={finalExecution?.Id.ToString() ?? "<null>"} IsDayClosed={finalExecution?.IsDayClosed.ToString() ?? "<null>"} Status={finalExecution?.Status ?? "<null>"} EndDateTime={finalExecution?.EndDateTime?.ToString("O") ?? "<null>"}");
             if (finalExecution == null || !finalExecution.IsDayClosed
                 || finalExecution.Status != DocStatuses.Completed || finalExecution.EndDateTime == null)
                 throw new DomainException(
