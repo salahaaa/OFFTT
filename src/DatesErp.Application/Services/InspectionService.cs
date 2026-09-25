@@ -573,50 +573,110 @@ public class InspectionService : ServiceBase, IInspectionService
     public List<QualitySourceDto> GetDeliverySources()
     {
         Require("quality", "View");
-        // كل تسليم مكتمل (يومه مقفل) — بلا Take(80) ولا حذف؛ الأصناف المنتَجة كلها تنزل بكمياتها.
-        var execs = Db.ProductionExecutions.AsNoTracking().Where(e => e.IsDayClosed).ToList();
-        var orderIds = execs.Select(e => e.OrderId).Distinct().ToList();
+        // مصدر الجودة هو التنفيذ الفعلي المكتمل فقط. نختار آخر تنفيذ مقفل لكل أمر
+        // حتى لا تظهر جلسة قديمة مرتين، ونحصر البنود ذات الإنتاج الفعلي فقط.
+        var executionRows = Db.ProductionExecutions.AsNoTracking()
+            .Where(e => e.IsDayClosed)
+            .OrderByDescending(e => e.Id)
+            .ToList();
+        var executions = executionRows
+            .GroupBy(e => e.OrderId)
+            .ToDictionary(g => g.Key, g => g.First());
+        var orderIds = executions.Keys.ToList();
+        if (orderIds.Count == 0) return new List<QualitySourceDto>();
+
         var orders = Db.ProductionOrders.AsNoTracking().Include(o => o.Items)
-            .Where(o => orderIds.Contains(o.Id) && o.Status != DocStatuses.Cancelled).ToList();
-        var checks = Db.QualityChecks.AsNoTracking().Where(c => c.OrderId != null && orderIds.Contains(c.OrderId.Value)).ToList();
+            .Where(o => orderIds.Contains(o.Id) && o.Status != DocStatuses.Cancelled)
+            .ToList();
+        var checks = Db.QualityChecks.AsNoTracking()
+            .Where(c => c.OrderId != null && orderIds.Contains(c.OrderId.Value))
+            .ToList()
+            .GroupBy(c => c.OrderId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.Id).First());
+
+        // تحميل الهوية دفعة واحدة: فتح شاشة الجودة لا ينفذ استعلاماً لكل خلية،
+        // كما أن غياب اسم اختياري (عميل/دفعة/عبوة) لا يفشل الشاشة كلها.
+        var sourceItems = orders.SelectMany(o => o.Items
+                .Where(i => i.ProducedCartons > 0 || i.ProducedQtyKg > 0.001))
+            .ToList();
+        var productIds = sourceItems.Select(i => i.ProductId).Distinct().ToList();
+        var lotIds = sourceItems.Where(i => i.LotId != null).Select(i => i.LotId!.Value).Distinct().ToList();
+        var customerIds = sourceItems.Where(i => i.CustomerId != null).Select(i => i.CustomerId!.Value)
+            .Concat(orders.Where(o => o.CustomerId != null).Select(o => o.CustomerId!.Value))
+            .Distinct().ToList();
+        var packageIds = sourceItems.Where(i => i.PackagingTypeId != null).Select(i => i.PackagingTypeId!.Value).Distinct().ToList();
+        var planItemIds = sourceItems.Where(i => i.PlanItemId != null).Select(i => i.PlanItemId!.Value).Distinct().ToList();
+
+        var products = Db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id))
+            .ToDictionary(p => p.Id, p => p.ProductNameAr);
+        var lots = Db.Lots.AsNoTracking().Where(l => lotIds.Contains(l.Id))
+            .ToDictionary(l => l.Id, l => l.LotCode);
+        var customers = Db.Customers.AsNoTracking().Where(c => customerIds.Contains(c.Id))
+            .ToDictionary(c => c.Id, c => c.CustomerName);
+        var packages = Db.PackagingTypes.AsNoTracking().Where(p => packageIds.Contains(p.Id))
+            .ToDictionary(p => p.Id, p => p.PackageNameAr);
+        var planCustomers = Db.ProductionPlanItems.AsNoTracking().Where(p => planItemIds.Contains(p.Id))
+            .ToDictionary(p => p.Id, p => p.CustomerId);
+        var gradesByProduct = new Dictionary<int, List<AllowedResultType>>();
+        foreach (var productId in productIds)
+        {
+            var grades = GetAllowedResultTypesForItem(productId, "002")
+                .Where(t => t.ResultKind is InspectionResultType.KindAccepted or InspectionResultType.KindRejected)
+                .ToList();
+            // بعض قواعد البيانات القديمة تسمي وحدة الكرتون بصيغة مختلفة. لا نخفي
+            // صفات المنتج كلها بسبب اختلاف تسمية الوحدة؛ التحقق النهائي يبقى في الخدمة.
+            var cartonGrades = grades.Where(t => string.Equals(t.UnitLabel, "كرتون", StringComparison.OrdinalIgnoreCase)).ToList();
+            gradesByProduct[productId] = cartonGrades.Count > 0 ? cartonGrades : grades;
+        }
+
         var result = new List<QualitySourceDto>();
         foreach (var o in orders.OrderByDescending(x => x.Id))
         {
-            var exe = execs.Where(e => e.OrderId == o.Id).OrderBy(e => e.Id).LastOrDefault();
-            if (exe == null) continue;
-            int total = o.Items.Sum(i => i.ProducedCartons);
+            if (!executions.TryGetValue(o.Id, out var exe)) continue;
+            var actualItems = o.Items.Where(i => i.ProducedCartons > 0 || i.ProducedQtyKg > 0.001).ToList();
+            if (actualItems.Count == 0) continue;
             var src = new QualitySourceDto
             {
-                OrderId = o.Id, ExecutionId = exe.Id, OrderNumber = o.DocumentNumber, TotalProducedCartons = total,
-                Label = $"تسليم الإنتاج {o.DocumentNumber} — {string.Join("، ", o.Items.Select(i => i.ProductId).Distinct().Take(3))} — {total:N0} كرتون",
+                OrderId = o.Id,
+                ExecutionId = exe.Id,
+                OrderNumber = o.DocumentNumber,
+                TotalProducedCartons = actualItems.Sum(i => i.ProducedCartons),
             };
-            var chk = checks.Where(c => c.OrderId == o.Id).OrderBy(c => c.Id).LastOrDefault();
-            if (chk != null)
+            if (checks.TryGetValue(o.Id, out var chk))
             {
                 src.CheckId = chk.Id; src.CheckNumber = chk.DocumentNumber;
                 src.CheckStatus = chk.Status; src.CheckApproved = chk.IsApproved;
             }
-            foreach (var it in o.Items)
+            foreach (var it in actualItems)
             {
-                int? custId = it.CustomerId ?? o.CustomerId;
+                int? custId = it.CustomerId
+                    ?? (it.PlanItemId is int planItemId && planCustomers.TryGetValue(planItemId, out var planCustomer) ? planCustomer : null)
+                    ?? o.CustomerId;
+                products.TryGetValue(it.ProductId, out var productName);
+                string lotCode = it.LotId is int lotId && lots.TryGetValue(lotId, out var code) ? code : null;
+                string customerName = custId is int customerId && customers.TryGetValue(customerId, out var name) ? name : null;
+                string packageName = it.PackagingTypeId is int packageId && packages.TryGetValue(packageId, out var package) ? package : null;
+                var grades = gradesByProduct.TryGetValue(it.ProductId, out var productGrades)
+                    ? productGrades.ToList() : new List<AllowedResultType>();
                 src.Items.Add(new QualitySourceItemDto
                 {
-                    OrderItemId = it.Id, ProductId = it.ProductId, LotId = it.LotId, ProducedCartons = it.ProducedCartons,
-                    ProductName = Db.Products.AsNoTracking().Where(p => p.Id == it.ProductId).Select(p => p.ProductNameAr).FirstOrDefault() ?? $"#{it.ProductId}",
-                    LotCode = it.LotId != null ? Db.Lots.AsNoTracking().Where(l => l.Id == it.LotId).Select(l => l.LotCode).FirstOrDefault() : null,
-                    CustomerName = custId != null ? Db.Customers.AsNoTracking().Where(c => c.Id == custId).Select(c => c.CustomerName).FirstOrDefault() : null,
-                    CartonWeightKg = UnitsPolicy.CartonWeight(Db, it.ProductId, it.PackagingTypeId),
-                    PackageName = it.PackagingTypeId != null ? Db.PackagingTypes.AsNoTracking().Where(pk => pk.Id == it.PackagingTypeId).Select(pk => pk.PackageNameAr).FirstOrDefault() : null,
-                    AllowedGrades = GetAllowedResultTypesForItem(it.ProductId, "002")
-                        .Where(t => t.ResultKind is InspectionResultType.KindAccepted or InspectionResultType.KindRejected
-                                    && t.UnitLabel == "كرتون").ToList(),
+                    OrderItemId = it.Id,
+                    ProductId = it.ProductId,
+                    LotId = it.LotId,
+                    ProducedCartons = it.ProducedCartons,
+                    ProductName = productName ?? $"#{it.ProductId}",
+                    LotCode = lotCode,
+                    CustomerName = customerName,
+                    // استخدم التعريف التاريخي المحفوظ في بند الأمر متى توفر، ثم التعريف الحالي.
+                    CartonWeightKg = it.CartonWeightKg > 0 ? it.CartonWeightKg : UnitsPolicy.CartonWeight(Db, it.ProductId, it.PackagingTypeId),
+                    PackageName = packageName,
+                    AllowedGrades = grades,
                 });
             }
-            // تسمية مصدر مقروءة بأسماء الأصناف لا أرقامها
             src.Label = $"تسليم الإنتاج {o.DocumentNumber} — {string.Join(" + ", src.Items.Select(i => $"{i.ProductName} ({i.ProducedCartons:N0})"))}";
             result.Add(src);
         }
-        // القابلة للفحص أولاً: بلا فحص معتمد
+        // القابلة للفحص أولاً: بلا فحص معتمد.
         return result.OrderBy(s2 => s2.CheckApproved).ThenByDescending(s2 => s2.OrderId).ToList();
     }
 
@@ -627,8 +687,9 @@ public class InspectionService : ServiceBase, IInspectionService
             return OpResult.Fail("أدخل نتيجة فحص صفة واحدة على الأقل.");
         var order = Db.ProductionOrders.AsNoTracking().Include(o => o.Items).FirstOrDefault(o => o.Id == input.OrderId);
         if (order == null) return OpResult.Fail("أمر الإنتاج غير موجود.");
-        var exec = Db.ProductionExecutions.AsNoTracking().Where(e => e.OrderId == input.OrderId && e.IsDayClosed)
-            .OrderBy(e => e.Id).LastOrDefault();
+        var exec = Db.ProductionExecutions.AsNoTracking()
+            .Where(e => e.OrderId == input.OrderId && e.IsDayClosed)
+            .OrderByDescending(e => e.Id).FirstOrDefault();
         if (exec == null)
             return OpResult.Fail("لا يوجد تسليم إنتاج مكتمل لهذا الأمر — الفحص ينزل من تسليم الإنتاج فقط.");
 
@@ -663,9 +724,12 @@ public class InspectionService : ServiceBase, IInspectionService
             coveredOrderItemIds.Add(oi.Id);
             double acc = g.Where(r => types[r.ResultTypeId].ResultKind == InspectionResultType.KindAccepted).Sum(r => r.Cartons);
             double rej = g.Where(r => types[r.ResultTypeId].ResultKind == InspectionResultType.KindRejected).Sum(r => r.Cartons);
-            double ctnW = UnitsPolicy.CartonWeight(Db, g.Key.ProductId, oi.PackagingTypeId);
+            double ctnW = oi.CartonWeightKg > 0
+                ? oi.CartonWeightKg
+                : UnitsPolicy.CartonWeight(Db, g.Key.ProductId, oi.PackagingTypeId);
             items.Add(new QualityItemDto
             {
+                OrderItemId = oi.Id,
                 ProductId = g.Key.ProductId, LotId = oi.LotId,
                 CheckedCartons = produced, AcceptedCartons = acc, RejectedCartons = rej,
                 AcceptedQtyKg = acc * ctnW, RejectedQtyKg = rej * ctnW, CheckedQtyKg = produced * ctnW,
@@ -675,6 +739,22 @@ public class InspectionService : ServiceBase, IInspectionService
         var expectedOrderItems = order.Items
             .Where(i => i.ProducedCartons > 0 || i.ProducedQtyKg > 0.001)
             .ToList();
+        // QualityCheckItem/InspectionResult في المخطط الحالي لا يحملان CustomerId
+        // أو PackagingTypeId. لذلك نرفض الحفظ عندما تتكرر هوية (صنف/دفعة) على
+        // أكثر من بند، بدلاً من حفظ نتيجة لا يمكن نسبتها لاحقاً دون خلط.
+        var ambiguousItems = expectedOrderItems
+            .GroupBy(i => new { i.ProductId, i.LotId })
+            .Where(g => g.Count() > 1)
+            .ToList();
+        if (ambiguousItems.Count > 0)
+        {
+            var names = string.Join("، ", ambiguousItems.Select(g =>
+                Db.Products.AsNoTracking().Where(p => p.Id == g.Key.ProductId)
+                    .Select(p => p.ProductNameAr).FirstOrDefault() ?? $"#{g.Key.ProductId}"));
+            return OpResult.Fail(
+                $"لا يمكن حفظ الفحص: الصنف/الدفعة ({names}) موجودان في أكثر من بند (عميل/عبوة). " +
+                "افصل هوية البند قبل الحفظ حتى لا تختلط النتائج.");
+        }
         var missingOrderItems = expectedOrderItems.Where(i => !coveredOrderItemIds.Contains(i.Id)).ToList();
         if (missingOrderItems.Count > 0)
             return OpResult.Fail($"لا يمكن حفظ الفحص: أدخل نتائج كل بنود الإنتاج الفعلي — المتبقي {missingOrderItems.Count} بنداً.");
@@ -685,6 +765,15 @@ public class InspectionService : ServiceBase, IInspectionService
             return OpResult.Fail("قرار الفحص غير صالح — اختر: مطابق (Passed) | حجز (Quarantine) | مرفوض (Rejected).");
         var lab = new QualityLabDto { Decision = input.Decision, InspectorNotes = input.InspectorNotes };
         var stdById = Db.QualityStandards.AsNoTracking().Where(x => x.IsActive).ToList();
+        bool measurementsRequired = Db.SystemSettings.AsNoTracking()
+            .Any(s => s.SettingKey == "Quality_MeasurementsRequired" && s.SettingValue == "1");
+        if (measurementsRequired)
+        {
+            var supplied = (input.Standards ?? new()).Select(x => x.StandardId).ToHashSet();
+            var missing = stdById.Where(x => !supplied.Contains(x.Id)).Select(x => x.NameAr).ToList();
+            if (missing.Count > 0)
+                return OpResult.Fail("سياسة القياسات إلزامية — أدخل المعايير التالية قبل حفظ الفحص: " + string.Join("، ", missing));
+        }
         foreach (var st in input.Standards ?? new())
         {
             var def = stdById.FirstOrDefault(x => x.Id == st.StandardId);
@@ -702,9 +791,17 @@ public class InspectionService : ServiceBase, IInspectionService
             }
         }
 
-        var qc = new QualityService(Db, Session, Numbering, new AuditService(Db, Session));
+        // QC-05 — رأس الفحص + بنوده + النتائج الديناميكية + المعايير معاملة واحدة.
+        // QualityService ينضم إلى المعاملة الأم بدلاً من اعتماد الرأس منفرداً ثم
+        // كتابة النتائج في معاملة لاحقة.
+        return RunOp(() =>
+        {
+        var qc = new QualityService(Db, Session, Numbering, new AuditService(Db, Session))
+        {
+            JoinParentTransaction = true
+        };
         var r = qc.SaveCheck(input.OrderId, exec.Id, input.CheckDate, "نهائي — بعد التبريد", items, null, lab);
-        if (!r.Ok) return r;
+        if (!r.Ok) throw new DomainException(r.Message);
 
         // النتائج الديناميكية: صف لكل صفة (الصفة ليست صنفاً — ResultTypeId هو الهوية)
         Db.InspectionResults.RemoveRange(Db.InspectionResults.Where(x => x.CheckId == r.Id));
@@ -740,6 +837,7 @@ public class InspectionService : ServiceBase, IInspectionService
             ? $"\n⚠ تنبيه: سُجّل في المحضر {totalRejected:N0} كرتون مرفوضة وقراره «مطابق» — إن كان المقصود «مرفوض/حجز» فصحّحه بتصحيح معتمد."
             : "";
         return OpResult.Success($"تم حفظ فحص الجودة {r.DocumentNumber} — مجموع الصفات يطابق الكمية المستلمة للفحص.{decWarn}", r.Id, r.DocumentNumber);
+        });
     }
 
     public string UnitName(int unitId)

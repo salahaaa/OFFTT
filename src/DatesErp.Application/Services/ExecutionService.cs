@@ -665,6 +665,24 @@ public class QualityService : ServiceBase, IQualityService
             return OpResult.Fail("أمر التشغيل غير موجود — تحقق من رقم الأمر.");
         if (order != null && order.Items.Sum(i => i.ProducedQtyKg) <= 0)
             return OpResult.Fail($"لا يوجد إنتاج مسجل لأمر التشغيل {order.DocumentNumber} — لا يمكن الفحص قبل تسجيل الإنتاج.");
+        if (order != null)
+        {
+            // لا يحمل سجل الفحص القديم هوية العميل/العبوة؛ منع الحفظ المبكر
+            // يمنع إنشاء محضر يبدو صحيحاً ثم يفشل عند الاعتماد أو يخلط البنود.
+            var ambiguousOrderItems = order.Items
+                .Where(i => i.ProducedCartons > 0 || i.ProducedQtyKg > 0.001)
+                .GroupBy(i => new { i.ProductId, i.LotId })
+                .FirstOrDefault(g => g.Count() > 1);
+            if (ambiguousOrderItems != null)
+            {
+                string ambiguousName = Db.Products.AsNoTracking()
+                    .Where(p => p.Id == ambiguousOrderItems.Key.ProductId)
+                    .Select(p => p.ProductNameAr).FirstOrDefault() ?? $"#{ambiguousOrderItems.Key.ProductId}";
+                return OpResult.Fail(
+                    $"لا يمكن حفظ الفحص: الصنف/الدفعة «{ambiguousName}» موزع على أكثر من بند (عميل/عبوة). " +
+                    "افصل هوية البند قبل الحفظ حتى لا تختلط النتائج.");
+            }
+        }
 
         return RunOp(() =>
         {
@@ -717,15 +735,29 @@ public class QualityService : ServiceBase, IQualityService
                 // §نظام الوحدات: بنود الفحص منتجات تامة فقط (المجموعة 002)
                 UnitsPolicy.RequireItemType(Db, it.ProductId, "Finished", "بند فحص الجودة");
 
-                // §قاعدة الوحدات: الإنتاج التام بالكرتون والكيلو وزن مكافئ يُشتق من تعريف العبوة.
-                // الجودة كانت المرحلة الوحيدة التي لا تربط الرقمين، فيمرّ محضر بكراتين
-                // وكيلو متناقضين (مقبول 100 كرتون = 750 كجم مع تسجيل 500 كجم) — والمحضر
-                // مصدر سقف التسليم، فيتسرب الخلل إلى التام وسند العميل.
-                int? packOfItem = order?.Items
-                    .FirstOrDefault(oi => oi.ProductId == it.ProductId
-                                       && (it.LotId == null || oi.LotId == it.LotId))?.PackagingTypeId
-                    ?? order?.Items.FirstOrDefault(oi => oi.ProductId == it.ProductId)?.PackagingTypeId;
-                double ctnW = UnitsPolicy.CartonWeight(Db, it.ProductId, packOfItem);
+                // §QC-02/QC-03 — هوية الفحص لا تُستنتج من الصنف وحده.
+                // عند تكرار (الصنف/الدفعة) يجب تمرير OrderItemId صراحة؛ وإلا نرفض
+                // حتى لا تختلط عبوة أو عميل ببند آخر متشابه.
+                var matchingOrderItems = order?.Items.Where(oi => oi.ProductId == it.ProductId
+                        && (it.LotId == null || oi.LotId == it.LotId)).ToList()
+                    ?? new List<ProductionOrderItem>();
+                ProductionOrderItem matchedOrderItem = null;
+                if (it.OrderItemId is int explicitOrderItemId)
+                {
+                    matchedOrderItem = matchingOrderItems.FirstOrDefault(oi => oi.Id == explicitOrderItemId);
+                    if (matchedOrderItem == null)
+                        throw new DomainException("بند أمر الإنتاج المحدد لا يطابق الصنف/الدفعة في الفحص.", "QC_ITEM_MISMATCH");
+                }
+                else if (matchingOrderItems.Count == 1)
+                    matchedOrderItem = matchingOrderItems[0];
+                else if (matchingOrderItems.Count > 1)
+                    throw new DomainException("هوية بند الفحص غير مكتملة: حدّد بند أمر الإنتاج عند تكرار الصنف والدفعة.", "QC_ITEM_REQUIRED");
+                if (order != null && matchedOrderItem == null && matchingOrderItems.Count == 0)
+                    throw new DomainException("بند الفحص لا يطابق بنداً فعلياً في أمر الإنتاج.", "QC_ITEM_MISMATCH");
+                int? packOfItem = matchedOrderItem?.PackagingTypeId;
+                double ctnW = matchedOrderItem?.CartonWeightKg > 0
+                    ? matchedOrderItem.CartonWeightKg
+                    : UnitsPolicy.CartonWeight(Db, it.ProductId, packOfItem);
                 if (ctnW > 0)
                 {
                     // الكراتين مُدخَلة ⟵ الكيلو يجب أن يطابقها (لكل مقدار على حدة)
@@ -770,20 +802,20 @@ public class QualityService : ServiceBase, IQualityService
             // §B95 — سقف المنتَج لكل صنف (كراتين إن سُجلت + كيلو) ثم تحديد حالة المحضر
             if (order != null)
             {
-                foreach (var g in check.Items.GroupBy(i => i.ProductId))
+                foreach (var g in check.Items.GroupBy(i => new { i.ProductId, i.LotId }))
                 {
-                    double producedKg = order.Items.Where(i => i.ProductId == g.Key).Sum(i => i.ProducedQtyKg);
-                    int producedCtn = order.Items.Where(i => i.ProductId == g.Key).Sum(i => i.ProducedCartons);
+                    double producedKg = order.Items.Where(i => i.ProductId == g.Key.ProductId && i.LotId == g.Key.LotId).Sum(i => i.ProducedQtyKg);
+                    int producedCtn = order.Items.Where(i => i.ProductId == g.Key.ProductId && i.LotId == g.Key.LotId).Sum(i => i.ProducedCartons);
                     double checkedKg = g.Sum(i => i.CheckedQtyKg);
                     double checkedCtn = g.Sum(i => i.CheckedCartons);
-                    string pname = Db.Products.AsNoTracking().Where(p => p.Id == g.Key).Select(p => p.ProductNameAr).FirstOrDefault() ?? $"#{g.Key}";
+                    string pname = Db.Products.AsNoTracking().Where(p => p.Id == g.Key.ProductId).Select(p => p.ProductNameAr).FirstOrDefault() ?? $"#{g.Key.ProductId}";
                     if (checkedCtn > 0 && producedCtn > 0 && checkedCtn > producedCtn + 1.001)   // §سحب: تسامح ±1 كرتون — تدوير اشتقاق الكراتين من الكيلو
                         throw new DomainException($"⛔ نتيجة الفحص للصنف «{pname}» ({checkedCtn:N0} كرتون) تتجاوز الكمية المنتجة ({producedCtn:N0} كرتون).");
                     if (checkedKg > producedKg + 0.01)
                         throw new DomainException($"⛔ نتيجة الفحص للصنف «{pname}» ({checkedKg:N1} كجم) تتجاوز الكمية المنتجة ({producedKg:N1} كجم).");
                     // §B95 — منع التغطية المزدوجة: مجموع فحوصات الأمر للصنف لا يتجاوز إنتاجه (الحالي مستثنى لأنه يُستبدل)
                     double otherCheckedKg = Db.QualityCheckItems.AsNoTracking()
-                        .Where(i => i.CheckId != check.Id && i.ProductId == g.Key)
+                        .Where(i => i.CheckId != check.Id && i.ProductId == g.Key.ProductId && i.LotId == g.Key.LotId)
                         .Join(Db.QualityChecks.AsNoTracking(), i => i.CheckId, c => c.Id, (i, c) => new { i, c })
                         .Where(x => x.c.OrderId == order.Id)
                         .Sum(x => x.i.CheckedQtyKg);
@@ -875,6 +907,35 @@ public class QualityService : ServiceBase, IQualityService
         var check = Db.QualityChecks.FirstOrDefault(c => c.Id == checkId);
         if (check == null) return OpResult.Fail("الفحص غير موجود.");
         if (check.IsApproved) return OpResult.Fail("الفحص معتمد مسبقاً.");
+        // QC-01: «مطابق» بلا كمية مقبولة ليس إفراجاً صالحاً. تقرير مرفوض/محجوز
+        // يمكن اعتماده كقرار جودة (لأغراض العزل والتدقيق)، لكنه لا يفتح أي تسليم.
+        double acceptedForApproval = Db.QualityCheckItems.AsNoTracking()
+            .Where(i => i.CheckId == check.Id).Sum(i => i.AcceptedQtyKg);
+        if (check.Decision == QualityGate.Passed && acceptedForApproval <= 0.001)
+            return OpResult.Fail("⛔ لا يمكن اعتماد فحص مطابق بلا كمية مقبولة أكبر من صفر.");
+        bool coolingRequired = Db.SystemSettings.AsNoTracking()
+            .Any(s => s.SettingKey == "Quality_CoolingRequired" && s.SettingValue == "1");
+        if (coolingRequired && check.ExpectedCheckDate.HasValue
+            && check.ExpectedCheckDate.Value.Date > Db.BusinessNow.Date)
+            return OpResult.Fail($"⛔ لا يمكن اعتماد الفحص قبل انتهاء التبريد في {check.ExpectedCheckDate.Value:dd/MM/yyyy}.");
+        // QualityCheckItem التاريخي لا يحمل OrderItemId أو PackagingTypeId. لذلك،
+        // إذا كان الأمر يقسم نفس (الصنف/الدفعة) على أكثر من بند، لا نسمح باعتماد
+        // نتيجة لا يمكن ربط قبولها ببند واحد بصورة قابلة للتدقيق؛ يجب فصل البند
+        // في نموذج بيانات/ترحيل رسمي قبل الإفراج.
+        if (check.OrderId is int checkOrderId)
+        {
+            var checkedKeys = Db.QualityCheckItems.AsNoTracking().Where(i => i.CheckId == check.Id)
+                .Select(i => new { i.ProductId, i.LotId }).ToList();
+            var checkedProducts = checkedKeys.Select(k => k.ProductId).Distinct().ToList();
+            var checkedLots = checkedKeys.Select(k => k.LotId).Distinct().ToList();
+            var orderIdentity = Db.ProductionOrderItems.AsNoTracking()
+                .Where(i => i.OrderId == checkOrderId && checkedProducts.Contains(i.ProductId)
+                    && checkedLots.Contains(i.LotId))
+                .GroupBy(i => new { i.ProductId, i.LotId })
+                .FirstOrDefault(g => g.Count() > 1);
+            if (orderIdentity != null)
+                return OpResult.Fail("⛔ لا يمكن اعتماد الفحص: هوية المقبول موزعة على أكثر من بند متشابه للصنف/الدفعة. افصل البند/العبوة قبل الإفراج.");
+        }
         // §B95 — لا اعتماد لمحضر غير مكتمل: نتائج الفحص يجب أن تغطي كامل الإنتاج
         if (check.Status != DocStatuses.Completed)
         {
@@ -913,6 +974,19 @@ public class QualityService : ServiceBase, IQualityService
         var check = Db.QualityChecks.FirstOrDefault(c => c.Id == checkId);
         if (check == null) return OpResult.Fail("الفحص غير موجود.");
         if (!check.IsApproved) return OpResult.Fail("الفحص غير معتمد — عدّله بالحفظ العادي.");
+        // QC-06: لا يُفتح فحص بعد أن بُني عليه أثر مرحّل/تسليم معتمد. يجب أولاً
+        // عكس الأثر في مساره الرسمي حتى لا يتغير سقف المقبول بينما الدفتر محجوز.
+        if (Db.FinishedGoodsReceipts.Any(r => r.QualityCheckId == checkId && r.IsApproved))
+            return OpResult.Fail("لا يمكن تصحيح الفحص بعد ترحيل سند التام — اعكس السند/الحجز أولاً ثم افتح التصحيح.");
+        if (check.OrderId != null && Db.CustomerDeliveries.Any(d => d.OrderId == check.OrderId && d.IsApproved))
+            return OpResult.Fail("لا يمكن تصحيح الفحص بعد تسليم عميل معتمد — نفّذ التسوية والعكس أولاً.");
+        var checkedLots = Db.QualityCheckItems.AsNoTracking()
+            .Where(i => i.CheckId == checkId && i.LotId != null).Select(i => i.LotId!.Value).ToList();
+        if (checkedLots.Count > 0 && (from ci in Db.CustomerDeliveryItems.AsNoTracking()
+                                      join cd in Db.CustomerDeliveries.AsNoTracking() on ci.DeliveryId equals cd.Id
+                                      where cd.IsApproved && ci.LotId != null && checkedLots.Contains(ci.LotId.Value)
+                                      select ci.Id).Any())
+            return OpResult.Fail("لا يمكن تصحيح الفحص بعد تسليم دفعاته لعميل — نفّذ التسوية والعكس أولاً.");
 
         return RunOp(() =>
         {

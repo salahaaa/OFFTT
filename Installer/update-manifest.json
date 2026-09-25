@@ -1,9 +1,10 @@
 {
   "product": "MfgSystem",
   "channel": "stable",
-  "repository": "salahaaa/OFFTT",
-  "releaseApi": "https://api.github.com/repos/salahaaa/OFFTT/releases/latest",
-  "assetPattern": "MfgSystem_*_FULL.zip",
+  "packageVersion": "1.50.74",
+  "packageName": "MfgSystem_1.50.74_FULL.zip",
+  "packageUrl": "https://github.com/salahaaa/OFFTT/releases/download/live-current/MfgSystem_1.50.74_FULL.zip",
+  "packageSha256Url": "https://github.com/salahaaa/OFFTT/releases/download/live-current/MfgSystem_1.50.74_FULL.zip.sha256",
   "executable": "MfgSystem.exe",
   "dataFolder": "%LOCALAPPDATA%\\MfgSystem",
   "minimumSupportedVersion": "1.50.74",

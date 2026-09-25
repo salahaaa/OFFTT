@@ -18,12 +18,17 @@ public class FrLineUi : INotifyPropertyChanged
     public int? DeliveryItemId { get; set; }
     public int ProductId { get; set; }
     public int? LotId { get; set; }
+    public int? PackagingTypeId { get; set; }
+    public string PackagingName { get; set; }
     public string ProductName { get; set; }
     public string LotCode { get; set; }
     public int? CustomerId { get; set; }
     public string CustomerName { get; set; }
     public double Remaining { get; set; }
+    /// <summary>إجمالي كراتين بند أمر التسليم، للعرض والتدقيق.</summary>
     public int Packages { get; set; }
+    /// <summary>كراتين هذا السند فعلياً؛ يطابق الوزن ولا يُقرَّب تراكمياً على نحو مستقل.</summary>
+    public int ReceiptPackages { get; set; }
     private bool _included = true;
     public bool Included { get => _included; set { _included = value; OnChanged(nameof(Included)); } }
     private double _qty;
@@ -137,11 +142,15 @@ public partial class FGReceiveView : UserControl
                         DeliveryItemId = l.Id,
                         ProductId = l.ProductId,
                         LotId = l.LotId,
+                        PackagingTypeId = l.PackagingTypeId,
+                        PackagingName = l.PackagingName ?? "غير محددة",
                         ProductName = l.ProductName,
                         LotCode = l.LotCode ?? "—",
                         CustomerId = l.CustomerId,
                         CustomerName = l.CustomerName ?? "—",
                         Remaining = Math.Round(l.RemainingQtyKg, 1),
+                        Packages = l.PackageCount,
+                        ReceiptPackages = l.PackageCount,
                         Qty = Math.Round(l.RemainingQtyKg, 1)
                     });
             }
@@ -162,25 +171,19 @@ public partial class FGReceiveView : UserControl
             var svc = scope.ServiceProvider.GetRequiredService<IFinishedGoodsService>();
             int? qc = null;
             // المصدر الوحيد هنا أمر تسليم إنتاج محرر؛ لا يوجد مسار مباشر من أمر الإنتاج.
-            // §1.50.72 P1-2: كراتين تناسبية مع «كمية السند» التي كتبها المستخدم —
-            // إرسال الكراتين الكاملة مع كجم جزئي كان يُستبدل الكيلو بكامل المنتَج بصمت
-            // (قاعدة EnsureCartonKgConsistency: الكراتين هي الصحيحة).
+            // العبوة والكراتين جزء من هوية السطر، وكراتين السند الفعلية تُدخل صراحة
+            // حتى لا يؤدي التقريب المستقل لكل استلام إلى انحراف تراكمي.
             var r = svc.SaveReceipt(_currentOrderId, qc,
                 (DateBox.SelectedDate ?? DateTime.Now).ToString("dd/MM/yyyy"),
-                selected.Select(l =>
+                selected.Select(l => new FinishedGoodsItemDto
                 {
-                    int ctn = l.Packages;
-                    if (l.Remaining > 0.001 && l.Qty < l.Remaining - 0.001)
-                        ctn = (int)Math.Round(l.Qty / l.Remaining * l.Packages);
-                    return new FinishedGoodsItemDto
-                    {
-                        ProductId = l.ProductId,
-                        LotId = l.LotId,
-                        PackageCount = ctn,
-                        NetWeightKg = l.Qty,
-                        CustomerId = l.CustomerId,
-                        DeliveryItemId = l.DeliveryItemId
-                    };
+                    ProductId = l.ProductId,
+                    LotId = l.LotId,
+                    PackagingTypeId = l.PackagingTypeId,
+                    PackageCount = l.ReceiptPackages,
+                    NetWeightKg = l.Qty,
+                    CustomerId = l.CustomerId,
+                    DeliveryItemId = l.DeliveryItemId
                 }).ToList(),
                 _currentDeliveryId);
             if (!r.Ok) { AppContainer.Get<DialogService>().Error(r.Message); return; }
@@ -212,9 +215,11 @@ public partial class FGReceiveView : UserControl
         try
         {
             if (_currentId == 0) { AppContainer.Get<DialogService>().Error("افتح سند استلام مُصدراً."); return; }
-            Dictionary<int, double> map = null;
+            // الخريطة الجزئية صريحة: السطر الغائب = صفر، وليس «استلم المتبقي كله».
+            // الاستلام الكامل عبر API القديم (null) لا يُنشأ من هذه الشاشة ولا يُستخدم
+            // إلا بأمر صريح من المستدعي المتوافق مع المسار القديم.
             var entered = _lines.Where(l => l.ItemId > 0 && l.ReceiveNow > 0.001).ToList();
-            if (entered.Count > 0) map = entered.ToDictionary(l => l.ItemId, l => l.ReceiveNow);
+            var map = entered.ToDictionary(l => l.ItemId, l => l.ReceiveNow);
 
             using var scope = AppContainer.NewScope();
             var svc = scope.ServiceProvider.GetRequiredService<IFinishedGoodsService>();
@@ -299,12 +304,17 @@ public partial class FGReceiveView : UserControl
                     DeliveryItemId = i.DeliveryItemId,
                     ProductId = i.ProductId,
                     LotId = i.LotId,
+                    PackagingTypeId = i.PackagingTypeId,
+                    PackagingName = i.PackagingTypeId != null
+                        ? db.PackagingTypes.Where(p => p.Id == i.PackagingTypeId.Value).Select(p => p.PackageNameAr).FirstOrDefault() ?? "غير محددة"
+                        : "غير محددة",
                     ProductName = db.Products.Where(p => p.Id == i.ProductId).Select(p => p.ProductNameAr).FirstOrDefault() ?? "-",
                     LotCode = db.Lots.Where(l => l.Id == i.LotId).Select(l => l.LotCode).FirstOrDefault() ?? "—",
                     CustomerId = i.CustomerId,
                     CustomerName = db.Customers.Where(c => c.Id == i.CustomerId).Select(c => c.CustomerName).FirstOrDefault() ?? "—",
                     Remaining = Math.Max(0, Math.Round(i.NetWeightKg - i.ReceivedQtyKg, 1)),
                     Packages = i.PackageCount,
+                    ReceiptPackages = i.PackageCount,
                     Included = false,
                     Qty = i.NetWeightKg,
                     Received = i.ReceivedQtyKg

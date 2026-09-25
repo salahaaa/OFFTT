@@ -84,6 +84,17 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
 
         return RunOp(() =>
         {
+            // PRD-03: أعد تحميل المصدر داخل المعاملة؛ لا تنشئ سنداً من تنفيذ/أمر أُلغي
+            // بعد فحص الشاشة.
+            if (sourceType == DeliverySources.FromActual)
+            {
+                var currentExecution = Db.ProductionExecutions.AsNoTracking().FirstOrDefault(e => e.Id == sourceId);
+                if (currentExecution == null || !currentExecution.IsDayClosed || currentExecution.Status != DocStatuses.Completed)
+                    throw new DomainException("جلسة الإنتاج الفعلي غير موجودة أو لم تعد مكتملة.", "ACTUAL_STATE_CHANGED");
+                var currentOrder = Db.ProductionOrders.AsNoTracking().FirstOrDefault(o => o.Id == currentExecution.OrderId);
+                if (currentOrder == null || currentOrder.Status == DocStatuses.Cancelled || !currentOrder.IsApproved)
+                    throw new DomainException("أمر الإنتاج المرتبط غير موجود أو ملغى.", "ORDER_CANCELLED");
+            }
             var delivery = new ProductionDelivery
             {
                 DocumentNumber = Numbering.Next("PDL"),
@@ -115,6 +126,7 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
         List<DeliverySourceLine> srcLines, List<ProductionDeliveryItemDto> items)
     {
             var takenPerLine = new Dictionary<DeliverySourceLine, double>();
+            var takenPackagesPerLine = new Dictionary<DeliverySourceLine, int>();
             foreach (var it in items)
             {
                 // §نظام الوحدات: التسليم للمنتجات التامة فقط (002)
@@ -126,7 +138,9 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
                 // §تعدد العملاء: حين يُترك عميل البند فارغاً كان الشرط l.CustomerId == (it.CustomerId ?? l.CustomerId)
                 // يتحقق لكل السطور، فيُلتقط أول سطر بالصدفة ويُقيَّد التام لعميل غير صاحبه.
                 // فإن تعددت السطور المطابقة صنفاً ودفعةً، العميل إلزامي صريح.
-                var candidates = srcLines.Where(l => l.ProductId == it.ProductId && l.LotId == it.LotId).ToList();
+                bool strictPackagingIdentity = sourceType == DeliverySources.FromActual;
+                var candidates = srcLines.Where(l => l.ProductId == it.ProductId && l.LotId == it.LotId
+                    && (!strictPackagingIdentity || l.PackagingTypeId == it.PackagingTypeId)).ToList();
                 DeliverySourceLine line;
                 if (it.CustomerId != null)
                     line = candidates.FirstOrDefault(l => l.CustomerId == it.CustomerId);
@@ -144,6 +158,27 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
                         $"لا يوجد سطر مطابق في {DeliverySources.ToArabic(sourceType)} للصنف «{ProdName(it.ProductId)}»" +
                         (it.LotId != null ? $" والدفعة «{LotCode(it.LotId)}»" : "") + " — راجع الملء الآلي.",
                         "NO_SOURCE_LINE");
+                // PRD-08 — المطابقة لا تكتمل بالصنف والدفعة فقط؛ العبوة والكراتين
+                // جزء من هوية المصدر التشغيلي الجديد. المسارات القديمة تُقرأ للتوافق
+                // التاريخي فقط، وتستكمل القيم الناقصة من سطرها المحفوظ ولا تُستخدم لإنشاء
+                // سند استلام جديد (حارس FinishedGoodsService).
+                if (strictPackagingIdentity)
+                {
+                    if (it.PackagingTypeId != line.PackagingTypeId)
+                        throw new DomainException("عبوة بند أمر التسليم لا تطابق العبوة في المصدر التشغيلي.", "PACKAGING_MISMATCH");
+                    if (it.PackageCount <= 0 || line.PackageCount <= 0)
+                        throw new DomainException("لا يمكن إنشاء أمر تسليم بلا عدد كراتين صحيح للمصدر والبند.", "PACKAGE_COUNT_REQUIRED");
+                    takenPackagesPerLine.TryGetValue(line, out var takenPackages);
+                    if (takenPackages + it.PackageCount > line.PackageCount)
+                        throw new DomainException("مجموع كراتين بنود أمر التسليم يتجاوز عدد كراتين سطر المصدر.", "PACKAGE_COUNT_OVER");
+                    takenPackagesPerLine[line] = takenPackages + it.PackageCount;
+                }
+                else if (it.PackagingTypeId != null && it.PackagingTypeId != line.PackagingTypeId)
+                    throw new DomainException("عبوة بند أمر التسليم لا تطابق العبوة في المصدر التاريخي.", "PACKAGING_MISMATCH");
+                int effectivePackageCount = it.PackageCount > 0 ? it.PackageCount : line.PackageCount;
+                if (!strictPackagingIdentity && line.PackageCount > 0 && effectivePackageCount > line.PackageCount)
+                    throw new DomainException("عدد كراتين أمر التسليم يتجاوز عدد كراتين المصدر التاريخي.", "PACKAGE_COUNT_OVER");
+                int? effectivePackagingTypeId = it.PackagingTypeId ?? line.PackagingTypeId;
 
                 // §سقف المصدر: لا تسليم فوق المتبقي (المقبول/المنتَج ناقص ما سُلِّم سابقاً)
                 // RemainingQtyKg محسوب مرة واحدة قبل الحلقة من المحفوظ، فبندان في نفس المستند
@@ -196,8 +231,8 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
                     ProductId = it.ProductId,
                     LotId = it.LotId,
                     CustomerId = line.CustomerId,
-                    PackagingTypeId = it.PackagingTypeId,
-                    PackageCount = it.PackageCount,
+                    PackagingTypeId = effectivePackagingTypeId,
+                    PackageCount = effectivePackageCount,
                     QtyKg = it.QtyKg
                 });
             }
@@ -250,7 +285,7 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
         foreach (var line in ctx.Lines)
         {
             var old = delivery.Items.Where(i => i.ProductId == line.ProductId && i.LotId == line.LotId
-                && i.CustomerId == line.CustomerId).Sum(i => i.QtyKg);
+                && i.CustomerId == line.CustomerId && i.PackagingTypeId == line.PackagingTypeId).Sum(i => i.QtyKg);
             line.DeliveredQtyKg = Math.Max(0, line.DeliveredQtyKg - old);
             line.RemainingQtyKg = Math.Max(0, line.AvailableQtyKg - line.DeliveredQtyKg);
         }
@@ -281,13 +316,24 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
 
         return RunOp(() =>
         {
+            // PRD-03: حالة أمر التسليم قد تكون تغيرت بعد فحص ما قبل المعاملة.
+            Db.ChangeTracker.Clear();
+            delivery = Db.ProductionDeliveries.Include(d => d.Items).FirstOrDefault(d => d.Id == deliveryId)
+                ?? throw new DomainException("أمر التسليم غير موجود.", "DELIVERY_MISSING");
+            if (delivery.Status == DocStatuses.Cancelled)
+                throw new DomainException("أمر التسليم ملغى.", "DELIVERY_CANCELLED");
+            if (delivery.Status == DocStatuses.Issued)
+                throw new DomainException("أمر التسليم مُحرَّر مسبقاً.", "DELIVERY_ISSUED");
+            if (delivery.Status == DocStatuses.Completed)
+                throw new DomainException("أمر التسليم مستلم بالكامل.", "DELIVERY_COMPLETED");
             if (delivery.Items.Count == 0)
                 throw new DomainException("لا يمكن تحرير أمر بلا بنود.");
             delivery.Status = DocStatuses.Issued;
             delivery.IsApproved = true;
             delivery.ApprovedBy = Session?.UserId;
             delivery.ApprovedDate = DateTime.Now;
-            string planMessage = CloseLinkedPlanForDelivery(delivery);
+            Db.SaveChanges(); // اجعل أمر التسليم الحالي مرئياً لمزامنة دفتر الخطة داخل نفس المعاملة.
+            string planMessage = SyncLinkedPlanAfterDeliveryChange(delivery);
             Db.SaveChanges();
             return OpResult.Success($"تم تحرير أمر التسليم {delivery.DocumentNumber} إلى المخازن — بانتظار أمر استلام أمين مخزن التام.{planMessage}");
         });
@@ -298,39 +344,112 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
     /// ولا أثر تسجيل الفعلي ولا أثر استلام المخزن. الصلاحية حُكمت في IssueDelivery
     /// عبر production/Approve، ولا تُستخدم بوابة بديلة.
     /// </summary>
-    private string CloseLinkedPlanForDelivery(ProductionDelivery delivery)
+    /// <summary>
+    /// PRD-04 — مزامنة الخطة من دفتر أوامر التسليم الفعلية.
+    /// لا تُقفل الخطة عند أول أمر؛ تُقفل فقط عندما غُطيت كل بنودها المنتجة
+    /// بأوامر تسليم غير ملغاة. وكل انتقال (إقفال/إعادة فتح) يعيد احتساب
+    /// حجوزات الدفعات داخل نفس المعاملة.
+    /// </summary>
+    private string SyncLinkedPlanAfterDeliveryChange(ProductionDelivery triggeringDelivery)
     {
-        if (delivery.SourceType != DeliverySources.FromActual) return "";
-        var execution = Db.ProductionExecutions.AsNoTracking().FirstOrDefault(e => e.Id == delivery.SourceId);
+        if (triggeringDelivery.SourceType != DeliverySources.FromActual) return "";
+        var execution = Db.ProductionExecutions.AsNoTracking().FirstOrDefault(e => e.Id == triggeringDelivery.SourceId);
         if (execution == null) throw new DomainException("جلسة الإنتاج الفعلي المرتبطة بأمر التسليم غير موجودة.", "ACTUAL_MISSING");
-        var order = Db.ProductionOrders.AsNoTracking().FirstOrDefault(o => o.Id == execution.OrderId);
-        if (order?.SourcePlanId == null) return "";
-        var plan = Db.ProductionPlans.Include(p => p.Items).FirstOrDefault(p => p.Id == order.SourcePlanId.Value);
-        if (plan == null) throw new DomainException("الخطة المرتبطة بالإنتاج الفعلي غير موجودة.", "PLAN_MISSING");
-        if (plan.Status == DocStatuses.Cancelled) throw new DomainException("الخطة المرتبطة ملغاة — لا يمكن تحرير أمر التسليم.", "PLAN_CANCELLED");
-        if (!plan.IsApproved) throw new DomainException("الخطة المرتبطة غير معتمدة — لا يمكن تحرير أمر التسليم.", "PLAN_NOT_APPROVED");
-        if (plan.IsClosed) return $" الخطة {plan.DocumentNumber} مقفلة مسبقاً.";
+        var sourceOrder = Db.ProductionOrders.AsNoTracking().FirstOrDefault(o => o.Id == execution.OrderId);
+        if (sourceOrder?.SourcePlanId == null) return "";
 
-        plan.IsClosed = true;
-        plan.ClosedDate = DateTime.Now;
-        plan.ClosedBy = Session?.UserId;
-        plan.Status = DocStatuses.Closed;
-        foreach (var lotId in plan.Items.Where(i => i.LotId != null).Select(i => i.LotId.Value).Distinct())
+        var plan = Db.ProductionPlans.Include(p => p.Items).FirstOrDefault(p => p.Id == sourceOrder.SourcePlanId.Value);
+        if (plan == null) throw new DomainException("الخطة المرتبطة بالإنتاج الفعلي غير موجودة.", "PLAN_MISSING");
+        if (plan.Status == DocStatuses.Cancelled)
+            throw new DomainException("الخطة المرتبطة ملغاة — لا يمكن تحرير أمر التسليم.", "PLAN_CANCELLED");
+        if (!plan.IsApproved)
+            throw new DomainException("الخطة المرتبطة غير معتمدة — لا يمكن تحرير أمر التسليم.", "PLAN_NOT_APPROVED");
+
+        var orderIds = Db.ProductionOrders.AsNoTracking()
+            .Where(o => o.SourcePlanId == plan.Id && o.SourceType == "FromPlan" && o.Status != DocStatuses.Cancelled)
+            .Select(o => o.Id).ToList();
+        var orderItems = Db.ProductionOrderItems.AsNoTracking()
+            .Where(i => orderIds.Contains(i.OrderId) && i.PlanItemId != null)
+            .ToList();
+        var deliveries = (from di in Db.ProductionDeliveryItems.AsNoTracking()
+                          join d in Db.ProductionDeliveries.AsNoTracking() on di.DeliveryId equals d.Id
+                          join e in Db.ProductionExecutions.AsNoTracking() on d.SourceId equals e.Id
+                          join o in Db.ProductionOrders.AsNoTracking() on e.OrderId equals o.Id
+                          where d.SourceType == DeliverySources.FromActual
+                              && d.Status != DocStatuses.Cancelled && o.SourcePlanId == plan.Id
+                          select new { di, o.Id }).ToList();
+
+        foreach (var pi in plan.Items)
+        {
+            var oiIds = orderItems.Where(i => i.PlanItemId == pi.Id).Select(i => i.Id).ToHashSet();
+            var matchingOrderIds = orderItems.Where(i => oiIds.Contains(i.Id)).Select(i => i.OrderId).ToHashSet();
+            double delivered = deliveries
+                .Where(x => matchingOrderIds.Contains(x.di.OrderId ?? 0)
+                    && x.di.ProductId == pi.ProductId && x.di.LotId == pi.LotId
+                    && x.di.CustomerId == pi.CustomerId
+                    && x.di.PackagingTypeId == pi.PackagingTypeId)
+                .Sum(x => x.di.QtyKg);
+            pi.DeliveredQtyKg = delivered;
+        }
+
+        // بند لم يُنتج بعد ليس «مكتمل التسليم»؛ فلا تغلق الخطة مبكراً.
+        bool allProducedItemsDelivered = plan.Items.Count > 0 && plan.Items.All(pi =>
+            pi.ProducedQtyKg > 0.001 && pi.DeliveredQtyKg + 0.001 >= pi.ProducedQtyKg);
+        string message;
+        bool wasClosed = plan.IsClosed;
+        var affectedLots = plan.Items.Where(i => i.LotId != null).Select(i => i.LotId.Value).Distinct().ToList();
+        if (allProducedItemsDelivered)
+        {
+            if (!plan.IsClosed)
+            {
+                plan.IsClosed = true;
+                plan.ClosedDate = DateTime.Now;
+                plan.ClosedBy = Session?.UserId;
+                plan.Status = DocStatuses.Closed;
+                message = $" أُقفلت الخطة {plan.DocumentNumber} بعد اكتمال تسليم جميع بنودها.";
+            }
+            else message = $" الخطة {plan.DocumentNumber} مقفلة بعد اكتمال جميع بنودها.";
+        }
+        else
+        {
+            if (plan.IsClosed)
+            {
+                plan.IsClosed = false;
+                plan.ClosedDate = null;
+                plan.ClosedBy = null;
+                plan.Status = DocStatuses.Approved;
+                message = $" أُعيد فتح الخطة {plan.DocumentNumber} لأن التسليمات غير الملغاة لا تغطي كل بنودها.";
+            }
+            else message = $" الخطة {plan.DocumentNumber} ما زالت مفتوحة — لم تكتمل كل بنودها.";
+        }
+        if (!wasClosed && plan.IsClosed)
+            _audit.Log("إدارة الإنتاج", "إقفال الخطة بعد اكتمال كل بنود التسليم", "Plan", plan.DocumentNumber, plan.Id,
+                new { السبب = "ProductionDelivery.Issue", أمر_التسليم = triggeringDelivery.DocumentNumber },
+                new { الحالة_الجديدة = "مقفلة", المستخدم = Session?.UserId });
+        else if (wasClosed && !plan.IsClosed)
+            _audit.Log("إدارة الإنتاج", "إعادة فتح الخطة بعد إلغاء أمر التسليم", "Plan", plan.DocumentNumber, plan.Id,
+                new { السبب = "ProductionDelivery.Cancel", أمر_التسليم = triggeringDelivery.DocumentNumber },
+                new { الحالة_الجديدة = "معتمدة", المستخدم = Session?.UserId });
+        // الحجز يُقرأ من SQL لا من ChangeTracker؛ احفظ انتقال الحالة داخل نفس
+        // المعاملة أولاً حتى لا يُبنى الرقم على حالة Closed/Approved القديمة.
+        Db.SaveChanges();
+        RecalculatePlanLotReservations(affectedLots);
+        return message;
+    }
+
+    private void RecalculatePlanLotReservations(IEnumerable<int> lotIds)
+    {
+        foreach (var lotId in lotIds.Distinct())
         {
             var lot = Db.Lots.FirstOrDefault(l => l.Id == lotId);
             if (lot == null) continue;
-            double reserved = Db.ProductionPlanItems
-                .Where(i => i.LotId == lotId && i.PlanId != plan.Id)
-                .Join(Db.ProductionPlans, i => i.PlanId, p => p.Id, (i, p) => new { i, p })
-                .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled
-                    && !x.p.IsClosed && !x.i.IsClosed)
-                .Sum(x => x.i.PlannedQtyKg - x.i.ProducedQtyKg);
-            lot.ReservedQtyKg = Math.Max(0, reserved);
+            var amounts = (from i in Db.ProductionPlanItems
+                           join p in Db.ProductionPlans on i.PlanId equals p.Id
+                           where i.LotId == lotId && p.Status != DocStatuses.Closed
+                               && p.Status != DocStatuses.Cancelled && !p.IsClosed && !i.IsClosed
+                           select new { i.PlannedQtyKg, i.ProducedQtyKg }).ToList();
+            lot.ReservedQtyKg = Math.Max(0, amounts.Sum(x => Math.Max(0, x.PlannedQtyKg - x.ProducedQtyKg)));
         }
-        _audit.Log("إدارة الإنتاج", "إقفال الخطة نتيجة تحرير أمر تسليم الإنتاج", "Plan", plan.DocumentNumber, plan.Id,
-            new { السبب = "ProductionDelivery.Issue", أمر_التسليم = delivery.DocumentNumber },
-            new { الحالة_الجديدة = "مقفلة", المستخدم = Session?.UserId });
-        return $" أُقفلت الخطة المرتبطة {plan.DocumentNumber} نتيجة تحرير أمر التسليم.";
     }
 
     public OpResult CancelDelivery(int deliveryId)
@@ -343,11 +462,18 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
 
         return RunOp(() =>
         {
+            Db.ChangeTracker.Clear();
+            delivery = Db.ProductionDeliveries.Include(d => d.Items).FirstOrDefault(d => d.Id == deliveryId)
+                ?? throw new DomainException("أمر التسليم غير موجود.", "DELIVERY_MISSING");
+            if (delivery.Status == DocStatuses.Cancelled)
+                throw new DomainException("أمر التسليم ملغى مسبقاً.", "DELIVERY_CANCELLED");
             if (delivery.Items.Any(i => i.ReceivedQtyKg > 0.001))
                 throw new DomainException("بدأ استلام هذا الأمر — ألغِ سندات الاستلام أولاً ثم ألغِ الأمر.", "HAS_RECEIPTS");
             delivery.Status = DocStatuses.Cancelled;
+            Db.SaveChanges(); // حتى تستبعد المزامنة سند الإلغاء من التسليمات الفعالة داخل نفس المعاملة.
+            string planMessage = SyncLinkedPlanAfterDeliveryChange(delivery);
             Db.SaveChanges();
-            return OpResult.Success($"تم إلغاء أمر التسليم {delivery.DocumentNumber}.");
+            return OpResult.Success($"تم إلغاء أمر التسليم {delivery.DocumentNumber}." + planMessage);
         });
     }
 
@@ -445,6 +571,10 @@ public partial class ProductionDeliveryService : ServiceBase, IProductionDeliver
                 CustomerId = i.CustomerId,
                 CustomerName = i.CustomerId != null ? CustName(i.CustomerId) : null,
                 PackagingTypeId = i.PackagingTypeId,
+                PackagingName = i.PackagingTypeId != null
+                    ? Db.PackagingTypes.AsNoTracking().Where(p => p.Id == i.PackagingTypeId.Value).Select(p => p.PackageNameAr).FirstOrDefault()
+                    : null,
+                CartonWeightKg = UnitsPolicy.CartonWeight(Db, i.ProductId, i.PackagingTypeId),
                 PackageCount = i.PackageCount,
                 QtyKg = i.QtyKg,
                 ReceivedQtyKg = i.ReceivedQtyKg,

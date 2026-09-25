@@ -74,7 +74,13 @@ public partial class ProductionDeliveryView : UserControl
             // لا نغيّر توقيع الخدمة؛ نحمّل القائمة عبر الاستدعاء الموجود فعلياً.
             var orders = _loadOrders?.Invoke() ?? WithService(s => s.GetActualDeliveryOrders());
             OrderBox.ItemsSource = orders;
-            OrderBox.SelectedItem = orders.FirstOrDefault(o => o.OrderId == selected) ?? orders.FirstOrDefault(o => o.CanRecord) ?? orders.FirstOrDefault();
+            // بعد تسجيل الفعلي تكون الأولوية للأمر القابل لإنشاء التسليم، لا لأول
+            // أمر غير مسجل قد يظهر أعلى القائمة؛ وإلا بدا زر الإنشاء معطلاً رغم
+            // وجود تنفيذ محفوظ في أمر آخر.
+            OrderBox.SelectedItem = orders.FirstOrDefault(o => o.OrderId == selected)
+                ?? orders.FirstOrDefault(o => o.CanCreateDelivery)
+                ?? orders.FirstOrDefault(o => o.CanRecord)
+                ?? orders.FirstOrDefault();
             PendingOrderId = null;
             if (orders.Count() == 0) StatusLabel.Text = "لا توجد أوامر مطابقة لخطة اليوم المعتمدة. لا تُضاف أصناف أو خطط من هذه الشاشة.";
         }

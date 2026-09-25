@@ -287,8 +287,8 @@ public class AuxiliaryManagementService : ServiceBase
         var oldMaterials = Db.ProductionOrderMaterials.AsNoTracking().Where(m => m.OrderId == orderId && m.AuxiliaryProductId == null).ToList();
         foreach (var om in oldMaterials)
         {
-            if (om.AuxiliaryProductId != null && needs.ContainsKey(om.AuxiliaryProductId.Value)) continue;
-            if (needs.ContainsKey(om.MaterialId)) continue;
+            if (om.AuxiliaryProductId != null && needs.Values.Any(n => n.AuxiliaryProductId == om.AuxiliaryProductId)) continue;
+            if (needs.Values.Any(n => n.IsLegacy && n.MaterialId == om.MaterialId)) continue;
             var auxMat = Db.AuxiliaryMaterials.AsNoTracking().FirstOrDefault(a => a.Id == om.MaterialId);
             needs[om.MaterialId + 1000000] = new AuxiliaryNeedDto
             {

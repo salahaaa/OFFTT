@@ -1,4 +1,4 @@
-﻿<Window x:Class="DatesErp.Desktop.Views.QCWindow"
+<Window x:Class="DatesErp.Desktop.Views.QCWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="محضر فحص الجودة" Width="1050" Height="680"
@@ -121,6 +121,8 @@
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="الصنف" Binding="{Binding ProductName}" Width="*" IsReadOnly="True"/>
                             <DataGridTextColumn Header="الدفعة" Binding="{Binding LotCode}" Width="90" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="العميل" Binding="{Binding CustomerName}" Width="130" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="العبوة" Binding="{Binding PackagingName}" Width="110" IsReadOnly="True"/>
                             <DataGridTextColumn Header="المتبقي للفحص (كرتون)" Binding="{Binding RemainingCtn}" Width="130" IsReadOnly="True"/>
                             <DataGridTextColumn Header="المقبول (كرتون) ✍️" Binding="{Binding AcceptedCtn, UpdateSourceTrigger=PropertyChanged}" Width="130"/>
                             <DataGridTextColumn Header="المرفوض (كرتون) ✍️" Binding="{Binding RejectedCtn, UpdateSourceTrigger=PropertyChanged}" Width="130"/>

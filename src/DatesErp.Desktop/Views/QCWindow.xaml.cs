@@ -26,10 +26,13 @@ public partial class QCWindow : Window
     /// <summary>سطر إدخال الفحص (كرتون أولاً — وحدة الإنتاج التام).</summary>
     public class QcInputRow
     {
+        public int OrderItemId { get; set; }
         public int ProductId { get; set; }
         public int? LotId { get; set; }
         public string ProductName { get; set; }
         public string LotCode { get; set; }
+        public string CustomerName { get; set; }
+        public string PackagingName { get; set; }
         public double CartonWeightKg { get; set; }
         public int RemainingCtn { get; set; }
         public int AcceptedCtn { get; set; }
@@ -180,27 +183,30 @@ public partial class QCWindow : Window
         var rows = new List<QcInputRow>();
         var products = db.Products.AsNoTracking().ToDictionary(p => p.Id, p => p.ProductNameAr);
         var lots = db.Lots.AsNoTracking().ToDictionary(l => l.Id, l => l.LotCode);
+        var customers = db.Customers.AsNoTracking().ToDictionary(c => c.Id, c => c.CustomerName);
 
         // مجموعات بنود الفحص الموجودة مسبقاً (لإعادة التعبئة عند الاستئناف/التعديل قبل الاعتماد)
         var own = _check.Items.Where(i => i.ProductId != 0).GroupBy(i => (i.ProductId, i.LotId)).ToDictionary(g => g.Key, g => g.First());
 
-        foreach (var g in _order.Items.GroupBy(i => (i.ProductId, i.LotId)))
+        foreach (var oi in _order.Items.Where(i => i.ProducedQtyKg > 0.001 || i.ProducedCartons > 0))
         {
-            var (prodId, lotId) = g.Key;
-            double producedKg = g.Sum(i => i.ProducedQtyKg);
-            int producedCtn = g.Sum(i => i.ProducedCartons);
-            double weight = g.First().CartonWeightKg > 0 ? g.First().CartonWeightKg
-                : UnitsPolicy.CartonWeight(db, prodId, g.First().PackagingTypeId);
+            var prodId = oi.ProductId;
+            var lotId = oi.LotId;
+            double producedKg = oi.ProducedQtyKg;
+            int producedCtn = oi.ProducedCartons;
+            double weight = oi.CartonWeightKg > 0 ? oi.CartonWeightKg
+                : UnitsPolicy.CartonWeight(db, prodId, oi.PackagingTypeId);
             if (weight <= 0 || producedKg <= 0 && producedCtn <= 0) continue;
 
-            // ما فُحص مسبقاً لهذا الصنف في فحوصات أخرى (معتمدة أو معلّقة) — بمنع التغطية المزدوجة
+            // التغطية السابقة تُفصل بالدفعة والعبوة؛ وعند تكرار الهوية يُحسم
+            // البند صراحة عبر OrderItemId في DTO، لا بالبحث عن أول صنف متشابه.
             var otherCtn = db.QualityCheckItems.AsNoTracking()
-                .Where(i => i.CheckId != _check.Id && i.ProductId == prodId)
+                .Where(i => i.CheckId != _check.Id && i.ProductId == prodId && i.LotId == lotId)
                 .Join(db.QualityChecks.AsNoTracking(), i => i.CheckId, c => c.Id, (i, c) => new { i, c })
                 .Where(x => x.c.OrderId == _order.Id)
                 .Sum(x => x.i.CheckedCartons);
             var otherKg = db.QualityCheckItems.AsNoTracking()
-                .Where(i => i.CheckId != _check.Id && i.ProductId == prodId)
+                .Where(i => i.CheckId != _check.Id && i.ProductId == prodId && i.LotId == lotId)
                 .Join(db.QualityChecks.AsNoTracking(), i => i.CheckId, c => c.Id, (i, c) => new { i, c })
                 .Where(x => x.c.OrderId == _order.Id)
                 .Sum(x => x.i.CheckedQtyKg);
@@ -213,13 +219,17 @@ public partial class QCWindow : Window
             own.TryGetValue((prodId, lotId), out var existing);
             rows.Add(new QcInputRow
             {
+                OrderItemId = oi.Id,
                 ProductId = prodId,
                 LotId = lotId,
                 ProductName = products.TryGetValue(prodId, out var pn) ? pn : $"#{prodId}",
                 LotCode = lotId != null && lots.TryGetValue(lotId.Value, out var lc) ? lc : "—",
+                CustomerName = (oi.CustomerId ?? _order.CustomerId) is int cid && customers.TryGetValue(cid, out var cn) ? cn : "—",
+                PackagingName = oi.PackagingTypeId != null
+                    ? db.PackagingTypes.AsNoTracking().Where(p => p.Id == oi.PackagingTypeId.Value).Select(p => p.PackageNameAr).FirstOrDefault() ?? "غير محددة"
+                    : "غير محددة",
                 CartonWeightKg = weight,
                 RemainingCtn = remainingCtn,
-                // §B99 — التعبئة: كل المتبقي مقبول (يعدّلها الفاحص إن وجد مرفوضاً)
                 AcceptedCtn = existing != null ? (int)existing.AcceptedCartons : remainingCtn,
                 RejectedCtn = existing != null ? (int)existing.RejectedCartons : 0
             });
@@ -246,6 +256,7 @@ public partial class QCWindow : Window
                 .Where(r => r.AcceptedCtn + r.RejectedCtn > 0)
                 .Select(r => new QualityItemDto
                 {
+                    OrderItemId = r.OrderItemId,
                     ProductId = r.ProductId,
                     LotId = r.LotId,
                     CheckedQtyKg = 0,   // يُشتق = مقبول + مرفوض

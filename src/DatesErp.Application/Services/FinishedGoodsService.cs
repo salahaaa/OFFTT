@@ -15,6 +15,11 @@ namespace DatesErp.Application.Services;
 /// </summary>
 public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
 {
+    // الاستلامات المتوازية على نفس بند أمر التسليم يجب أن ترى حالة المصدر نفسها
+    // قبل تعديل ReceivedQtyKg؛ العزل التسلسلي يمنع تجاوز السقف بسبب سباق مستخدمين.
+    protected override System.Data.IsolationLevel TransactionIsolation => System.Data.IsolationLevel.Serializable;
+    protected override bool RetryTransactionDeadlocks => true;
+
     public FinishedGoodsService(DatesErpDbContext db, ICurrentSession session, INumberingService numbering)
         : base(db, session, numbering) { }
 
@@ -44,6 +49,24 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
 
         return RunOp(() =>
         {
+            // لا تعتمد المعاملة على نسخة الرأس التي فُحصت قبل فتحها: أعد قراءة
+            // أمر التسليم وحالته وبنوده داخل المعاملة حتى لا يمر الإلغاء المتزامن.
+            Db.ChangeTracker.Clear();
+            var currentDelivery = Db.ProductionDeliveries.AsNoTracking().Include(d => d.Items)
+                .FirstOrDefault(d => d.Id == deliveryId.Value)
+                ?? throw new DomainException("أمر تسليم الإنتاج غير موجود.", "DELIVERY_MISSING");
+            if (currentDelivery.SourceType != DeliverySources.FromActual)
+                throw new DomainException("أمر الاستلام لا يُنشأ إلا من أمر تسليم نازل من الإنتاج الفعلي.", "DELIVERY_SOURCE");
+            if (currentDelivery.Status == DocStatuses.Cancelled)
+                throw new DomainException("أمر التسليم ملغى.", "DELIVERY_CANCELLED");
+            if (currentDelivery.Status == DocStatuses.Completed)
+                throw new DomainException("أمر التسليم مستلم بالكامل مسبقاً.", "DELIVERY_COMPLETED");
+            if (currentDelivery.Status != DocStatuses.Issued)
+                throw new DomainException("أمر التسليم ليس محرراً للمخزن.", "DELIVERY_NOT_ISSUED");
+            if (!currentDelivery.Items.Any(i => i.OrderId == orderId))
+                throw new DomainException("الأمر المحدد ليس من أوامر أمر التسليم المحدد.", "ORDER_MISMATCH");
+            delivery = currentDelivery;
+
             var rcpt = new FinishedGoodsReceipt
             {
                 DocumentNumber = Numbering.Next("FGR"),
@@ -57,20 +80,18 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
             };
             // §B96 — حارس التكرار يمنع بندين بنفس (الصنف + الدفعة) في سند واحد: رفض مبكر برسالة واضحة
             // (لعملاء مختلفين على نفس الدفعة: استلم كل بند تسليم في سند مستقل — فالترقيم مختلف ولا تعارض)
-            var dupLine = items.GroupBy(i => new { i.ProductId, i.LotId }).FirstOrDefault(g => g.Count() > 1);
+            var dupLine = items.GroupBy(i => new { i.ProductId, i.LotId, i.PackagingTypeId, i.DeliveryItemId }).FirstOrDefault(g => g.Count() > 1);
             if (dupLine != null)
                 throw new DomainException(
-                    "⛔ بندَان مكرران لنفس الصنف والدفعة في سند واحد — وحّدهما في بند واحد.\n" +
+                    "⛔ بندَان مكرران لنفس هوية الصنف/الدفعة/العبوة في سند واحد — وحّدهما في بند واحد.\n" +
                     "لعملاء مختلفين على نفس الدفعة: استلم كل بند تسليم في سند مستقل.",
                     "DUP_LINE");
             foreach (var it in items)
             {
-                // §نظام الوحدات: استلام التام للمنتجات التامة فقط (002) واتساق الكرتون/الكيلو إلزامي
+                // §نظام الوحدات: استلام التام للمنتجات التامة فقط (002).
                 UnitsPolicy.RequireItemType(Db, it.ProductId, "Finished", "استلام الإنتاج التام");
-                it.NetWeightKg = UnitsPolicy.EnsureCartonKgConsistency(Db, it.ProductId, it.PackagingTypeId,
-                    it.NetWeightKg, it.PackageCount, "استلام الإنتاج التام");
 
-                // §B96 — بند التسليم هو الحاكم (المتبقي + الهوية)؛ لا يوجد مسار استلام مباشر.
+                // §PRD-01 — بند التسليم هو المصدر الوحيد لهوية العبوة/الكراتين.
                 int? effCust = null;
                 int? effLine = null;
                 if (it.DeliveryItemId == null)
@@ -82,6 +103,21 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
                 if (it.LotId != null && it.LotId != line.LotId)
                     throw new DomainException("الدفعة لا تطابق بند أمر التسليم المحدد.", "LOT_MISMATCH");
                 if (it.LotId == null) it.LotId = line.LotId;
+                if (it.CustomerId != null && it.CustomerId != line.CustomerId)
+                    throw new DomainException("العميل لا يطابق عميل بند أمر التسليم المحدد.", "CUSTOMER_MISMATCH");
+                if (it.PackagingTypeId != line.PackagingTypeId)
+                    throw new DomainException("العبوة لا تطابق عبوة بند أمر التسليم المحدد.", "PACKAGING_MISMATCH");
+                if (it.PackageCount <= 0 || line.PackageCount <= 0)
+                    throw new DomainException("عدد كراتين بند التسليم وسند الاستلام يجب أن يكون أكبر من صفر.", "PACKAGE_COUNT_REQUIRED");
+                if (it.PackageCount > line.PackageCount)
+                    throw new DomainException("عدد كراتين سند الاستلام يتجاوز عدد كراتين بند أمر التسليم.", "PACKAGE_COUNT_OVER");
+                UnitsPolicy.RequireCartonWeight(Db, it.ProductId, it.PackagingTypeId, it.PackageCount, "استلام الإنتاج التام");
+                double cartonWeight = UnitsPolicy.CartonWeight(Db, it.ProductId, it.PackagingTypeId);
+                double expectedKg = Math.Round(it.PackageCount * cartonWeight, 1);
+                if (Math.Abs(it.NetWeightKg - expectedKg) > 0.001)
+                    throw new DomainException(
+                        $"وزن السند ({it.NetWeightKg:N1} كجم) لا يطابق {it.PackageCount:N0} كرتوناً من العبوة المحددة ({expectedKg:N1} كجم).",
+                        "PACKAGE_WEIGHT_MISMATCH");
                 // §B86/H8 بالمثل: المسودات لا تحجب بعضها — السقف على المستلَم ويُعاد فحصه عند الاستلام
                 double lineRemaining = line.QtyKg - line.ReceivedQtyKg;
                 if (it.NetWeightKg > lineRemaining + 0.001)
@@ -128,6 +164,20 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
 
         return RunOp(() =>
         {
+            Db.ChangeTracker.Clear();
+            var currentRcpt = Db.FinishedGoodsReceipts.AsNoTracking().FirstOrDefault(r => r.Id == receiptId)
+                ?? throw new DomainException("أمر الاستلام غير موجود.", "RECEIPT_MISSING");
+            var currentDelivery = Db.ProductionDeliveries.AsNoTracking().FirstOrDefault(d => d.Id == currentRcpt.DeliveryId)
+                ?? throw new DomainException("أمر التسليم المرتبط غير موجود.", "DELIVERY_MISSING");
+            if (currentDelivery.SourceType != DeliverySources.FromActual)
+                throw new DomainException("لا يمكن إصدار استلام مصدره أمر تسليم قديم.", "DELIVERY_SOURCE");
+            if (currentDelivery.Status == DocStatuses.Cancelled)
+                throw new DomainException("أمر التسليم المرتبط ملغى.", "DELIVERY_CANCELLED");
+            if (currentDelivery.Status == DocStatuses.Completed)
+                throw new DomainException("أمر التسليم المرتبط مستلم بالكامل.", "DELIVERY_COMPLETED");
+            if (currentRcpt.Status == DocStatuses.Issued)
+                throw new DomainException("أمر الاستلام مُصدر مسبقاً.", "RECEIPT_ISSUED");
+            rcpt = Db.FinishedGoodsReceipts.First(r => r.Id == receiptId);
             rcpt.Status = DocStatuses.Issued;
             Db.SaveChanges();
             return OpResult.Success("تم إصدار أمر التسليم إلى المخزن — بانتظار سند الاستلام.");
@@ -146,14 +196,44 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
             && d.SourceType == DeliverySources.FromActual))
             return OpResult.Fail("لا يمكن ترحيل استلام مصدره أمر تسليم قديم غير نازل من الإنتاج الفعلي.");
         if (rcpt.ReceiptStatus == "Full") return OpResult.Fail("السند منفذ بالكامل مسبقاً.");
+        if (rcpt.Items.All(i => i.NetWeightKg - i.ReceivedQtyKg <= 0.001))
+            return OpResult.Fail("لا توجد كمية متبقية للاستلام — لم يُحجز رقم سند متابعة.");
         if (rcpt.Status != DocStatuses.Issued && rcpt.Status != DocStatuses.Completed)
             return OpResult.Fail("لا يمكن الاستلام قبل إصدار أمر التسليم.");
 
         return RunOp(() =>
         {
+            // PRD-03: أعد تحميل رأس السند والمصدر داخل المعاملة، لا تستخدم نسخة قبلية.
+            Db.ChangeTracker.Clear();
+            rcpt = Db.FinishedGoodsReceipts.Include(r => r.Items).FirstOrDefault(r => r.Id == receiptId)
+                ?? throw new DomainException("أمر الاستلام غير موجود.", "RECEIPT_MISSING");
+            var currentDelivery = rcpt.DeliveryId != null
+                ? Db.ProductionDeliveries.Include(d => d.Items).FirstOrDefault(d => d.Id == rcpt.DeliveryId.Value)
+                : null;
+            if (currentDelivery == null || currentDelivery.SourceType != DeliverySources.FromActual)
+                throw new DomainException("لا يمكن ترحيل استلام مصدره أمر تسليم غير صالح.", "DELIVERY_SOURCE");
+            if (currentDelivery.Status == DocStatuses.Cancelled)
+                throw new DomainException("أمر التسليم المرتبط ملغى.", "DELIVERY_CANCELLED");
+            if (rcpt.ReceiptStatus == "Full")
+                throw new DomainException("السند منفذ بالكامل مسبقاً.", "RECEIPT_FULL");
+            if (rcpt.Status != DocStatuses.Issued && rcpt.Status != DocStatuses.Completed)
+                throw new DomainException("لا يمكن الاستلام قبل إصدار أمر التسليم.", "RECEIPT_NOT_ISSUED");
             var whFg = rcpt.WarehouseId;
             var orderCust = Db.ProductionOrders.Where(o => o.Id == rcpt.OrderId).Select(o => o.CustomerId).FirstOrDefault();
             double totalReceived = 0;
+            // لا نحجز رقماً ولا نزيد عداد المتابعة قبل التأكد من وجود كمية موجبة
+            // على بند ما زال له متبقي — وهذا الفحص داخل المعاملة أيضاً لمعالجة
+            // سباق استلامين وصلا بعد أن أكمل أحدهما السند.
+            if (receivedByItemId != null && !receivedByItemId.Any(x => x.Value > 0.001))
+                return OpResult.Fail("لم تُدخل أي كمية مستلمة.");
+            if (receivedByItemId != null && receivedByItemId.Keys.Any(id => rcpt.Items.All(i => i.Id != id)))
+                throw new DomainException("توجد كمية مرتبطة ببند سند استلام غير تابع لهذا السند.", "RECEIPT_ITEM_MISMATCH");
+            bool hasPositiveRemaining = receivedByItemId == null
+                ? rcpt.Items.Any(i => i.NetWeightKg - i.ReceivedQtyKg > 0.001)
+                : rcpt.Items.Any(i => i.NetWeightKg - i.ReceivedQtyKg > 0.001
+                    && receivedByItemId.TryGetValue(i.Id, out var requested) && requested > 0.001);
+            if (!hasPositiveRemaining)
+                return OpResult.Fail("لا توجد كمية موجبة متبقية للاستلام — لم يُحجز رقم سند متابعة.");
             rcpt.ReceiveCount++;
             rcpt.ReceiptNumber ??= Numbering.Next("RCV");
             var voucher = $"{rcpt.ReceiptNumber}#{rcpt.ReceiveCount}"; // لكل سند استلام (متابعة) ترقيم متسلسل
@@ -167,22 +247,29 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
             {
                 double remaining = item.NetWeightKg - item.ReceivedQtyKg;
                 if (remaining <= 0.001) continue;
-                double recv = receivedByItemId != null && receivedByItemId.TryGetValue(item.Id, out var v) ? v : remaining;
+                // null يبقى توافقاً مع استدعاء «استلام كامل» الصريح في الخدمات القديمة.
+                // أما القاموس الجزئي فالسطر الغائب = صفر، وهو ما ترسله شاشة المخزن.
+                double recv = receivedByItemId == null
+                    ? remaining
+                    : (receivedByItemId.TryGetValue(item.Id, out var v) ? v : 0);
                 if (recv <= 0) continue;
                 if (recv > remaining + 0.001)
                     throw new DomainException($"الكمية المستلمة أكبر من المتبقي للبند ({remaining:N1} كجم).", "OVER_RECEIPT");
                 // §B96 — المربوط: سقف بند التسليم أولاً (رسالة دقيقة) ثم السقف الفيزيائي الموحد (شبكة أمان ضد المباشر)
                 ProductionDeliveryItem delLine = null;
+                double recvLineBeforeThisItem = 0;
+                double delLineReceivedBeforeThisItem = 0;
                 if (item.DeliveryItemId != null)
                 {
                     delLine = delLines.FirstOrDefault(l => l.Id == item.DeliveryItemId.Value)
                         ?? throw new DomainException("بند أمر التسليم المربوط غير موجود.", "NO_DELIVERY_LINE");
-                    recvAccLine.TryGetValue(delLine.Id, out var recvLineCall);
-                    if (delLine.ReceivedQtyKg + recvLineCall + recv > delLine.QtyKg + 0.001)
+                    delLineReceivedBeforeThisItem = delLine.ReceivedQtyKg;
+                    recvAccLine.TryGetValue(delLine.Id, out recvLineBeforeThisItem);
+                    if (delLine.ReceivedQtyKg + recvLineBeforeThisItem + recv > delLine.QtyKg + 0.001)
                         throw new DomainException(
-                            $"⛔ الاستلام يتجاوز بند أمر التسليم.\nالبند: {delLine.QtyKg:N1} كجم | المستلَم منه: {delLine.ReceivedQtyKg + recvLineCall:N1} | المطلوب: {recv:N1}",
+                            $"⛔ الاستلام يتجاوز بند أمر التسليم.\nالبند: {delLine.QtyKg:N1} كجم | المستلَم منه: {delLine.ReceivedQtyKg + recvLineBeforeThisItem:N1} | المطلوب: {recv:N1}",
                             "OVER_DELIVERY");
-                    recvAccLine[delLine.Id] = recvLineCall + recv;
+                    recvAccLine[delLine.Id] = recvLineBeforeThisItem + recv;
                     if (delLine.OrderId is int capOrder)
                     {
                         double producedCap = Db.ProductionOrderItems.AsNoTracking()
@@ -225,11 +312,27 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
 
                 recvAcc[item.ProductId] = recvThisCall + recv;
                 }
+                // PRD-06 — الكراتين تُرحّل بالفرق بين هدفين تراكميين على بند التسليم،
+                // لا بتقريب مستقل لكل استلام. لذلك 1.5 + 1.5 كرتوناً لا تصبح 2 + 2.
+                double priorLineKg = 0;
+                int linePackages = 0;
+                double lineQtyKg = 0;
+                if (delLine != null)
+                {
+                    priorLineKg = delLineReceivedBeforeThisItem + recvLineBeforeThisItem;
+                    linePackages = delLine.PackageCount;
+                    lineQtyKg = delLine.QtyKg;
+                }
+                int previousTarget = linePackages > 0 && lineQtyKg > 0
+                    ? (int)Math.Round(linePackages * priorLineKg / lineQtyKg, MidpointRounding.AwayFromZero) : 0;
                 item.ReceivedQtyKg += recv;
                 totalReceived += recv;
-                // التام يُورد بالكرتون: قيد العبوات المستلمة تناسبياً مع الوزن
-                int pkgRecv = item.PackageCount > 0 && item.NetWeightKg > 0
-                    ? (int)Math.Round(recv / item.NetWeightKg * item.PackageCount) : 0;
+                double cumulativeLineKg = priorLineKg + recv;
+                int currentTarget = linePackages > 0 && lineQtyKg > 0
+                    ? (int)Math.Round(linePackages * cumulativeLineKg / lineQtyKg, MidpointRounding.AwayFromZero)
+                    : (item.PackageCount > 0 && item.NetWeightKg > 0
+                        ? (int)Math.Round(item.PackageCount * item.ReceivedQtyKg / item.NetWeightKg, MidpointRounding.AwayFromZero) : 0);
+                int pkgRecv = Math.Max(0, currentTarget - previousTarget);
                 PostStockMovement(whFg, MovementType.Inbound, recv, pkgRecv,
                     ReferenceDocType.FinishedGoodsReceipt, voucher,
                     productId: item.ProductId, lotId: item.LotId, orderId: rcpt.OrderId,
@@ -288,6 +391,15 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
 
         return RunOp(() =>
         {
+            Db.ChangeTracker.Clear();
+            rcpt = Db.FinishedGoodsReceipts.Include(r => r.Items).FirstOrDefault(r => r.Id == receiptId)
+                ?? throw new DomainException("السند غير موجود.", "RECEIPT_MISSING");
+            if (!rcpt.IsApproved) throw new DomainException("السند غير معتمد.", "RECEIPT_NOT_APPROVED");
+            var delivery = rcpt.DeliveryId != null
+                ? Db.ProductionDeliveries.Include(d => d.Items).FirstOrDefault(d => d.Id == rcpt.DeliveryId.Value)
+                : null;
+            if (delivery == null || delivery.Status == DocStatuses.Cancelled)
+                throw new DomainException("أمر التسليم المرتبط غير موجود أو ملغى.", "DELIVERY_CANCELLED");
             var whFg = rcpt.WarehouseId;
             var orderCust = Db.ProductionOrders.Where(o => o.Id == rcpt.OrderId).Select(o => o.CustomerId).FirstOrDefault();
             var prefix = rcpt.ReceiptNumber ?? rcpt.DocumentNumber;
@@ -296,15 +408,19 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
             //  • يدمّر سجلّاً إلحاقياً (قرارهم #48: «إلحاقي غير قابل للتعديل»)
             //  • وتصادم بادئات: عند السند رقم 10000 يصبح RCV-...-1000 بادئة له فيحذف حركاته
             //  • وكان يبحث الرصيد بلا CustomerId بينما Receive يكتب به ← قد يطرح من صف آخر
-            // §B96 — أمر التسليم المربوط (يُحمَّل قبل التصفير ليُعكس عنه المستلَم بدقة)
-            var delivery = rcpt.DeliveryId != null
-                ? Db.ProductionDeliveries.Include(d => d.Items).FirstOrDefault(d => d.Id == rcpt.DeliveryId.Value)
-                : null;
+            // §B96 — أمر التسليم المربوط محمّل قبل تصفير الكميات ليُعكس عنه المستلَم بدقة.
             int seq = 0;
             foreach (var item in rcpt.Items.Where(i => i.ReceivedQtyKg > 0))
             {
-                int pkgBack = item.PackageCount > 0 && item.NetWeightKg > 0
-                    ? (int)Math.Round(item.ReceivedQtyKg / item.NetWeightKg * item.PackageCount) : 0;
+                int pkgBack = Db.InventoryTransactions
+                    .Where(t => t.ReferenceDocType == ReferenceDocType.FinishedGoodsReceipt
+                        && t.MovementType == MovementType.Inbound
+                        && t.WarehouseId == whFg
+                        && t.ReferenceDocNumber.StartsWith(prefix + "#")
+                        && t.ProductId == item.ProductId && t.LotId == item.LotId
+                        && t.CustomerId == (item.CustomerId ?? orderCust)
+                        && t.PackagingTypeId == item.PackagingTypeId)
+                    .Sum(t => t.PackageCount);
                 seq++;
                 PostStockMovement(whFg, MovementType.Outbound, item.ReceivedQtyKg, pkgBack,
                     ReferenceDocType.FinishedGoodsReceipt, $"{prefix}#REV{seq}",

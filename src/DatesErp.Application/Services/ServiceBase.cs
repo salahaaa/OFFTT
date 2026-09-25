@@ -184,6 +184,10 @@ public abstract class ServiceBase
         int? customerId = null, int? orderId = null, int? packagingTypeId = null,
         string notes = null)
     {
+        // PRD-05: لا حركة لمادة مساعدة جديدة بهوية MaterialId=0. الجديد يُقيّد
+        // دائماً على ProductId/AuxiliaryProductId، والقديم فقط على MaterialId موجب.
+        if ((productId == null || productId <= 0) && (materialId == null || materialId <= 0))
+            throw new DomainException("هوية المادة المساعدة غير صالحة — لا يمكن إنشاء حركة بـ MaterialId=0.", "AUX_ID_REQUIRED");
         // §8 منع تكرار العملية: نفس المستند + نفس الصنف + نفس النوع + نفس العميل + نفس العبوة
         // §1.50.66 — إضافة CustomerId و PackagingTypeId لمنع تكرار وهمي وخلط عملاء/عبوات
         var duplicate = Db.InventoryTransactions.Any(t =>

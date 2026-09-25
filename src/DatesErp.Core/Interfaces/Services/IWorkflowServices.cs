@@ -300,6 +300,8 @@ public class ProductionDeliveryLineRow
     public int? CustomerId { get; set; }
     public string CustomerName { get; set; }
     public int? PackagingTypeId { get; set; }
+    public string PackagingName { get; set; }
+    public double CartonWeightKg { get; set; }
     public int PackageCount { get; set; }
     public double QtyKg { get; set; }
     public double ReceivedQtyKg { get; set; }
@@ -326,6 +328,8 @@ public class CustomerDeliveryItemDto
 /// <summary>بند فحص جودة.</summary>
 public class QualityItemDto
 {
+    /// <summary>هوية بند أمر الإنتاج عند تكرار الصنف والدفعة (العميل/العبوة).</summary>
+    public int? OrderItemId { get; set; }
     public int ProductId { get; set; }
     public int? LotId { get; set; }
     public double CheckedQtyKg { get; set; }

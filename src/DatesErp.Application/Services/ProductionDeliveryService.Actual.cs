@@ -89,8 +89,13 @@ public partial class ProductionDeliveryService
             .Where(e => e.IsDayClosed)
             .Select(e => new { e.Id, e.OrderId })
             .ToList();
+        // المسودة جزء من دورة التسليم وليست تسليماً مكتملاً: يجب أن تبقى ظاهرة
+        // حتى يتمكن مدير الإنتاج من تعديلها ثم تحريرها. بعد التحرير (Issued/Completed)
+        // تُحجب من القائمة التشغيلية، بينما الإلغاء يعيد التنفيذ إلى قائمة الإنشاء.
         var deliveredExeIds = Db.ProductionDeliveries.AsNoTracking()
-            .Where(d => d.SourceType == DeliverySources.FromActual && d.Status != DocStatuses.Cancelled)
+            .Where(d => d.SourceType == DeliverySources.FromActual
+                && d.Status != DocStatuses.Cancelled
+                && d.Status != DocStatuses.Draft)
             .Select(d => d.SourceId)
             .ToHashSet();
         var closedExeWithNoDelivery = closedExeList

@@ -564,8 +564,25 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
             var whAux = WarehouseId("WAUX");
             foreach (var mat in order.Materials.Where(m => m.CalculatedQty > 0))
             {
-                var available = Db.StockBalances.Where(b => b.WarehouseId == whAux && b.MaterialId == mat.MaterialId && b.ProductId == null && b.LotId == null && b.CustomerId == null && b.PackagingTypeId == null)
+                bool modernAux = mat.AuxiliaryProductId is int auxId && auxId > 0;
+                if (!modernAux && mat.MaterialId <= 0)
+                    throw new DomainException("بند المادة المساعدة بلا هوية صالحة — لا يمكن الاعتماد أو الصرف.", "AUX_ID_REQUIRED");
+                int? stockProductId = modernAux ? mat.AuxiliaryProductId : null;
+                int? stockMaterialId = modernAux ? null : mat.MaterialId;
+                var available = Db.StockBalances.Where(b => b.WarehouseId == whAux
+                        && b.MaterialId == stockMaterialId && b.ProductId == stockProductId
+                        && b.LotId == null && b.CustomerId == null && b.PackagingTypeId == null)
                     .Select(b => b.QtyKg).FirstOrDefault();
+                // الأصناف الجديدة تقيس بالمخزون على ProductId (كجم أو وحدة حسب تعريفها)،
+                // ولا يجوز تحويلها إلى MaterialId=0 حتى لو كان الكود القديم موجوداً.
+                if (modernAux)
+                {
+                    var bal = Db.StockBalances.FirstOrDefault(b => b.WarehouseId == whAux
+                        && b.ProductId == stockProductId && b.MaterialId == null
+                        && b.LotId == null && b.CustomerId == null && b.PackagingTypeId == null);
+                    bool isKg = (mat.UnitOfMeasure ?? "").Contains("كجم");
+                    available = bal == null ? 0 : (isKg ? bal.QtyKg : (bal.PackageCount > 0 ? bal.PackageCount : bal.QtyKg));
+                }
                 if (available < mat.CalculatedQty - 0.001)
                 {
                     // §التجارب لا تتعرقَل: الصرامة اختيارية من الإعدادات، وإلا فصرف جزئي بالمتاح فقط
@@ -576,9 +593,10 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
                 }
                 var issueQty = Math.Min(mat.CalculatedQty, Math.Max(0, available));
                 if (issueQty > 0.001)
-                    PostStockMovement(whAux, MovementType.Outbound, issueQty, 0,
+                    PostStockMovement(whAux, MovementType.Outbound, issueQty,
+                        modernAux && !(mat.UnitOfMeasure ?? "").Contains("كجم") ? (int)Math.Round(issueQty) : 0,
                         ReferenceDocType.MaterialIssue, order.DocumentNumber,
-                        materialId: mat.MaterialId, orderId: order.Id,
+                        productId: stockProductId, materialId: stockMaterialId, orderId: order.Id,
                         notes: $"صرف مواد عند اعتماد أمر {order.DocumentNumber}");
                 mat.ActualIssuedQty = issueQty;
                 mat.Status = DocStatuses.Issued;
@@ -749,12 +767,20 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
             // نفس فلسفة إلغاء اعتماد تسليم العميل. أثر الصرف والعكس يبقى كاملاً للتدقيق.
             // حارس التكرار: قيد عكسي واحد لكل مادة مهما تكرر الاستدعاء.
             var revRef = $"{order.DocumentNumber}#REV-AUX";
+            bool modernAux = mat.AuxiliaryProductId is int auxId && auxId > 0;
+            if (!modernAux && mat.MaterialId <= 0)
+                throw new DomainException("بند المادة المساعدة بلا هوية صالحة — لا يمكن عكس صرفه.", "AUX_ID_REQUIRED");
+            int? stockProductId = modernAux ? mat.AuxiliaryProductId : null;
+            int? stockMaterialId = modernAux ? null : mat.MaterialId;
             if (!Db.InventoryTransactions.Any(t => t.ReferenceDocType == ReferenceDocType.Return
-                    && t.ReferenceDocNumber == revRef && t.MaterialId == mat.MaterialId))
+                    && t.ReferenceDocNumber == revRef
+                    && t.ProductId == stockProductId && t.MaterialId == stockMaterialId))
             {
-                PostStockMovement(whAux, MovementType.Inbound, mat.ActualIssuedQty, 0,
+                PostStockMovement(whAux, MovementType.Inbound,
+                    mat.UnitOfMeasure != null && !mat.UnitOfMeasure.Contains("كجم") ? 0 : mat.ActualIssuedQty,
+                    modernAux && !((mat.UnitOfMeasure ?? "").Contains("كجم")) ? (int)Math.Round(mat.ActualIssuedQty) : 0,
                     ReferenceDocType.Return, revRef,
-                    materialId: mat.MaterialId, orderId: order.Id,
+                    productId: stockProductId, materialId: stockMaterialId, orderId: order.Id,
                     notes: $"قيد عكسي لصرف مواد الأمر الملغي {order.DocumentNumber}");
             }
             mat.ActualIssuedQty = 0;
@@ -993,13 +1019,20 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
                         && t.ReferenceDocNumber.StartsWith(order.DocumentNumber));
             foreach (var mat in order.Materials)
             {
-                double req = qtys != null && qtys.TryGetValue(mat.MaterialId, out var qv) ? qv
+                bool modernAux = mat.AuxiliaryProductId is int auxId && auxId > 0;
+                if (!modernAux && mat.MaterialId <= 0)
+                    throw new DomainException("بند المادة المساعدة بلا هوية صالحة — لا يمكن صرفه.", "AUX_ID_REQUIRED");
+                int key = modernAux ? mat.AuxiliaryProductId!.Value : mat.MaterialId;
+                double req = qtys != null && qtys.TryGetValue(key, out var qv) ? qv
                              : (mat.ActualIssuedQty == 0 ? mat.CalculatedQty : 0);
                 if (req <= 0) continue;
                 seq++;
-                PostStockMovement(whAux, MovementType.Outbound, req, 0,
+                PostStockMovement(whAux, MovementType.Outbound, req,
+                    modernAux && !((mat.UnitOfMeasure ?? "").Contains("كجم")) ? (int)Math.Round(req) : 0,
                     ReferenceDocType.MaterialIssue, $"{order.DocumentNumber}#ISS{seq}",
-                    materialId: mat.MaterialId, orderId: order.Id,
+                    productId: modernAux ? mat.AuxiliaryProductId : null,
+                    materialId: modernAux ? null : mat.MaterialId,
+                    orderId: order.Id,
                     notes: $"صرف مواد إضافي لأمر {order.DocumentNumber}");
                 mat.ActualIssuedQty += req;
                 count++;
@@ -1043,9 +1076,15 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
             {
                 double unused = mat.ActualIssuedQty - mat.ConsumedQty - mat.WastedQty - mat.ReturnedQty;
                 if (unused <= 0.001) continue;
-                PostStockMovement(whAux, MovementType.Inbound, unused, 0,
+                bool modernAux = mat.AuxiliaryProductId is int auxId && auxId > 0;
+                if (!modernAux && mat.MaterialId <= 0)
+                    throw new DomainException("بند المادة المساعدة بلا هوية صالحة — لا يمكن إرجاعه.", "AUX_ID_REQUIRED");
+                PostStockMovement(whAux, MovementType.Inbound,
+                    modernAux && (mat.UnitOfMeasure ?? "").Contains("كجم") ? unused : (modernAux ? 0 : unused),
+                    modernAux && !((mat.UnitOfMeasure ?? "").Contains("كجم")) ? (int)Math.Round(unused) : 0,
                     ReferenceDocType.Return, order.DocumentNumber,
-                    materialId: mat.MaterialId, orderId: order.Id,
+                    productId: modernAux ? mat.AuxiliaryProductId : null,
+                    materialId: modernAux ? null : mat.MaterialId, orderId: order.Id,
                     notes: $"إرجاع فائض مواد من أمر {order.DocumentNumber}");
                 mat.ReturnedQty += unused;
                 n++;
@@ -1091,6 +1130,9 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
             // §B95 — المسار الواحد: لا إغلاق بعجز إلا بتسوية موثقة (سبب يُحفظ في الأمر ويظهر في فروقات الخطة).
             // بنود IsClosed الموروثة من المسار المحذوف تُحترم للبيانات القديمة فقط.
             bool legacySettled = order.Items.Count > 0 && order.Items.All(i => i.IsClosed);
+            if (!complete && !legacySettled
+                && (Session == null || !Session.Can("production", "Approve")))
+                throw new DomainException("إغلاق أمر إنتاج غير منفذ يتطلب صلاحية تسوية مستقلة عن صلاحية الإلغاء.", "INCOMPLETE_CLOSE_PERMISSION");
             if (!complete && !legacySettled && string.IsNullOrWhiteSpace(reason))
                 throw new DomainException(
                     $"لا يمكن إغلاق أمر إنتاج ناقص بلا تسوية.\nالأمر: المنتَج {produced:N1} كجم من أصل {planned:N1} كجم — العجز {planned - produced:N1} كجم.\n" +

@@ -177,8 +177,14 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
             // بند بلا دفعة يحتفظ بالسلوك الأصلي: أمر رأس السند.
             foreach (var item in dlv.Items)
             {
-                int? gateOrderId = item.LotId != null ? null : dlv.OrderId;
-                var (ok, reason) = QualityGate.CustomerDeliveryAllowed(Db, gateOrderId, item.LotId, item.ProductId);
+                int? gateOrderId = dlv.OrderId;
+                if (gateOrderId == null && item.LotId != null)
+                    gateOrderId = Db.ProductionOrderItems.AsNoTracking()
+                        .Where(i => i.LotId == item.LotId && i.ProductId == item.ProductId
+                            && (i.CustomerId == null || i.CustomerId == dlv.CustomerId))
+                        .OrderByDescending(i => i.CustomerId == dlv.CustomerId)
+                        .Select(i => (int?)i.OrderId).FirstOrDefault();
+                var (ok, reason) = QualityGate.CustomerDeliveryAllowed(Db, gateOrderId, item.LotId, item.ProductId, item.PackagingTypeId);
                 if (!ok) throw new DomainException(reason);
             }
 

@@ -4,7 +4,8 @@ param(
     [string]$ManifestUrl = "",
     [switch]$CheckOnly,
     [switch]$Force,
-    [switch]$NoLaunch
+    [switch]$NoLaunch,
+    [switch]$NonInteractive
 )
 
 $ErrorActionPreference = "Stop"
@@ -68,22 +69,26 @@ function Find-InstallDir([string]$ExeName) {
     return ""
 }
 
-function Get-LatestRelease($Manifest) {
-    $headers = @{ "User-Agent" = "MfgSystem-LiveUpdater"; "Accept" = "application/vnd.github+json" }
-    Write-UpdateLog "جاري فحص الإصدار الأخير من GitHub..."
+function Get-UpdatePackage($Manifest) {
+    if ([string]::IsNullOrWhiteSpace($Manifest.packageUrl)) {
+        Fail "ملف manifest لا يحتوي packageUrl صالحاً."
+    }
+    $headers = @{ "User-Agent" = "MfgSystem-LiveUpdater" }
+    Write-UpdateLog "جاري فحص حزمة التحديث المحددة..."
     try {
-        $release = Invoke-RestMethod -Uri $Manifest.releaseApi -Headers $headers -Method Get
+        $head = Invoke-WebRequest -Uri $Manifest.packageUrl -Headers $headers -Method Head -UseBasicParsing
     } catch {
-        Fail "تعذر الاتصال بمصدر التحديث: $($_.Exception.Message)"
+        Fail "مصدر حزمة التحديث غير متاح (HTTP 404 أو رابط غير صحيح): $($Manifest.packageUrl)"
     }
-    if (-not $release -or $release.draft -or $release.prerelease) {
-        Fail "لا يوجد إصدار مستقر منشور للتحديث حتى الآن."
+    if (-not $head -or $head.StatusCode -lt 200 -or $head.StatusCode -ge 400) {
+        Fail "مصدر حزمة التحديث لم يُرجع استجابة صالحة: $($Manifest.packageUrl)"
     }
-    $asset = @($release.assets) | Where-Object { $_.name -like $Manifest.assetPattern } | Select-Object -First 1
-    if (-not $asset) {
-        Fail "الإصدار $($release.tag_name) لا يحتوي حزمة $($Manifest.assetPattern)."
+    return [pscustomobject]@{
+        Version = [string]$Manifest.packageVersion
+        Name = [string]$Manifest.packageName
+        Url = [string]$Manifest.packageUrl
+        Sha256Url = [string]$Manifest.packageSha256Url
     }
-    return [pscustomobject]@{ Release = $release; Asset = $asset }
 }
 
 function Stop-InstalledApp([string]$Folder, [string]$ExeName) {
@@ -142,29 +147,41 @@ try {
 
     $currentText = Get-InstalledVersion $target $manifest.executable
     $current = Get-Version $currentText
-    $latest = Get-LatestRelease $manifest
-    $latestText = ($latest.Release.tag_name -replace '^v','')
+    $latest = Get-UpdatePackage $manifest
+    $latestText = $latest.Version
     $latestVersion = Get-Version $latestText
-    Write-UpdateLog "الإصدار الحالي: $currentText | الإصدار المتاح: $latestText"
+    Write-UpdateLog "الإصدار الحالي: $currentText | الحزمة المحددة: $latestText"
 
     if (-not $Force -and $latestVersion -le $current) {
         Write-Host "لا يوجد تحديث أحدث من الإصدار الحالي."
         exit 0
     }
     if ($CheckOnly) {
-        Write-Host "يوجد تحديث متاح: $latestText"
+        Write-Host "مصدر التحديث متاح. يوجد تحديث: $latestText"
         exit 0
     }
 
-    $answer = Read-Host "سيتم تحديث $target إلى $latestText. هل تريد المتابعة؟ (Y/N)"
+    $answer = if ($NonInteractive) { "Y" } else { Read-Host "سيتم تحديث $target إلى $latestText. هل تريد المتابعة؟ (Y/N)" }
     if ($answer -notmatch '^(Y|y|ن|نعم)$') {
         Write-UpdateLog "ألغى المستخدم التحديث."
         exit 0
     }
 
-    $zipPath = Join-Path $tempRoot $latest.Asset.name
-    Write-UpdateLog "تنزيل $($latest.Asset.name)..."
-    Invoke-WebRequest -Uri $latest.Asset.browser_download_url -Headers @{ "User-Agent" = "MfgSystem-LiveUpdater" } -OutFile $zipPath
+    $zipPath = Join-Path $tempRoot $latest.Name
+    Write-UpdateLog "تنزيل $($latest.Name) من المصدر المحدد..."
+    Invoke-WebRequest -Uri $latest.Url -Headers @{ "User-Agent" = "MfgSystem-LiveUpdater" } -OutFile $zipPath -UseBasicParsing
+    if ($latest.Sha256Url) {
+        try {
+            $expectedZipHash = ((Invoke-WebRequest -Uri $latest.Sha256Url -Headers @{ "User-Agent" = "MfgSystem-LiveUpdater" } -UseBasicParsing).Content -replace '[^0-9a-fA-F]','').ToUpperInvariant()
+            $actualZipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToUpperInvariant()
+            if ($expectedZipHash.Length -ge 64 -and $expectedZipHash.Substring(0,64) -ne $actualZipHash) {
+                Fail "فشل تحقق SHA256 لحزمة التحديث نفسها. تم إيقاف التحديث دون لمس النظام."
+            }
+            Write-UpdateLog "تم التحقق من SHA256 لحزمة ZIP."
+        } catch {
+            Fail "تعذر التحقق من SHA256 لحزمة التحديث: $($_.Exception.Message)"
+        }
+    }
     $extract = Join-Path $tempRoot "package"
     Expand-Archive -LiteralPath $zipPath -DestinationPath $extract -Force
     Verify-Package $extract $manifest

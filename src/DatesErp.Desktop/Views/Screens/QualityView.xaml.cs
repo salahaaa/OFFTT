@@ -186,10 +186,10 @@ public partial class QualityView : UserControl
                     BorderBrush = new System.Windows.Media.SolidColorBrush((Color)ColorConverter.ConvertFromString("#CADCCF")),
                     BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(11), Padding = new Thickness(9,3,9,3), Margin = new Thickness(0,0,8,0) };
                 chip.Child = new TextBlock { FontWeight = FontWeights.Bold, FontSize = 12, Foreground = new System.Windows.Media.SolidColorBrush((Color)ColorConverter.ConvertFromString("#14532D")),
-                    Text = $"{item.CustomerName} — {item.ProductName} — {item.ProducedCartons:N0}" };
+                    Text = $"{item.CustomerName ?? "غير محدد"} — {item.ProductName} — {item.ProducedCartons:N0}" };
                 ItemsPanel.Children.Add(chip);
                 var row = new ItemRowUi { ProductId = item.ProductId, OrderItemId = item.OrderItemId, LotId = item.LotId,
-                    CustomerName = item.CustomerName ?? "—", ProductName = item.ProductName, LotCode = item.LotCode ?? "—",
+                    CustomerName = item.CustomerName ?? "غير محدد", ProductName = item.ProductName, LotCode = item.LotCode ?? "—",
                     CartonWeight = item.CartonWeightKg > 0 ? item.CartonWeightKg.ToString("0.##") : "—",
                     PackageName = string.IsNullOrWhiteSpace(item.PackageName) ? "—" : item.PackageName,
                     ReceivedCartons = item.ProducedCartons, Grades = item.AllowedGrades };
@@ -197,8 +197,8 @@ public partial class QualityView : UserControl
                 if (mine.Count > 0)
                     foreach (var r2 in mine)
                         row.GradeQtys[r2.ResultTypeId] = (double)r2.Qty;
-                else
-                    row.GradeQtys[item.AllowedGrades.FirstOrDefault(g => g.ResultKind == InspectionResultType.KindAccepted)?.ResultTypeId ?? 0] = item.ProducedCartons;
+                else if (item.AllowedGrades.FirstOrDefault(g => g.ResultKind == InspectionResultType.KindAccepted) is { } acceptedGrade)
+                    row.GradeQtys[acceptedGrade.ResultTypeId] = item.ProducedCartons;
                 _rows.Add(row);
             }
             // المعايير المعتمدة: تظهر تلقائياً بقيمها المحفوظة أو الافتراضية
@@ -211,8 +211,14 @@ public partial class QualityView : UserControl
                     Value = savedStd.TryGetValue(st.Id, out var v) ? v : st.DefaultValue });
             BuildGradeColumns();
             Recalc();
+            var itemsWithoutGrades = _rows.Where(r2 => r2.Grades.Count == 0).ToList();
+            if (itemsWithoutGrades.Count > 0)
+            {
+                SaveButton.IsEnabled = false;
+                StatusLabel.Text += $" — ⛔ لا توجد صفات جودة (مقبول/مرفوض) معرفة لـ {itemsWithoutGrades.Count} بنداً؛ عرّفها أولاً من إعدادات الجودة.";
+            }
             // §1.50.72 P4-3: تمييز القيم المعبأة مسبقاً (كل المنتَج «مقبول») حتى لا تُحفظ دون تدقيق
-            if (_current.CheckId == null)
+            else if (_current != null && _current.CheckId == null && _rows.Count > 0)
                 StatusLabel.Text += " — ⚠ القيم معبأة مسبقاً (كل الكمية المستلمة «مقبول» افتراضياً)؛ راجعها وعدّل المرفوض قبل الحفظ.";
         }
         catch (Exception ex)
@@ -242,9 +248,11 @@ public partial class QualityView : UserControl
         boldCenterStyle.Setters.Add(new Setter(TextBlock.PaddingProperty, new Thickness(6, 4, 6, 4)));
         boldCenterStyle.Setters.Add(new Setter(TextBlock.FontSizeProperty, 12.5));
 
-        void AddCol(string header, string path, double width, Style style = null, bool ro = true)
+        void AddCol(string header, string path, double width, Style style = null, bool ro = true, string format = null)
         {
-            var col = new DataGridTextColumn { Header = header, Binding = new Binding(path), IsReadOnly = ro, Width = width };
+            var binding = new Binding(path);
+            if (!string.IsNullOrWhiteSpace(format)) binding.StringFormat = format;
+            var col = new DataGridTextColumn { Header = header, Binding = binding, IsReadOnly = ro, Width = width };
             if (style != null) col.ElementStyle = style;
             ResultsGrid.Columns.Add(col);
         }
@@ -253,7 +261,7 @@ public partial class QualityView : UserControl
         AddCol("الصنف", nameof(ItemRowUi.ProductName), 240, wrapStyle);
         AddCol("وزن الكرتون", nameof(ItemRowUi.CartonWeight), 100, boldCenterStyle);
         AddCol("العبوة", nameof(ItemRowUi.PackageName), 120, wrapStyle);
-        AddCol("المستلم للفحص", nameof(ItemRowUi.ReceivedCartons) + StringFormatN0, 120, boldCenterStyle);
+        AddCol("المستلم للفحص", nameof(ItemRowUi.ReceivedCartons), 120, boldCenterStyle, format: "{0:N0}");
         foreach (var g in _gradeColumns)
         {
             var col = new DataGridTextColumn
@@ -266,9 +274,8 @@ public partial class QualityView : UserControl
             ResultsGrid.Columns.Add(col);
         }
         AddCol("الدفعة", nameof(ItemRowUi.LotCode), 120, wrapStyle);
-        AddCol("الإجمالي", nameof(ItemRowUi.Total) + StringFormatN0, 110, boldCenterStyle);
+        AddCol("الإجمالي", nameof(ItemRowUi.Total), 110, boldCenterStyle, format: "{0:N0}");
     }
-    private const string StringFormatN0 = ";{0:N0}";
     private const System.Windows.Data.UpdateSourceTrigger PropertyChangedTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged;
     private const System.Windows.Data.BindingMode BindingModeTwoWay = System.Windows.Data.BindingMode.TwoWay;
 

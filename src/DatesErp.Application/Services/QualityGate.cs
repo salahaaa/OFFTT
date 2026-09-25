@@ -28,46 +28,65 @@ public static class QualityGate
     /// يفحص: وجود فحص ← اعتماده ← قراره (مرفوض/محجوز يمنع التسليم).
     /// </summary>
     public static (bool ok, string reason) CustomerDeliveryAllowed(
-        DatesErpDbContext db, int? orderId, int? lotId, int? productId)
+        DatesErpDbContext db, int? orderId, int? lotId, int? productId, int? packagingTypeId = null)
     {
         var orderIds = new List<int>();
         if (orderId != null) orderIds.Add(orderId.Value);
 
-        // §إصلاح: الواجهة كانت تمرر orderId = null فتتخطى البوابة كلياً.
-        // نشتق الأوامر من الدفعة/الصنف إن غاب المعرّف.
-        if (orderIds.Count == 0 && lotId != null)
+        // الهوية التشغيلية = أمر + بند/صنف + دفعة + عبوة. لا نبحث عن «أي فحص
+        // للصنف» لأن ذلك يخلط دفعتين أو عبوتين متشابهتين.
+        if (lotId != null || orderIds.Count == 0 || packagingTypeId != null)
         {
-            orderIds = db.ProductionOrderItems.AsNoTracking()
-                .Where(i => i.LotId == lotId && (productId == null || i.ProductId == productId))
-                .Select(i => i.OrderId).Distinct().ToList();
+            var q = db.ProductionOrderItems.AsNoTracking()
+                .Where(i => (productId == null || i.ProductId == productId)
+                    && i.LotId == lotId);
+            if (packagingTypeId != null) q = q.Where(i => i.PackagingTypeId == packagingTypeId);
+            var candidates = q.Select(i => new { i.OrderId, i.PackagingTypeId }).ToList();
+            if (packagingTypeId == null && candidates.Select(x => x.PackagingTypeId).Distinct().Count() > 1)
+                return (false, "⛔ لا يمكن التسليم: توجد أكثر من عبوة لنفس الصنف/الدفعة — حدّد عبوة السطر قبل الإفراج.");
+            if (orderId != null && !candidates.Any(x => x.OrderId == orderId.Value))
+                return (false, "⛔ لا يمكن التسليم: عبوة/دفعة السطر لا تطابق بند أمر الإنتاج المحدد.");
+            if (orderIds.Count == 0) orderIds = candidates.Select(x => x.OrderId).Distinct().ToList();
         }
 
         if (orderIds.Count == 0)
             return (false,
-                "⛔ لا يمكن التسليم للعميل: لا يوجد أمر إنتاج مرتبط بهذه الدفعة للتحقق من نتيجة فحص الجودة.\n" +
-                "اربط السند بأمر الإنتاج أو حدّد الدفعة.");
+                "⛔ لا يمكن التسليم للعميل: لا يوجد بند أمر إنتاج مرتبط بهذه الدفعة والعبوة للتحقق من نتيجة فحص الجودة.\n" +
+                "اربط السند بأمر الإنتاج وحدّد الدفعة والعبوة.");
 
         foreach (var oid in orderIds)
         {
-            var checks = db.QualityChecks.AsNoTracking().Where(c => c.OrderId == oid).ToList();
+            // QualityCheckItem لا يحمل عمود عبوة في البيانات التاريخية؛ إذا كان
+            // الأمر نفسه يقسم نفس (الصنف/الدفعة) على عبوتين نرفض بدلاً من خلطهما.
+            var packageIdentities = db.ProductionOrderItems.AsNoTracking()
+                .Where(i => i.OrderId == oid && i.ProductId == productId && i.LotId == lotId)
+                .Select(i => i.PackagingTypeId).Distinct().ToList();
+            if (packageIdentities.Count > 1
+                || (packagingTypeId != null && !packageIdentities.Contains(packagingTypeId)))
+                return (false, "⛔ لا يمكن الإفراج: هوية الجودة موزعة على أكثر من عبوة لنفس البند، ولا يسمح النظام بخلطها.");
+            if (db.ProductionOrderItems.AsNoTracking()
+                    .Count(i => i.OrderId == oid && i.ProductId == productId && i.LotId == lotId) != 1)
+                return (false, "⛔ لا يمكن الإفراج: توجد عدة بنود متشابهة للصنف/الدفعة ولا يمكن إثبات مالك المقبول.");
+            var checks = db.QualityChecks.AsNoTracking().Where(c => c.OrderId == oid && c.IsApproved).ToList();
             if (checks.Count == 0)
                 return (false,
-                    "⛔ لا يمكن التسليم للعميل: لا يوجد فحص جودة لأمر الإنتاج المرتبط.\n" +
-                    "في إنتاج التمور لا يظهر العيب إلا بعد أن يبرد المنتج — نفّذ الفحص أولاً.");
-
-            if (!checks.Any(c => c.IsApproved))
+                    "⛔ لا يمكن التسليم للعميل: لا يوجد فحص جودة معتمد للبند المرتبط.\n" +
+                    "نفّذ الفحص واعتمد نتيجته قبل الإفراج.");
+            var checkIds = checks.Select(c => c.Id).ToList();
+            var relevant = db.QualityCheckItems.AsNoTracking()
+                .Where(i => checkIds.Contains(i.CheckId) && i.ProductId == productId && i.LotId == lotId)
+                .ToList();
+            if (relevant.Count == 0 || relevant.Sum(i => i.AcceptedQtyKg) <= 0.001)
                 return (false,
-                    "⛔ لا يمكن التسليم للعميل: فحص الجودة لم يُعتمد بعد.\n" +
-                    "في إنتاج التمور لا يظهر العيب إلا بعد أن يبرد المنتج (فترة تبريد يومان بعد التصنيع).\n" +
-                    "التسليم لمخزن التام كان مسموحاً عند الإقفال — أما تسليم العميل فينتظر اعتماد نتيجة الفحص.");
+                    "⛔ لا يمكن التسليم للعميل: المقبول المعتمد لهذا الصنف/الدفعة/العبوة يساوي صفراً.\n" +
+                    "لا تُعتبر نتيجة صنف أو دفعة أخرى إفراجاً لهذا السطر.");
 
-            var rejected = checks.FirstOrDefault(c => c.IsApproved && c.Decision == Rejected);
+            var rejected = checks.FirstOrDefault(c => c.Decision == Rejected && relevant.Any(i => i.CheckId == c.Id));
             if (rejected != null)
                 return (false,
                     $"⛔ لا يمكن التسليم للعميل: قرار فحص الجودة «مرفوض تماماً / عوادم».\n" +
                     $"الفحص: {rejected.DocumentNumber} — اعتمد قرار الإتلاف أو إعادة التصنيع قبل أي تسليم.");
-
-            var quarantined = checks.FirstOrDefault(c => c.IsApproved && c.Decision == Quarantine);
+            var quarantined = checks.FirstOrDefault(c => c.Decision == Quarantine && relevant.Any(i => i.CheckId == c.Id));
             if (quarantined != null)
                 return (false,
                     $"⛔ لا يمكن التسليم للعميل: البضاعة تحت «حجز وتحريز مؤقت».\n" +
@@ -100,46 +119,50 @@ public static class QualityGate
     public static (bool ok, string reason) CustomerDeliveryQtyAllowed(
         DatesErpDbContext db, CustomerDelivery dlv, CustomerDeliveryItem item)
     {
-        // اشتقاق الأوامر كما في بوابة القرار (معرّف الأمر أو الدفعة/الصنف — لا تجاوز بالـnull)
-        // §1.50.72 P1-1: أمر البند من دفعته أولاً — سقف «المطابق المعتمد» يُقاس على فحوصات
-        // أمر البند نفسه لا على أمر رأس السند (سند يجمع أوامر متعددة لا يقاس على واحد).
-        var orderIds = new List<int>();
-        if (item.LotId != null)
-            orderIds = db.ProductionOrderItems.AsNoTracking()
-                .Where(i => i.LotId == item.LotId && i.ProductId == item.ProductId)
-                .Select(i => i.OrderId).Distinct().ToList();
-        if (orderIds.Count == 0 && dlv.OrderId != null) orderIds.Add(dlv.OrderId.Value);
-        if (orderIds.Count == 0) return (true, null); // بوابة القرار رفضت أصلاً — لا رسالة مكررة
+        // سقف المقبول المعتمد لنفس الهوية، لا لمجرد ProductId.
+        var orderItems = db.ProductionOrderItems.AsNoTracking()
+            .Where(i => i.ProductId == item.ProductId && i.LotId == item.LotId
+                && i.PackagingTypeId == item.PackagingTypeId
+                && (i.CustomerId == null || i.CustomerId == dlv.CustomerId))
+            .ToList();
+        var orderIds = dlv.OrderId != null
+            ? new List<int> { dlv.OrderId.Value }
+            : orderItems.Select(i => i.OrderId).Distinct().ToList();
+        if (orderIds.Count == 0) return (false, "⛔ لا يمكن التسليم: لم يُعثر على بند إنتاج مطابق لهوية السطر.");
+        if (dlv.OrderId == null && orderIds.Count != 1)
+            return (false, "⛔ لا يمكن التسليم دون أمر محدد: هوية السطر تطابق أكثر من أمر إنتاج.");
+        if (orderIds.Any(oid => orderItems.Count(i => i.OrderId == oid) != 1))
+            return (false, "⛔ لا يمكن التسليم: توجد عدة بنود متشابهة للصنف/الدفعة/العبوة ولا يمكن إثبات هوية المقبول.");
 
         var checkIds = db.QualityChecks.AsNoTracking()
             .Where(c => c.OrderId != null && orderIds.Contains(c.OrderId.Value) && c.IsApproved)
             .Select(c => c.Id).ToList();
-        double approved = 0;
-        if (checkIds.Count > 0)
-            approved = db.QualityCheckItems.AsNoTracking()
-                .Where(q => checkIds.Contains(q.CheckId) && q.ProductId == item.ProductId)
-                .Sum(q => q.AcceptedQtyKg);
-        if (approved <= 0) return (true, null); // بلا تفصيل مقبول — بوابة القرار هي صاحبة الرفض
+        double approved = db.QualityCheckItems.AsNoTracking()
+            .Where(q => checkIds.Contains(q.CheckId) && q.ProductId == item.ProductId && q.LotId == item.LotId)
+            .Sum(q => q.AcceptedQtyKg);
+        // QC-01: غياب التفصيل أو المقبول الصفري رفض، لا «سماح» افتراضي.
+        if (approved <= 0.001)
+            return (false,
+                "⛔ لا يمكن التسليم: المقبول المعتمد يساوي صفراً لهذه الهوية (الصنف/الدفعة/العبوة).");
 
-        var orderLots = db.ProductionOrderItems.AsNoTracking()
-            .Where(i => orderIds.Contains(i.OrderId) && i.LotId != null)
-            .Select(i => i.LotId!.Value).Distinct().ToList();
         double delivered = (from di in db.CustomerDeliveryItems.AsNoTracking()
                             join dd in db.CustomerDeliveries.AsNoTracking() on di.DeliveryId equals dd.Id
                             where dd.Id != dlv.Id && dd.IsApproved
-                                && dd.CustomerId == dlv.CustomerId && di.ProductId == item.ProductId
-                                && ((dd.OrderId != null && orderIds.Contains(dd.OrderId.Value))
-                                    || (di.LotId != null && orderLots.Contains(di.LotId.Value)))
+                                && dd.CustomerId == dlv.CustomerId
+                                && di.ProductId == item.ProductId && di.LotId == item.LotId
+                                && di.PackagingTypeId == item.PackagingTypeId
                             select di.QtyKg).Sum();
-        // بنود السند الحالي لنفس الصنف تُحسب معاً (سند متعدد البنود لصنف واحد)
-        double inCurrent = dlv.Items.Where(x => x.ProductId == item.ProductId).Sum(x => x.QtyKg);
+        double inCurrent = dlv.Items
+            .Where(x => x.ProductId == item.ProductId && x.LotId == item.LotId
+                && x.PackagingTypeId == item.PackagingTypeId)
+            .Sum(x => x.QtyKg);
         if (delivered + inCurrent > approved + 0.01)
         {
             string pname = db.Products.AsNoTracking().Where(p => p.Id == item.ProductId).Select(p => p.ProductNameAr).FirstOrDefault() ?? $"صنف #{item.ProductId}";
             return (false,
-                $"⛔ لا يمكن تسليم {inCurrent:N1} كجم من «{pname}»: المطابق المعتمد {approved:N1} كجم" +
+                $"⛔ لا يمكن تسليم {inCurrent:N1} كجم من «{pname}»: المقبول المعتمد لنفس الدفعة/العبوة {approved:N1} كجم" +
                 (delivered > 0.001 ? $" وسُلِّم منه {delivered:N1} كجم سابقاً" : "") + ".\n" +
-                "لا يُسلَّم للعميل إلا الكمية المطابقة المعتمدة من فحص الجودة — راجع المحضر المعتمد.");
+                "لا يُسلَّم للعميل إلا الكمية المطابقة المعتمدة لنفس هوية البند.");
         }
         return (true, null);
     }
@@ -147,10 +170,22 @@ public static class QualityGate
     /// <summary>هل سُمح بالإفراج لمخزن التام؟ (يكفي إرسال الإنتاج للفحص — قرارهم #19/#20).</summary>
     public static (bool ok, string reason) FinishedGoodsIssueAllowed(DatesErpDbContext db, int orderId)
     {
-        bool anyCheck = db.QualityChecks.AsNoTracking().Any(c => c.OrderId == orderId);
-        if (!anyCheck)
+        var checks = db.QualityChecks.AsNoTracking()
+            .Where(c => c.OrderId == orderId && c.IsApproved).ToList();
+        if (checks.Count == 0)
             return (false,
-                "لا يمكن تسليم الإنتاج قبل إقفال يوم الإنتاج وإرساله إلى الجودة — نفّذ الإقفال اليومي أولاً.");
+                "لا يمكن تسليم الإنتاج قبل اعتماد فحص الجودة — نفّذ الإقفال والفحص أولاً.");
+        var blocked = checks.FirstOrDefault(c => c.Decision is Rejected or Quarantine);
+        if (blocked != null)
+        {
+            string decisionAr = blocked.Decision == Rejected ? "مرفوض" : "حجز وتحريز مؤقت";
+            return (false, $"لا يمكن تسليم الإنتاج: قرار الفحص {blocked.DocumentNumber} هو «{decisionAr}».");
+        }
+        double accepted = db.QualityCheckItems.AsNoTracking()
+            .Where(i => checks.Select(c => c.Id).Contains(i.CheckId))
+            .Sum(i => i.AcceptedQtyKg);
+        if (accepted <= 0.001)
+            return (false, "لا يمكن تسليم الإنتاج: المقبول المعتمد يساوي صفراً.");
         return (true, null);
     }
 }

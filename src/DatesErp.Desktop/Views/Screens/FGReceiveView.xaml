@@ -50,8 +50,11 @@
                             <DataGridTextColumn Header="الصنف" Binding="{Binding ProductName}" Width="*" IsReadOnly="True"/>
                             <DataGridTextColumn Header="الدفعة" Binding="{Binding LotCode}" Width="100" IsReadOnly="True"/>
                             <DataGridTextColumn Header="العميل" Binding="{Binding CustomerName}" Width="140" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="العبوة" Binding="{Binding PackagingName}" Width="110" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="كراتين الأمر" Binding="{Binding Packages}" Width="90" IsReadOnly="True"/>
                             <DataGridTextColumn Header="المتبقي" Binding="{Binding Remaining}" Width="90" IsReadOnly="True"/>
                             <DataGridTextColumn Header="كمية السند (كجم)" Binding="{Binding Qty, UpdateSourceTrigger=PropertyChanged}" Width="120"/>
+                            <DataGridTextColumn Header="كراتين السند" Binding="{Binding ReceiptPackages, UpdateSourceTrigger=PropertyChanged}" Width="100"/>
                             <DataGridTextColumn Header="المستلم الآن (كجم)" Binding="{Binding ReceiveNow, UpdateSourceTrigger=PropertyChanged}" Width="130"/>
                             <DataGridTextColumn Header="المستلم فعلياً" Binding="{Binding Received}" Width="110" IsReadOnly="True"/>
                         </DataGrid.Columns>

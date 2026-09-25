@@ -7,16 +7,26 @@
       ١) المصدر تسليم الإنتاج (بلا إعادة اختيار الصنف) ٢) كل الأصناف المنتَجة تنزل بكمياتها
       ٣) النتائج صفات جودة لنفس الصنف (صفات لا أصناف) بنسبتها ٤) المعايير المعتمدة تظهر تلقائياً
       ٥) الحفظ يشترط: مجموع صفات كل صنف = كميته المستلمة. شاشة واحدة بلا تمرير عمودي. -->
- <DockPanel LastChildFill="True" Margin="12">
+ <Grid Margin="12">
+  <!-- تقسيم صريح: الحقول العلوية والمعايير والحفظ لها ارتفاعها، وشبكة النتائج
+       تأخذ كل المساحة المتبقية وتدير تمريرها بنفسها — لا تداخل بين العناصر. -->
+  <Grid.RowDefinitions>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="*" MinHeight="120"/>
+  </Grid.RowDefinitions>
 
   <!-- ١) الترويسة -->
-  <StackPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+  <StackPanel Grid.Row="0" Margin="0,0,0,6">
    <TextBlock Text="🔬 الفحص والجودة" FontSize="22" FontWeight="Bold" Foreground="#163B46"/>
    <TextBlock Text="ينزل مباشرة من تسليم الإنتاج — النتائج صفات جودة للصنف نفسه — وليست أصنافاً جديدة إطلاقاً." Margin="0,4,0,0" Foreground="#536970"/>
   </StackPanel>
 
   <!-- ٢) مصدر الفحص: تسليم الإنتاج -->
-  <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Padding="10,6" Margin="0,0,0,6">
+  <Border Grid.Row="1" Style="{StaticResource Card}" Padding="10,6" Margin="0,0,0,6">
    <StackPanel>
     <WrapPanel VerticalAlignment="Center">
      <TextBlock Text="مصدر الفحص:" FontWeight="Bold" FontSize="13" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -29,14 +39,14 @@
   </Border>
 
   <!-- ٣) الأصناف المستلمة للفحص — نازلة تلقائياً -->
-  <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Padding="10,5" Margin="0,0,0,6">
+  <Border Grid.Row="2" Style="{StaticResource Card}" Padding="10,5" Margin="0,0,0,6">
    <WrapPanel x:Name="ItemsPanel" VerticalAlignment="Center">
     <TextBlock Text="الأصناف المستلمة للفحص:" FontWeight="Bold" FontSize="12.5" VerticalAlignment="Center" Margin="0,0,10,0"/>
    </WrapPanel>
   </Border>
 
-  <!-- ٦) شريط الحفظ (أسفل ثابت) -->
-  <Border DockPanel.Dock="Bottom" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" Padding="10,6">
+  <!-- ٦) شريط الحفظ -->
+  <Border Grid.Row="4" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" Padding="10,6">
    <DockPanel>
     <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
      <TextBlock x:Name="TotalsLabel" FontWeight="Bold" FontSize="12" Foreground="#0A246A" Text="الإجمالي: —"/>
@@ -55,8 +65,8 @@
    </DockPanel>
   </Border>
 
-  <!-- ٥) معايير الفحص المعتمدة (فوق الشريط) -->
-  <Border DockPanel.Dock="Bottom" Style="{StaticResource Card}" Margin="0,0,0,6">
+  <!-- ٥) معايير الفحص المعتمدة -->
+  <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,6">
    <DockPanel>
     <TextBlock DockPanel.Dock="Top" Text="معايير الفحص المعتمدة — من المواصفة القياسية المعتمدة للصنف، تُدخل نتائجها بوحدتها" FontWeight="Bold" FontSize="12.5" Foreground="#1F2937" Margin="0,0,0,4"/>
     <DataGrid x:Name="CriteriaGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
@@ -89,7 +99,7 @@
   </Border>
 
   <!-- ٤) نتائج الفحص — مصفوفة بنفس شكل خطة الإنتاج: صف لكل عميل×صنف×عبوة، وصفات الجودة أعمدة -->
-  <Border Style="{StaticResource Card}">
+  <Border Grid.Row="5" Style="{StaticResource Card}" Background="#F4F2E8" MinHeight="120">
    <DockPanel>
     <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" FontSize="12.5" Foreground="#1F2937"
                Text="نتائج الفحص — صف لكل عميل وصنف وعبوة كما في خطة الإنتاج، وصفات الجودة أعمدة تُدخل كمياتها"/>
@@ -123,5 +133,5 @@
     </DockPanel>
    </DockPanel>
   </Border>
- </DockPanel>
+ </Grid>
 </UserControl>
