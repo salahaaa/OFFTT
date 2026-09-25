@@ -88,7 +88,13 @@ public partial class ProductionDeliveryView : UserControl
             PendingOrderId = null;
             if (orders.Count() == 0) StatusLabel.Text = "لا توجد أوامر مطابقة لخطة اليوم المعتمدة. لا تُضاف أصناف أو خطط من هذه الشاشة.";
         }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.Load"); }
+        catch (Exception ex)
+        {
+            SaveButton.IsEnabled = false;
+            CreateDeliveryButton.IsEnabled = false;
+            StatusLabel.Text = $"تعذر تحميل أوامر تسليم الإنتاج: {ex.Message} — تم تعطيل الأزرار حتى ينجح التحديث.";
+            AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.Load");
+        }
     }
     private void Order_Changed(object sender, SelectionChangedEventArgs e)
     {
@@ -153,6 +159,7 @@ public partial class ProductionDeliveryView : UserControl
             if (_saving)
             {
                 ErrorLog.WriteInfo("ActualDelivery.Save_Click STEP=EXIT Reason=AlreadySaving");
+                StatusLabel.Text = "⏳ يوجد حفظ قيد التنفيذ — انتظر اكتماله قبل الضغط مرة أخرى.";
                 return;
             }
 
@@ -161,6 +168,7 @@ public partial class ProductionDeliveryView : UserControl
             if (selectedItem is not ActualDeliveryOrderDto order)
             {
                 ErrorLog.WriteInfo("ActualDelivery.Save_Click STEP=EXIT Reason=SelectedItemIsNotActualDeliveryOrderDto");
+                StatusLabel.Text = "⛔ اختر أمر إنتاج من القائمة أولاً حتى يمكن حفظ الفعلي.";
                 return;
             }
 

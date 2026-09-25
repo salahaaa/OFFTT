@@ -230,8 +230,8 @@
      <DockPanel>
       <TextBlock Text="أمر تسليم الإنتاج — قابل للتعديل قبل التحرير" FontSize="13" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
       <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-       <Button x:Name="SaveDeliveryButton" Content="حفظ تعديل أمر التسليم" Style="{StaticResource ErpButton}" Click="SaveDelivery_Click" Margin="0,0,6,0"/>
-       <Button x:Name="IssueDeliveryButton" Content="تحرير للمخزن وإقفال الخطة" Style="{StaticResource ErpApproveButton}" Click="IssueDelivery_Click"/>
+       <Button x:Name="SaveDeliveryButton" Content="حفظ تعديل أمر التسليم" Style="{StaticResource ErpButton}" Click="SaveDelivery_Click" Margin="0,0,6,0" IsEnabled="False"/>
+       <Button x:Name="IssueDeliveryButton" Content="تحرير للمخزن وإقفال الخطة" Style="{StaticResource ErpApproveButton}" Click="IssueDelivery_Click" IsEnabled="False"/>
       </StackPanel>
      </DockPanel>
     </Border>
@@ -258,7 +258,7 @@
     </Grid.ColumnDefinitions>
     <StackPanel Orientation="Horizontal">
      <Button x:Name="SaveButton" Content="حفظ الإنتاج الفعلي فقط"
-             Style="{StaticResource ErpApproveButton}" Click="Save_Click" MinWidth="230" FontSize="12.5" Padding="16,7"/>
+             Style="{StaticResource ErpApproveButton}" Click="Save_Click" MinWidth="230" FontSize="12.5" Padding="16,7" IsEnabled="False"/>
      <Button x:Name="CreateDeliveryButton" Content="إنشاء أمر تسليم من الفعلي"
              Style="{StaticResource ErpButton}" Click="CreateDelivery_Click" MinWidth="230" FontSize="12.5" Padding="16,7" Margin="8,0,0,0" IsEnabled="False"/>
     </StackPanel>

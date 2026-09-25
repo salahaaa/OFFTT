@@ -174,7 +174,14 @@ public partial class QCWindow : Window
             BtnApprove.Visibility = !_check.IsApproved && session.Can("quality", "Approve") && _check.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             BtnCorrect.Visibility = _check.IsApproved && session.Can("quality", "EditAfterApproval") ? Visibility.Visible : Visibility.Collapsed;
         }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "QC.Load"); }
+        catch (Exception ex)
+        {
+            BtnSave.Visibility = Visibility.Collapsed;
+            BtnApprove.Visibility = Visibility.Collapsed;
+            BtnCorrect.Visibility = Visibility.Collapsed;
+            InputGrid.IsReadOnly = true;
+            AppContainer.Get<DialogService>().HandleException(ex, "QC.Load");
+        }
     }
 
     /// <summary>أسطر الإدخال: لكل (صنف×دفعة) في المنتَج — المتبقي بعد فحوصات أخرى، مُعبأ تلقائياً.</summary>

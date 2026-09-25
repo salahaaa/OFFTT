@@ -153,8 +153,21 @@ public partial class QualityView : UserControl
         catch (Exception ex)
         {
             WriteQualityExceptionTrace("Quality.Load", ex);
-            StatusLabel.Text = $"تعذر تحميل مصادر الفحص: {ex.Message}";
+            DisableQualityActions();
+            StatusLabel.Text = $"تعذر تحميل مصادر الفحص: {ex.Message} — تم تعطيل الأزرار حتى ينجح التحديث.";
         }
+    }
+
+    private void DisableQualityActions()
+    {
+        SaveButton.IsEnabled = false;
+        ApproveButton.IsEnabled = false;
+        PrintButton.IsEnabled = false;
+        ResultsGrid.IsReadOnly = true;
+        CriteriaGrid.IsReadOnly = true;
+        DecisionPassed.IsEnabled = false;
+        DecisionQuarantine.IsEnabled = false;
+        DecisionRejected.IsEnabled = false;
     }
 
     private void Source_Changed(object sender, SelectionChangedEventArgs e)
@@ -252,7 +265,8 @@ public partial class QualityView : UserControl
         catch (Exception ex)
         {
             WriteQualityExceptionTrace("Quality.Source", ex);
-            StatusLabel.Text = $"تعذر تحميل تفاصيل مصدر الفحص: {ex.Message}";
+            DisableQualityActions();
+            StatusLabel.Text = $"تعذر تحميل تفاصيل مصدر الفحص: {ex.Message} — تم تعطيل الأزرار حتى ينجح التحديث.";
         }
     }
 
