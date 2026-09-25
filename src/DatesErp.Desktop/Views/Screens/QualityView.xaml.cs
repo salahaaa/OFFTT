@@ -102,6 +102,9 @@ public partial class QualityView : UserControl
     private readonly ObservableCollection<StandardUi> _standards = new();
     private List<AllowedResultType> _gradeColumns = new();
     private bool _loading;
+    private static bool QualityCan(string action)
+        => DatesErp.Desktop.Views.PermissionGate.Can("quality", action);
+
     public QualityView() { InitializeComponent(); ResultsGrid.ItemsSource = _rows; CriteriaGrid.ItemsSource = _standards; Loaded += (_, _) => Load(); }
     public void AttachChrome(Views.ErpChrome chrome)
     {
@@ -130,8 +133,15 @@ public partial class QualityView : UserControl
             ErrorLog.WriteInfo($"Quality.Load STEP=RETURN_SOURCES Count={_sources.Count}");
             SourceBox.ItemsSource = _sources;
             SourceBox.DisplayMemberPath = nameof(QualitySourceDto.Label);
+            // فتح الجودة من تقرير/مهمة يجب أن يفتح الفحص المطلوب، لا أول مصدر
+            // عشوائي في القائمة. هذا المعرف لا يغيّر عقدة الخدمة؛ هو حالة تنقل
+            // مؤقتة تضعها MainWindow عند OpenDocument("quality", id).
+            int? pendingCheckId = DatesErp.Desktop.Views.MainWindow.PendingCheckIdToOpen;
+            DatesErp.Desktop.Views.MainWindow.PendingCheckIdToOpen = null;
             _loading = true;
-            SourceBox.SelectedItem = _sources.FirstOrDefault(s2 => s2.OrderId == keepOrderId && !s2.CheckApproved)
+            SourceBox.SelectedItem = _sources.FirstOrDefault(s2 => pendingCheckId.HasValue
+                    && s2.CheckId == pendingCheckId.Value)
+                ?? _sources.FirstOrDefault(s2 => s2.OrderId == keepOrderId && !s2.CheckApproved)
                 ?? _sources.FirstOrDefault(s2 => !s2.CheckApproved)
                 ?? _sources.FirstOrDefault(s2 => s2.OrderId == keepOrderId)
                 ?? _sources.FirstOrDefault();
@@ -163,14 +173,27 @@ public partial class QualityView : UserControl
         CheckNoChip.Text = _current?.CheckId != null
             ? $"🧾 فحص {_current.CheckNumber} — {QualityCheckStatuses.ToArabic(_current.CheckStatus)}{(_current.CheckApproved ? " (معتمد — للقراءة)" : "")}"
             : "— لا فحص محفوظ بعد";
-        SaveButton.IsEnabled = _current != null && !_current.CheckApproved;
-        ApproveButton.IsEnabled = _current?.CheckId != null && !_current.CheckApproved;
+        bool canCreate = QualityCan("Create");
+        bool canApprove = QualityCan("Approve");
+        bool canPrint = QualityCan("Print");
+        SaveButton.IsEnabled = _current != null && !_current.CheckApproved && canCreate;
+        ApproveButton.IsEnabled = _current?.CheckId != null && !_current.CheckApproved && canApprove;
+        PrintButton.IsEnabled = _current?.CheckId != null && canPrint;
         StatusLabel.Text = _current == null
             ? (_sources.Count == 0
                 ? "لا توجد تسليمات إنتاج مكتملة بعد — حدّث الشاشة بعد إقفال إنتاج فعلي."
                 : "اختر تسليم إنتاج من الأعلى — تنزل أصنافه المنتَجة تلقائياً بكمياتها.")
             : $"مصدر الفحص: تسليم الإنتاج رقم {_current.OrderNumber} — إجمالي المنتَج {_current.TotalProducedCartons:N0} كرتون"
               + (_current.CheckApproved ? " — الفحص معتمد، النتائج للقراءة والطباعة." : " — النتائج تُدخل تحت مباشرة.");
+        if (_current != null)
+        {
+            if (!canCreate && !_current.CheckApproved)
+                StatusLabel.Text += " — الحفظ غير متاح: لا توجد صلاحية إنشاء/تعديل فحص الجودة لهذا المستخدم.";
+            if (!canApprove && !_current.CheckApproved)
+                StatusLabel.Text += " — الاعتماد غير متاح: لا توجد صلاحية اعتماد الجودة لهذا المستخدم.";
+            if (!canPrint)
+                StatusLabel.Text += " — الطباعة غير متاحة: لا توجد صلاحية الطباعة لهذا المستخدم.";
+        }
         try
         {
             using var scope = AppContainer.NewScope();
@@ -347,6 +370,11 @@ public partial class QualityView : UserControl
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
+        if (!QualityCan("Create"))
+        {
+            StatusLabel.Text = "⛔ لا يمكن الحفظ: لا توجد صلاحية إنشاء/تعديل فحص الجودة لهذا المستخدم.";
+            return;
+        }
         if (_current == null)
         {
             ErrorLog.WriteInfo("Quality.Save_Click STEP=EXIT Reason=NoSource");
@@ -416,6 +444,11 @@ public partial class QualityView : UserControl
 
     private void Approve_Click(object sender, RoutedEventArgs e)
     {
+        if (!QualityCan("Approve"))
+        {
+            StatusLabel.Text = "⛔ لا يمكن الاعتماد: لا توجد صلاحية اعتماد الجودة لهذا المستخدم.";
+            return;
+        }
         if (_current == null)
         {
             ErrorLog.WriteInfo("Quality.Approve_Click STEP=EXIT Reason=NoSource");
@@ -460,6 +493,11 @@ public partial class QualityView : UserControl
 
     private void Print_Click(object sender, RoutedEventArgs e)
     {
+        if (!QualityCan("Print"))
+        {
+            StatusLabel.Text = "⛔ لا يمكن الطباعة: لا توجد صلاحية طباعة محضر الجودة لهذا المستخدم.";
+            return;
+        }
         if (_current?.CheckId == null)
         {
             ErrorLog.WriteInfo("Quality.Print_Click STEP=EXIT Reason=NoSavedCheck");

@@ -98,7 +98,12 @@ public partial class ProductionDeliveryService
                 && d.Status != DocStatuses.Draft)
             .Select(d => d.SourceId)
             .ToHashSet();
+        // احسم الحالة على آخر تنفيذ مقفل لكل أمر، لا على أي تنفيذ تاريخي.
+        // وجود تنفيذ قديم بلا تسليم لا يجوز أن يعيد أمراً مُحرَّراً حديثاً
+        // إلى القائمة التشغيلية.
         var closedExeWithNoDelivery = closedExeList
+            .GroupBy(e => e.OrderId)
+            .Select(g => g.OrderByDescending(e => e.Id).First())
             .Where(e => !deliveredExeIds.Contains(e.Id))
             .Select(e => e.OrderId)
             .ToHashSet();
@@ -186,7 +191,8 @@ public partial class ProductionDeliveryService
                 : itemCustomerNames.Count == 1 ? itemCustomerNames[0]
                 : $"عدة عملاء ({itemCustomerNames.Count}): {string.Join("، ", itemCustomerNames)}";
 
-            bool can = exe == null && order.IsApproved && !order.IsClosed && order.Status != DocStatuses.Cancelled;
+            bool can = exe == null && order.IsApproved && !order.IsClosed;
+            if (order.Status == DocStatuses.Cancelled) can = false;
 
             result.Add(new ActualDeliveryOrderDto
             {

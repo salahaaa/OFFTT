@@ -20,6 +20,10 @@ public partial class ProductionDeliveryView : UserControl
     private readonly ObservableCollection<ActualProductionRow> _items = new();
     private readonly ObservableCollection<ActualSecondaryRow> _secondary = new();
     private readonly ObservableCollection<DeliveryEditRow> _deliveryItems = new();
+    private static bool CanProduction(string action)
+        => DatesErp.Desktop.Views.PermissionGate.Can("production", action);
+    private static bool CanExecution(string action)
+        => DatesErp.Desktop.Views.PermissionGate.Can("execution", action);
     private bool _saving;
     private readonly Func<List<ActualDeliveryOrderDto>> _loadOrders;
     private readonly Func<List<ActualByProductDefinitionDto>> _loadDefinitions;
@@ -92,8 +96,10 @@ public partial class ProductionDeliveryView : UserControl
         ByProductDefinitions.Clear(); foreach (var b in _activeDefinitions) ByProductDefinitions.Add(b);
         _items.Clear(); _secondary.Clear(); RawBox.Text = ""; DowntimeBox.Text = "0"; ReasonBox.Text = ""; NotesBox.Text = "";
         var order = OrderBox.SelectedItem as ActualDeliveryOrderDto;
-        SaveButton.IsEnabled = order?.CanRecord == true;
-        CreateDeliveryButton.IsEnabled = order?.CanCreateDelivery == true;
+        bool canRecord = CanProduction("Create") && CanExecution("Edit");
+        bool canCreateDelivery = CanProduction("Create");
+        SaveButton.IsEnabled = order?.CanRecord == true && canRecord;
+        CreateDeliveryButton.IsEnabled = order?.CanCreateDelivery == true && canCreateDelivery;
         DeliveryOrderPanel.Visibility = order?.ProductionDeliveryId > 0 ? Visibility.Visible : Visibility.Collapsed;
         _deliveryItems.Clear();
         if (order?.ProductionDeliveryId > 0) LoadDelivery(order.ProductionDeliveryId);
@@ -108,6 +114,10 @@ public partial class ProductionDeliveryView : UserControl
         ShiftChip.Text = $"الوردية: {order?.Shift ?? "—"}";
         StatusLabel.Text = string.IsNullOrWhiteSpace(order?.Status) ? "اختر أمراً من الأعلى لتظهر بنوده." : order.Status;
         if (order == null) return;
+        if (order.CanRecord && !canRecord)
+            StatusLabel.Text += "\n⛔ الحفظ غير متاح: يلزم صلاحية إنشاء الإنتاج وتعديل التنفيذ.";
+        if (order.CanCreateDelivery && !canCreateDelivery)
+            StatusLabel.Text += "\n⛔ إنشاء أمر التسليم غير متاح: يلزم صلاحية إنشاء مستندات الإنتاج.";
         foreach (var line in order.Items) _items.Add(new ActualProductionRow(line, order.Recorded));
         if (order.Items.Count == 0) StatusLabel.Text += "\nتنبيه: هذا الأمر بلا بنود خطة — راجع أمر الإنتاج نفسه قبل التسجيل.";
         if (!order.Recorded) { _secondary.Add(new ActualSecondaryRow()); return; }
@@ -160,7 +170,12 @@ public partial class ProductionDeliveryView : UserControl
             if (!order.CanRecord)
             {
                 ErrorLog.WriteInfo($"ActualDelivery.Save_Click STEP=EXIT Reason=OrderCannotRecord OrderId={order.OrderId} Status={order.Status}");
-                StatusLabel.Text = "تنبيه — لا يمكن الحفظ: " + (order.Status ?? "الأمر غير قابل للتسجيل.");
+                StatusLabel.Text = "⚠ لا يمكن الحفظ: " + (order.Status ?? "الأمر غير قابل للتسجيل.");
+                return;
+            }
+            if (!CanProduction("Create") || !CanExecution("Edit"))
+            {
+                StatusLabel.Text = "⛔ لا يمكن الحفظ: يلزم صلاحية إنشاء الإنتاج وتعديل التنفيذ.";
                 return;
             }
 
@@ -199,11 +214,21 @@ public partial class ProductionDeliveryView : UserControl
                     {
                         msg += "\n" + delRes.Message;
                     }
+                    else
+                    {
+                        // لا نبتلع فشل الإنشاء التلقائي: يبقى الفعلي محفوظاً،
+                        // ويستطيع المستخدم الضغط على «إنشاء أمر التسليم» بعد
+                        // معالجة السبب الظاهر في الرسالة.
+                        msg += "\n⚠ تعذر إنشاء أمر التسليم تلقائياً: " + delRes.Message
+                            + "\nيمكنك إعادة المحاولة من زر إنشاء أمر التسليم.";
+                    }
                 }
                 catch (Exception ex)
                 {
                     ErrorLog.WriteInfo($"ActualDelivery.Save_Click AutoCreateDeliveryFailed: {ex.Message}");
                     WriteSaveExceptionTrace(ex);
+                    msg += "\n⚠ تعذر إنشاء أمر التسليم تلقائياً بسبب خطأ: " + ex.Message
+                        + "\nيمكنك إعادة المحاولة من زر إنشاء أمر التسليم.";
                 }
             }
             MessageBox.Show(msg, "تأكيد حفظ تسجيل الفعلي وإقفال اليوم", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -223,8 +248,10 @@ public partial class ProductionDeliveryView : UserControl
         finally
         {
             _saving = false;
-            SaveButton.IsEnabled = (OrderBox.SelectedItem as ActualDeliveryOrderDto)?.CanRecord == true;
-            CreateDeliveryButton.IsEnabled = (OrderBox.SelectedItem as ActualDeliveryOrderDto)?.CanCreateDelivery == true;
+            SaveButton.IsEnabled = (OrderBox.SelectedItem as ActualDeliveryOrderDto)?.CanRecord == true
+                && CanProduction("Create") && CanExecution("Edit");
+            CreateDeliveryButton.IsEnabled = (OrderBox.SelectedItem as ActualDeliveryOrderDto)?.CanCreateDelivery == true
+                && CanProduction("Create");
         }
     }
 
@@ -258,8 +285,14 @@ public partial class ProductionDeliveryView : UserControl
             var card = WithService(s => s.GetDelivery(deliveryId));
             if (card == null) return;
             DeliveryStatusLabel.Text = $"{card.DocumentNumber} — {card.StatusAr} — المصدر: {card.SourceNumber} ({card.SourceTypeAr})";
-            SaveDeliveryButton.IsEnabled = card.Status == "Draft";
-            IssueDeliveryButton.IsEnabled = card.Status == "Draft";
+            bool canEdit = CanProduction("Edit");
+            bool canApprove = CanProduction("Approve");
+            SaveDeliveryButton.IsEnabled = card.Status == "Draft" && canEdit;
+            IssueDeliveryButton.IsEnabled = card.Status == "Draft" && canApprove;
+            if (card.Status == "Draft" && !canEdit)
+                DeliveryStatusLabel.Text += " — التعديل غير متاح: لا توجد صلاحية تعديل أمر التسليم.";
+            if (card.Status == "Draft" && !canApprove)
+                DeliveryStatusLabel.Text += " — التحرير غير متاح: لا توجد صلاحية اعتماد أمر التسليم.";
             foreach (var line in card.Lines)
                 _deliveryItems.Add(new DeliveryEditRow
                 {
@@ -285,6 +318,11 @@ public partial class ProductionDeliveryView : UserControl
         {
             ErrorLog.WriteInfo("ActualDelivery.SaveDelivery_Click STEP=EXIT Reason=NoDraftSelected");
             DeliveryStatusLabel.Text = "⛔ لا يمكن حفظ التعديل: اختر أمر تسليم إنتاج مسودة أولاً.";
+            return;
+        }
+        if (!CanProduction("Edit"))
+        {
+            DeliveryStatusLabel.Text = "⛔ لا يمكن حفظ التعديل: لا توجد صلاحية تعديل أمر التسليم.";
             return;
         }
         try
@@ -321,13 +359,20 @@ public partial class ProductionDeliveryView : UserControl
             DeliveryStatusLabel.Text = "⛔ لا يمكن التحرير: اختر أمر تسليم إنتاج مسودة أولاً.";
             return;
         }
+        if (!CanProduction("Approve"))
+        {
+            DeliveryStatusLabel.Text = "⛔ لا يمكن التحرير: لا توجد صلاحية اعتماد أمر التسليم.";
+            return;
+        }
         try
         {
             ErrorLog.WriteInfo($"ActualDelivery.IssueDelivery_Click STEP=ENTER DeliveryId={order.ProductionDeliveryId}");
             var result = WithService(s => s.IssueDelivery(order.ProductionDeliveryId));
             ErrorLog.WriteInfo($"ActualDelivery.IssueDelivery_Click STEP=RETURN_ISSUE DeliveryId={order.ProductionDeliveryId} Ok={result.Ok} Message={result.Message}");
             if (!result.Ok) { DeliveryStatusLabel.Text = result.Message; StatusLabel.Text = "⛔ " + result.Message; return; }
-            LoadOrders(order.OrderId, true);
+            // بعد تحرير أمر التسليم للمخزن يجب أن يختفي من قائمة الإنشاء.
+            // لا نمرر OrderId هنا، لأن وضع selected كان يتجاوز فلتر الأوامر المحررة.
+            LoadOrders(null, false);
             StatusLabel.Text = "✅ " + result.Message;
         }
         catch (Exception ex)
@@ -353,6 +398,11 @@ public partial class ProductionDeliveryView : UserControl
             StatusLabel.Text = order.ProductionDeliveryId > 0
                 ? "يوجد أمر تسليم إنتاج لهذا التنفيذ — افتحه من لوحة المسودة وعدّله قبل تحريره للمخزن."
                 : "احفظ الإنتاج الفعلي وأقفله أولاً، ثم أنشئ أمر التسليم من التنفيذ المحفوظ.";
+            return;
+        }
+        if (!CanProduction("Create"))
+        {
+            StatusLabel.Text = "⛔ لا يمكن إنشاء أمر التسليم: لا توجد صلاحية إنشاء مستندات الإنتاج.";
             return;
         }
         try

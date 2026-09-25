@@ -588,10 +588,11 @@ public class InspectionService : ServiceBase, IInspectionService
         var orders = Db.ProductionOrders.AsNoTracking().Include(o => o.Items)
             .Where(o => orderIds.Contains(o.Id) && o.Status != DocStatuses.Cancelled)
             .ToList();
+        var executionIds = executions.Values.Select(e => e.Id).ToList();
         var checks = Db.QualityChecks.AsNoTracking()
-            .Where(c => c.OrderId != null && orderIds.Contains(c.OrderId.Value))
+            .Where(c => c.ExecutionId != null && executionIds.Contains(c.ExecutionId.Value))
             .ToList()
-            .GroupBy(c => c.OrderId!.Value)
+            .GroupBy(c => c.ExecutionId!.Value)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.Id).First());
 
         // تحميل الهوية دفعة واحدة: فتح شاشة الجودة لا ينفذ استعلاماً لكل خلية،
@@ -642,7 +643,7 @@ public class InspectionService : ServiceBase, IInspectionService
                 OrderNumber = o.DocumentNumber,
                 TotalProducedCartons = actualItems.Sum(i => i.ProducedCartons),
             };
-            if (checks.TryGetValue(o.Id, out var chk))
+            if (checks.TryGetValue(exe.Id, out var chk))
             {
                 src.CheckId = chk.Id; src.CheckNumber = chk.DocumentNumber;
                 src.CheckStatus = chk.Status; src.CheckApproved = chk.IsApproved;

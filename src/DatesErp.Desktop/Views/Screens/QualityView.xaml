@@ -59,7 +59,7 @@
     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
      <Button x:Name="SaveButton" Content="💾 حفظ نتائج الفحص" Style="{StaticResource ErpApproveButton}" Click="Save_Click"/>
      <Button x:Name="ApproveButton" Content="✅ اعتماد الفحص" Style="{StaticResource ErpPrimaryButton}" Margin="8,0,0,0" Click="Approve_Click"/>
-     <Button Content="🖨 طباعة المحضر" Style="{StaticResource ErpButton}" Margin="8,0,0,0" Click="Print_Click"/>
+     <Button x:Name="PrintButton" Content="🖨 طباعة المحضر" Style="{StaticResource ErpButton}" Margin="8,0,0,0" Click="Print_Click"/>
     </StackPanel>
     <TextBlock Text="الحفظ يتحقق آلياً: مجموع صفات كل صنف = كميته المستلمة للفحص، والاعتماد بعد الحفظ." FontSize="11.5" Foreground="#6B7280" VerticalAlignment="Center" Margin="14,0,14,0" TextWrapping="Wrap"/>
    </DockPanel>
