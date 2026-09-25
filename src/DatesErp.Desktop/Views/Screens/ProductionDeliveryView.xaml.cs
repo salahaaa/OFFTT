@@ -289,6 +289,7 @@ public partial class ProductionDeliveryView : UserControl
             bool canApprove = CanProduction("Approve");
             SaveDeliveryButton.IsEnabled = card.Status == "Draft" && canEdit;
             IssueDeliveryButton.IsEnabled = card.Status == "Draft" && canApprove;
+            DeliveryItemsGrid.IsReadOnly = card.Status != "Draft" || !canEdit;
             if (card.Status == "Draft" && !canEdit)
                 DeliveryStatusLabel.Text += " — التعديل غير متاح: لا توجد صلاحية تعديل أمر التسليم.";
             if (card.Status == "Draft" && !canApprove)

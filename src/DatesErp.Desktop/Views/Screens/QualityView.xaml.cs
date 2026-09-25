@@ -179,6 +179,11 @@ public partial class QualityView : UserControl
         SaveButton.IsEnabled = _current != null && !_current.CheckApproved && canCreate;
         ApproveButton.IsEnabled = _current?.CheckId != null && !_current.CheckApproved && canApprove;
         PrintButton.IsEnabled = _current?.CheckId != null && canPrint;
+        ResultsGrid.IsReadOnly = _current == null || _current.CheckApproved || !canCreate;
+        CriteriaGrid.IsReadOnly = _current == null || _current.CheckApproved || !canCreate;
+        DecisionPassed.IsEnabled = _current != null && !_current.CheckApproved && canCreate;
+        DecisionQuarantine.IsEnabled = _current != null && !_current.CheckApproved && canCreate;
+        DecisionRejected.IsEnabled = _current != null && !_current.CheckApproved && canCreate;
         StatusLabel.Text = _current == null
             ? (_sources.Count == 0
                 ? "لا توجد تسليمات إنتاج مكتملة بعد — حدّث الشاشة بعد إقفال إنتاج فعلي."

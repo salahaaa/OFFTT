@@ -101,17 +101,24 @@ public partial class ProductionDeliveryService
         // احسم الحالة على آخر تنفيذ مقفل لكل أمر، لا على أي تنفيذ تاريخي.
         // وجود تنفيذ قديم بلا تسليم لا يجوز أن يعيد أمراً مُحرَّراً حديثاً
         // إلى القائمة التشغيلية.
-        var closedExeWithNoDelivery = closedExeList
+        var latestClosedExeByOrder = closedExeList
             .GroupBy(e => e.OrderId)
             .Select(g => g.OrderByDescending(e => e.Id).First())
+            .ToList();
+        var closedExeWithNoDelivery = latestClosedExeByOrder
             .Where(e => !deliveredExeIds.Contains(e.Id))
+            .Select(e => e.OrderId)
+            .ToHashSet();
+        var deliveredOrderIds = latestClosedExeByOrder
+            .Where(e => deliveredExeIds.Contains(e.Id))
             .Select(e => e.OrderId)
             .ToHashSet();
 
         var orders = Db.ProductionOrders.AsNoTracking()
             .Where(o => o.SourceType == "FromPlan" && o.SourcePlanId != null && o.IsApproved
                 && o.Status != DocStatuses.Cancelled
-                && (selectedOrderId.HasValue ? o.Id == selectedOrderId.Value
+                && (selectedOrderId.HasValue
+                    ? o.Id == selectedOrderId.Value && !deliveredOrderIds.Contains(o.Id)
                     : (!o.IsClosed && !closedExeOrderIds.Contains(o.Id) || closedExeWithNoDelivery.Contains(o.Id))))
             .OrderByDescending(o => o.Id)
             .ToList();

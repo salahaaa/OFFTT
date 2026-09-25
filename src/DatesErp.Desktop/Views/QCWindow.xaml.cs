@@ -185,8 +185,17 @@ public partial class QCWindow : Window
         var lots = db.Lots.AsNoTracking().ToDictionary(l => l.Id, l => l.LotCode);
         var customers = db.Customers.AsNoTracking().ToDictionary(c => c.Id, c => c.CustomerName);
 
+        // الفحص اليدوي بلا أمر يعرض نتائجه المحفوظة في تبويب النتائج فقط؛
+        // لا توجد بنود أمر يمكن بناء جدول إدخال لها، والأهم ألا تسقط الشاشة
+        // باستثناء NullReference عند فتح مهمة فحص يدوية.
+        if (_order == null) return rows;
+
         // مجموعات بنود الفحص الموجودة مسبقاً (لإعادة التعبئة عند الاستئناف/التعديل قبل الاعتماد)
         var own = _check.Items.Where(i => i.ProductId != 0).GroupBy(i => (i.ProductId, i.LotId)).ToDictionary(g => g.Key, g => g.First());
+        var planItemIds = _order.Items.Where(i => i.PlanItemId != null).Select(i => i.PlanItemId!.Value).Distinct().ToList();
+        var planCustomers = db.ProductionPlanItems.AsNoTracking()
+            .Where(i => planItemIds.Contains(i.Id))
+            .ToDictionary(i => i.Id, i => i.CustomerId);
 
         foreach (var oi in _order.Items.Where(i => i.ProducedQtyKg > 0.001 || i.ProducedCartons > 0))
         {
@@ -224,7 +233,9 @@ public partial class QCWindow : Window
                 LotId = lotId,
                 ProductName = products.TryGetValue(prodId, out var pn) ? pn : $"#{prodId}",
                 LotCode = lotId != null && lots.TryGetValue(lotId.Value, out var lc) ? lc : "—",
-                CustomerName = (oi.CustomerId ?? _order.CustomerId) is int cid && customers.TryGetValue(cid, out var cn) ? cn : "—",
+                CustomerName = (oi.CustomerId
+                    ?? (oi.PlanItemId is int planItemId && planCustomers.TryGetValue(planItemId, out var planCustomer) ? planCustomer : null)
+                    ?? _order.CustomerId) is int cid && customers.TryGetValue(cid, out var cn) ? cn : "—",
                 PackagingName = oi.PackagingTypeId != null
                     ? db.PackagingTypes.AsNoTracking().Where(p => p.Id == oi.PackagingTypeId.Value).Select(p => p.PackageNameAr).FirstOrDefault() ?? "غير محددة"
                     : "غير محددة",
