@@ -39,7 +39,6 @@ public static class ScreenCatalog
         new("whvars", "إدارة النظام", "متغيرات المخازن", "settings", "🗃️", "MRPSYS1003"),
         new("items", "إدارة النظام", "الأصناف", "products", "🏷️", "MRPMAS1001"),
         new("caps", "إدارة النظام", "طاقات الأصناف", "products", "⚡", "MRPMAS1011"),
-        new("plan-closure", "الإنتاج", "إقفال خطة الإنتاج", "planning", "🔐", "MRPMPS1020"),
 
         // 📦 المخازن والاستلام
         new("receiving", "المخازن والاستلام", "الاستلام وسندات الاستلام", "receiving", "📥", "MRPREC1001"),
@@ -51,7 +50,7 @@ public static class ScreenCatalog
         new("cartons", "المخازن والاستلام", "الكرتون الفارغ (عدّ/بيع)", "cartons", "📦", "MRPINV1004"),
         new("fgreceive", "المخازن والاستلام", "أوامر استلام الإنتاج", "finishedgoods", "📥", "MRPINV1006"),
 
-        // 🏭 الإنتاج
+        // 🏭 الإنتاج — ترتيب دورة العمل: خطة ← أمر ← مستلزمات ← تسليم ← إقفال
         new("planning", "الإنتاج", "خطط الإنتاج (MPS)", "planning", "📋", "MRPMPS1001"),
         new("orders", "الإنتاج", "أوامر الإنتاج", "production", "📝", "MRPMPS1007"),
         new("aux-setup", "الإنتاج", "تهيئة الأصناف المساعدة", "auxiliary", "🧩", "MRPAUX1001"),
@@ -60,6 +59,7 @@ public static class ScreenCatalog
         new("customer-cartons", "الإنتاج", "كراتين العملاء (ماركات)", "auxiliary", "🏷️", "MRPAUX1004"),
         new("materials", "الإنتاج", "صرف المواد للأوامر (قديم)", "materials", "🧪", "MRPMPS1008"),
         new("proddelivery", "الإنتاج", "أوامر تسليم الإنتاج", "production", "📤", "MRPMPS1021"),
+        new("plan-closure", "الإنتاج", "إقفال خطة الإنتاج", "planning", "🔐", "MRPMPS1020"),
 
         // ✅ الجودة
         new("quality", "الجودة", "فحوصات الجودة", "quality", "🔍", "MRPQC1002"),
