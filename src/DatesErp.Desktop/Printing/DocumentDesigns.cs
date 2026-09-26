@@ -33,7 +33,7 @@ public static class PlanningPrintDesign
     {
         var p=new PhaseDocModel {CompanyNameAr=m.CompanyNameAr,CompanyAddress=m.Address,CompanyPhone=m.Phone,LogoBytes=m.LogoBytes,
             // No claim that a draft is approved in the title itself.
-            DocTitle="خطة وجدولة تشغيل وإنتاج التمور",DocNo=m.PlanNumber,StatusAr=m.StatusAr??(m.IsApproved?"معتمدة":"مسودة — غير معتمدة"),
+            DocTitle="خطة وجدولة تشغيل وإنتاج التمور",DocNo=m.PlanNumber,StatusAr=m.StatusAr??(m.IsApproved?"معتمدة":"مسودة — غير معتمدة"),Landscape=true,
             MainTitle="بنود التشغيل مرتبة بتاريخ الإنتاج",Columns=new[]{"م","التاريخ","العميل","الشحنة / الدفعة","الخام","المنتج التام","العبوة","كرتون","كجم","الوردية / الخط"},
             ColumnWeights=new[]{0.4,0.9,1.3,1.4,1d,1.5,1d,0.6,0.8,1.2},Notes=m.Notes,
             Signatures={"مسؤول التخطيط والجدولة","مدير الإنتاج","المدير العام / اعتماد الخطة"}};

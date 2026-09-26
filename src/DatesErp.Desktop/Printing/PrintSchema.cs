@@ -8,7 +8,7 @@ public static class PrintSchema
     {
         if (m.Columns.Length == 0 && m.Rows.Count > 0 || m.SecondColumns.Length == 0 && m.SecondRows.Count > 0)
             throw new ArgumentException("بنود طباعة بلا عناوين أعمدة؛ لا يمكن إسقاطها من المستند.");
-        // §v1.50.25: التصميم المعتمد — كل النماذج الرسمية A4 عمودي؛ أُلغي الانقلاب الأفقي التلقائي للجداول العريضة.
+        // §التصميم المعتمد — النماذج عمودية افتراضياً؛ المستند الذي يحدد Landscape صراحةً (مثل خطة الإنتاج) يبقى أفقياً. لا يوجد انقلاب تلقائي.
         var spec=new PrintSpec {Company=m.CompanyNameAr??"",Logo=m.LogoBytes?.ToArray(),Title=m.DocTitle,Number=m.DocNo,
             Status=m.StatusAr,Landscape=m.Landscape,CapturedAt=m.CapturedAt};
         var fields=m.Info.ToList();

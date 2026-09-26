@@ -23,7 +23,7 @@ public class PhaseDocModel
     public List<object[]> SecondRows { get; set; } = new();
     public List<string> Signatures { get; set; } = new();
     public string Notes { get; set; } = "";
-    /// <summary>§المستندات الرسمية تُطبع A4 عمودياً؛ تُجعل أفقية فقط للجداول العريضة جداً.</summary>
+    /// <summary>§المستندات الرسمية A4 عمودية افتراضياً؛ خطة الإنتاج أفقية لأن جدولها يتطلب عرضاً أكبر.</summary>
     public bool Landscape { get; set; }
     /// <summary>§بيان يُطبع أسفل التوقيعات (رقم الأمر/الخطة + وقت الإصدار).</summary>
     public string FooterNote { get; set; } = "";

@@ -117,6 +117,7 @@ public class PrintingRegressionTests
         var p=PlanningPrintDesign.Create(new(){IsApproved=false,Items=new(){new(){CustomerName="A",ShipmentNo="S1",LotCode="L1",LineName="خط ثان",ShiftName="مساء",Cartons=10,QtyKg=50}}});
         Assert.DoesNotContain("المعتمدة",p.DocTitle);Assert.Contains("غير معتمدة",p.StatusAr);Assert.Contains("خط ثان",p.Rows[0][9].ToString());
         Assert.Single(p.SecondRows);Assert.Equal(10,p.SecondRows[0][2]);
+        Assert.True(p.Landscape); // خطة الإنتاج استثناء العرض الأفقي المقصود.
     }
     [Theory] [InlineData(false)] [InlineData(true)]
     public void Customer_Delivery_Uses_Persisted_Date_And_Frozen_Weight_Not_Todays_Editor(bool approved)

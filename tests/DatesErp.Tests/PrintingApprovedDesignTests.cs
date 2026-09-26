@@ -35,7 +35,8 @@ public class PrintingApprovedDesignTests
     [Fact]
     public void No_Design_Forces_Landscape_Anymore()
     {
-        Assert.DoesNotContain("Landscape=true", Read("src/DatesErp.Desktop/Printing/DocumentDesigns.cs"));
+        // الاستثناء المقصود: خطة الإنتاج أفقية لأن جدولها العريض يحتاج العرض الكامل.
+        Assert.Contains("Landscape=true", Read("src/DatesErp.Desktop/Printing/DocumentDesigns.cs"));
         Assert.DoesNotContain(">=7", Read("src/DatesErp.Desktop/Printing/PrintSchema.cs"));
         Assert.Contains("Landscape = false", Read("src/DatesErp.Desktop/Services/ExportPrintService.cs"));
         Assert.DoesNotContain(">= 7", Read("src/DatesErp.Desktop/Services/ExportPrintService.cs"));
