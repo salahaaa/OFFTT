@@ -455,16 +455,28 @@ public partial class ProductionDeliveryView : UserControl
     }
     private void Print()
     {
-        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto { Recorded: true } order)
+        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto order)
         {
-            StatusLabel.Text = "الطباعة من تنفيذ محفوظ فقط، وليست من مدخلات الشاشة.";
+            StatusLabel.Text = "اختر أمراً محفوظاً قبل الطباعة.";
             return;
         }
         try
         {
             using var scope = AppContainer.NewScope();
             var db = scope.ServiceProvider.GetRequiredService<DatesErp.Infrastructure.Persistence.DatesErpDbContext>();
-            var model = Printing.StoredPrintModels.Execution(db, order.OrderId);
+            // أمر التسليم له مستند مستقل: لا تطبع تقرير التنفيذ مكانه،
+            // ولا تطبع مدخلات غير محفوظة من الشبكة. عند غياب الأمر المحرر
+            // تبقى طباعة التنفيذ المقفل هي المسار الآمن المتاح.
+            var model = order.ProductionDeliveryId > 0
+                ? Printing.StoredPrintModels.ProductionDelivery(db, order.ProductionDeliveryId)
+                : order.Recorded
+                    ? Printing.StoredPrintModels.Execution(db, order.OrderId)
+                    : null;
+            if (model == null)
+            {
+                StatusLabel.Text = "الطباعة متاحة بعد حفظ تنفيذ مقفل أو تحرير أمر التسليم.";
+                return;
+            }
             new PrintPreviewWindow(PhasePrint.Build(model), $"{model.DocTitle} {model.DocNo}") { Owner = Window.GetWindow(this) }.ShowDialog();
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.Print"); }

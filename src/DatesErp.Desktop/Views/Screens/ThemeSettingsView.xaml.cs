@@ -193,6 +193,12 @@ public partial class ThemeSettingsView : UserControl
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         if (_working == null) return;
+        var invalid = _colorFields.Where(f => !ThemeColorField.IsValidHex(f.Value)).Select(f => f.Label).ToList();
+        if (invalid.Count > 0)
+        {
+            AppContainer.Get<DialogService>().Error("لا يمكن حفظ الثيم — قيمة HEX غير صالحة في: " + string.Join("، ", invalid));
+            return;
+        }
         try
         {
             ReadControls(_working);

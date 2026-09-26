@@ -74,7 +74,7 @@
                             <TextBlock DockPanel.Dock="Right" Text="📋 بنود إذن التسليم — الجدول نفسه هو النموذج: اضغط على الدفعة/الصنف للاختيار المباشر" FontSize="12" FontWeight="Bold" VerticalAlignment="Center"/>
                             <Button DockPanel.Dock="Left" Content="➕ صف جديد" Style="{StaticResource ErpButton}" Click="AddEmptyRow_Click" ToolTip="إضافة صف جديد — جميع الأرصدة التامة معروضة فوراً"/>
                             <Button DockPanel.Dock="Left" Content="⎘ تكرار الصف" Style="{StaticResource ErpButton}" Click="DuplicateRow_Delivery" Margin="6,0,0,0" ToolTip="ينسخ الصف المحدد (7-ج)"/>
-                            <Button DockPanel.Dock="Left" Content="📥 استيراد Excel" Style="{StaticResource ErpButton}" Margin="6,0,0,0" ToolTip="استيراد بنود من Excel (7-د)"/>
+                            <Button DockPanel.Dock="Left" Content="📥 استيراد Excel" Style="{StaticResource ErpButton}" Click="ImportExcel_Click" Margin="6,0,0,0" ToolTip="استيراد بنود من Excel (7-د)"/>
                         </DockPanel>
                     </Border>
                     <TextBlock Text="التعليمات: جميع الأرصدة التامة المتاحة معروضة فوراً — اضغط على (الدفعة) أو (الصنف) داخل صف جديد → تظهر قائمة بكل الدفعات التامة المتاحة مرتبة FIFO من الأقدم إنتاجاً → اختر واحدة لتنزل تلقائياً مع رصيدها. إن اخترت دفعة حديثة بينما توجد أقدم لنفس العميل، سيظهر تنبيه FIFO. صف جديد يظهر تلقائياً بعد اختيار صحيح."

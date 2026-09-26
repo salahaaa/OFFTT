@@ -29,7 +29,7 @@ public class DelivBalanceRow : System.ComponentModel.INotifyPropertyChanged
     public string ProductName { get => _productName; set { _productName = value ?? "—"; OnChanged(nameof(ProductName)); } }
     public string LotCode { get => _lotCode; set { _lotCode = value ?? "—"; OnChanged(nameof(LotCode)); } }
     public double Qty { get => _qty; set { _qty = value; OnChanged(nameof(Qty)); } }
-    public int Packages { get => _packages; set { _packages = value; _qty = value * (_unitWeight > 0 ? _unitWeight : (CartonWeight > 0 ? CartonWeight : 0)); OnChanged(nameof(Packages)); OnChanged(nameof(Qty)); } }
+    public int Packages { get => _packages; set { _packages = value; _qty = value * (_unitWeight > 0 ? _unitWeight : (CartonWeight > 0 ? CartonWeight : 0)); OnChanged(nameof(Packages)); OnChanged(nameof(Qty)); OnChanged(nameof(IsInvalid)); OnChanged(nameof(ValidationError)); } }
     public double UnitWeight { get => _unitWeight; set { _unitWeight = value; OnChanged(nameof(UnitWeight)); } }
     public string PackName { get => _packName; set { _packName = value ?? "—"; OnChanged(nameof(PackName)); } }
     public string Unit { get => _unit; set { _unit = value ?? "—"; OnChanged(nameof(Unit)); } }
@@ -195,11 +195,13 @@ public partial class DeliveryView : UserControl
                     PackagingTypeId = r.PackagingTypeId,
                     ProductName = r.ProductName,
                     LotCode = r.LotCode,
-                    Qty = r.AvailableKg,
-                    Packages = r.AvailableCartons,
                     UnitWeight = r.CartonWeightKg,
                     PackName = r.PackName,
                     Unit = UnitsPolicy.FinishedOfficialUnit,
+                    AvailableQty = r.AvailableKg,
+                    AvailablePackages = r.AvailableCartons,
+                    Packages = r.AvailableCartons,
+                    Qty = r.AvailableKg,
                     QcStatus = qcLabel,
                     QcReady = ready,
                     Code = r.ProductCode,
@@ -480,6 +482,76 @@ public partial class DeliveryView : UserControl
     {
         if (_locked) return;
         AddEmptyRow();
+    }
+
+    /// <summary>استيراد آمن لبنود التسليم: الملف يحدد الدفعة/الصنف والكراتين،
+    /// أما الرصيد والعبوة والوزن فتأتي من رصيد العميل المحمل في الشاشة ولا تُخترع من الملف.</summary>
+    private void ImportExcel_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (_locked) { AppContainer.Get<DialogService>().Error("السند مقفل (معتمد)."); return; }
+            if (_currentCustomerId == 0) { AppContainer.Get<DialogService>().Error("اختر العميل أولاً ثم استورد البنود."); return; }
+            var dlg = new Microsoft.Win32.OpenFileDialog
+            {
+                Filter = "Excel (*.xlsx)|*.xlsx|CSV (*.csv)|*.csv",
+                Title = "اختر ملف بنود التسليم (LotCode, ProductCode, Cartons)"
+            };
+            if (dlg.ShowDialog() != true) return;
+
+            var imported = 0;
+            var skipped = new List<string>();
+            void Add(string lotCode, string productCode, string cartonsText, int lineNo)
+            {
+                lotCode = lotCode.Trim(); productCode = productCode.Trim();
+                if (!int.TryParse(cartonsText.Trim(), out var cartons) || cartons <= 0)
+                { skipped.Add($"السطر {lineNo}: عدد كراتين غير صالح"); return; }
+                var source = _balances.FirstOrDefault(b =>
+                    string.Equals(b.LotCode, lotCode, StringComparison.OrdinalIgnoreCase) &&
+                    (string.IsNullOrWhiteSpace(productCode) || string.Equals(b.Code, productCode, StringComparison.OrdinalIgnoreCase)));
+                if (source == null)
+                { skipped.Add($"السطر {lineNo}: الدفعة {lotCode} غير موجودة في رصيد العميل"); return; }
+                if (cartons > source.AvailablePackages)
+                { skipped.Add($"السطر {lineNo}: {cartons} كرتون أكبر من المتاح {source.AvailablePackages}"); return; }
+                var target = _items.FirstOrDefault(i => i.LotId == source.LotId && i.ProductId == source.ProductId && i.PackagingTypeId == source.PackagingTypeId);
+                if (target == null)
+                {
+                    target = new DelivBalanceRow
+                    {
+                        ProductId = source.ProductId, LotId = source.LotId, PackagingTypeId = source.PackagingTypeId,
+                        ProductName = source.ProductName, LotCode = source.LotCode, UnitWeight = source.UnitWeight,
+                        PackName = source.PackName, Unit = source.Unit, QcStatus = source.QcStatus, QcReady = source.QcReady,
+                        Code = source.Code, Grade = source.Grade, CartonWeight = source.CartonWeight,
+                        AvailableQty = source.AvailableQty, AvailablePackages = source.AvailablePackages
+                    };
+                    _items.Add(target);
+                }
+                target.Packages = cartons;
+                imported++;
+            }
+
+            if (dlg.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+            {
+                var lines = System.IO.File.ReadAllLines(dlg.FileName);
+                for (var i = 1; i < lines.Length; i++)
+                {
+                    var cells = lines[i].Split(',');
+                    if (cells.Length >= 3) Add(cells[0], cells[1], cells[2], i + 1);
+                }
+            }
+            else
+            {
+                using var wb = new ClosedXML.Excel.XLWorkbook(dlg.FileName);
+                var ws = wb.Worksheets.FirstOrDefault();
+                if (ws == null) { AppContainer.Get<DialogService>().Error("ملف Excel لا يحتوي ورقة عمل."); return; }
+                foreach (var row in ws.RowsUsed().Skip(1))
+                    Add(row.Cell(1).GetString(), row.Cell(2).GetString(), row.Cell(3).GetString(), row.RowNumber());
+            }
+            EnsureEmptyRow();
+            var detail = skipped.Count == 0 ? "" : $"\nتم تجاوز {skipped.Count} سطراً: {string.Join("؛ ", skipped.Take(5))}";
+            AppContainer.Get<DialogService>().Info($"تم استيراد {imported} بنداً من الملف.{detail}");
+        }
+        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Delivery.ImportExcel"); }
     }
 
     private void LotCode_Click(object sender, RoutedEventArgs e)

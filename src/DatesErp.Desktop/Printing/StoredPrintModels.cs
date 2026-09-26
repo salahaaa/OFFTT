@@ -3,6 +3,7 @@ using DatesErp.Core.Domain.Entities;
 using DatesErp.Desktop.Views;
 using DatesErp.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace DatesErp.Desktop.Printing;
 
@@ -29,6 +30,23 @@ public static class StoredPrintModels
     private static string Customer(DatesErpDbContext db,int? id)=>db.Customers.AsNoTracking().Where(p=>p.Id==id).Select(p=>p.CustomerName).FirstOrDefault()??"—";
     private static string Lot(DatesErpDbContext db,int? id)=>db.Lots.AsNoTracking().Where(p=>p.Id==id).Select(p=>p.LotCode).FirstOrDefault()??"—";
     private static string Pack(DatesErpDbContext db,int? id)=>db.PackagingTypes.AsNoTracking().Where(p=>p.Id==id).Select(p=>p.PackageNameAr).FirstOrDefault()??"—";
+    private sealed class HistoricalStandard
+    {
+        public string NameAr { get; set; }
+        public string UnitLabel { get; set; }
+        public double? MinValue { get; set; }
+        public double? MaxValue { get; set; }
+    }
+    private static HistoricalStandard ReadHistoricalStandard(string notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes)) return null;
+        try
+        {
+            var value=JsonSerializer.Deserialize<HistoricalStandard>(notes);
+            return string.IsNullOrWhiteSpace(value?.NameAr) ? null : value;
+        }
+        catch { return null; }
+    }
     private static string ReceiptState(string s)=>s switch {"Full"=>"مستلم بالكامل","Partial"=>"مستلم جزئيًا",_=>"لم يُستلم"};
     public static PhaseDocModel Order(DatesErpDbContext db,int id)
     {
@@ -95,8 +113,10 @@ public static class StoredPrintModels
         var d=db.ProductionDeliveries.AsNoTracking().Include(x=>x.Items).Single(x=>x.Id==id);
         var m=Model(db,d,"أمر تسليم الإنتاج إلى المستودعات");m.MainTitle="الكميات المحررة والاستلام الفعلي";
         m.Info.AddRange(new[]{("تاريخ الأمر",UiFormat.D(d.DeliveryDate)),("مصدر الأمر",DeliverySources.ToArabic(d.SourceType)),("معرف المصدر",d.SourceId.ToString()),("حالة الاستلام",ReceiptState(d.ReceiptStatus))});
-        m.Columns=new[]{"م","أمر الإنتاج","العميل","الصنف","الدفعة","عدد العبوات","المحرر (كجم)","المستلم (كجم)","المتبقي (كجم)"};
-        int n=1;foreach(var i in d.Items.OrderBy(i=>i.Id))m.Rows.Add(new object[]{n++,db.ProductionOrders.AsNoTracking().Where(o=>o.Id==i.OrderId).Select(o=>o.DocumentNumber).FirstOrDefault()??"—",Customer(db,i.CustomerId),Product(db,i.ProductId),Lot(db,i.LotId),i.PackageCount,i.QtyKg,i.ReceivedQtyKg,Math.Max(0,i.QtyKg-i.ReceivedQtyKg)});
+        // هوية العبوة جزء من أمر التسليم، وتبقى في نهاية الصف حتى لا تنكسر
+        // مراجع الأعمدة القديمة التي تعتمد على المحرر/المستلم/المتبقي.
+        m.Columns=new[]{"م","أمر الإنتاج","العميل","الصنف","الدفعة","عدد العبوات","المحرر (كجم)","المستلم (كجم)","المتبقي (كجم)","نوع العبوة"};
+        int n=1;foreach(var i in d.Items.OrderBy(i=>i.Id))m.Rows.Add(new object[]{n++,db.ProductionOrders.AsNoTracking().Where(o=>o.Id==i.OrderId).Select(o=>o.DocumentNumber).FirstOrDefault()??"—",Customer(db,i.CustomerId),Product(db,i.ProductId),Lot(db,i.LotId),i.PackageCount,i.QtyKg,i.ReceivedQtyKg,Math.Max(0,i.QtyKg-i.ReceivedQtyKg),Pack(db,i.PackagingTypeId)});
         m.Totals.Add(("المحرر (كجم)",N(d.Items.Sum(i=>i.QtyKg))));m.Totals.Add(("المستلم (كجم)",N(d.Items.Sum(i=>i.ReceivedQtyKg))));
         if(!string.IsNullOrWhiteSpace(d.BypassReason))m.Notes+="\nسبب تجاوز الفحص المسجل: "+d.BypassReason;
         m.Signatures.AddRange(new[]{"مدير إدارة الإنتاج / التحرير","مسؤول تسليم الإنتاج","أمين المستودع / الاستلام"});
@@ -131,16 +151,27 @@ public static class StoredPrintModels
             foreach(var i in d.Items.OrderBy(i=>i.Id))m.Rows.Add(new object[]{Product(db,i.ProductId),Lot(db,i.LotId),i.CheckedQtyKg,i.AcceptedQtyKg,i.RejectedQtyKg,i.Notes??""});
             m.Totals.AddRange(new[]{("المفحوص المسجل (كجم)",N(d.TotalCheckedKg)),("المقبول المسجل (كجم)",N(d.AcceptedKg)),("المرفوض المسجل (كجم)",N(d.RejectedKg))});
         }
-        m.SecondTitle="المعايير المخبرية والحسية — القياسات المحفوظة والحدود المعرفة حاليًا";
-        m.SecondColumns=new[]{"المعيار","الوحدة","الحد الأدنى الحالي","الحد الأعلى الحالي","القياس المسجل","ملاحظات"};
-        foreach(var r in db.QualityStandardRecords.AsNoTracking().Where(r=>r.CheckId==id).OrderBy(r=>r.Id).ToList())
+        m.SecondTitle="المعايير المخبرية والحسية — القياسات والحدود وقت الفحص";
+        m.SecondColumns=new[]{"المعيار","الوحدة","الحد الأدنى وقت الفحص","الحد الأعلى وقت الفحص","القياس المسجل","ملاحظات"};
+        var standardRecords=db.QualityStandardRecords.AsNoTracking().Where(r=>r.CheckId==id).OrderBy(r=>r.Id).ToList();
+        bool hasLegacyStandards=false;
+        foreach(var r in standardRecords)
         {
             var s=db.QualityStandards.AsNoTracking().FirstOrDefault(s=>s.Id==r.StandardId);
-            m.SecondRows.Add(new object[]{s?.NameAr??$"#{r.StandardId}",s?.UnitLabel??"—",s?.MinValue is double min?N(min):"—",s?.MaxValue is double max?N(max):"—",r.Value,r.Notes??""});
+            var h=ReadHistoricalStandard(r.Notes);
+            if(h==null) hasLegacyStandards=true;
+            var name=h?.NameAr??s?.NameAr??$"#{r.StandardId}";
+            var unit=h?.UnitLabel??s?.UnitLabel??"—";
+            var min=h?.MinValue is double minValue?N(minValue):"—";
+            var max=h?.MaxValue is double maxValue?N(maxValue):"—";
+            m.SecondRows.Add(new object[]{name,unit,min,max,r.Value,h==null?r.Notes??"":"لقطة محفوظة وقت الفحص"});
         }
         m.Notes=string.Join("\n",new[]{d.Notes,d.InspectorNotes}.Where(x=>!string.IsNullOrWhiteSpace(x)));
         m.Signatures.AddRange(new[]{"أخصائي فحص الجودة والمختبر","رئيس قسم الجودة وسلامة الغذاء","مدير المصنع / اعتماد الإفراج المخزني"});
-        m.FooterNote+=" حدود المعايير تُقرأ من التعريف الحالي ولا تمثل لقطة تاريخية. قرار الجودة لا يحل محل اعتماد المحضر.";return m;
+        m.FooterNote+=hasLegacyStandards
+            ? " حدود بعض السجلات القديمة قُرئت من التعريف الحالي لعدم وجود لقطة تاريخية محفوظة؛ لا تُعامل كحدود وقت الفحص."
+            : " حدود المعايير في السجلات الجديدة لقطة محفوظة وقت الفحص، ولا تتغير بتعديل التعريف الحالي. قرار الجودة لا يحل محل اعتماد المحضر.";
+        return m;
 
         });
     }

@@ -20,6 +20,7 @@ public partial class ReportsView : UserControl
     private readonly List<(string key, Func<string> get)> _paramGetters = new();
     private List<string> _columns = new();
     private List<object[]> _rows = new();
+    private List<object[]> _visibleRows = new();
     private List<DocLinkDto> _links; // null = تقرير بلا تنقل
     private string _stageColumn;     // §الشكل الموحد: عمود «المرحلة» إن عرّفه التقرير
     private System.ComponentModel.ICollectionView _reportsView; // §B90: لفلترة المعرض بالاسم
@@ -195,6 +196,7 @@ public partial class ReportsView : UserControl
     /// <summary>بناء الجدول: زر «+» أولاً إن وُجدت روابط، ثم أعمدة البيانات — بالشكل الموحد.</summary>
     private void RenderRows(List<object[]> rows, List<DocLinkDto> links)
     {
+        _visibleRows = rows ?? new List<object[]>();
         var dt = new DataTable();
         foreach (var c in _columns) dt.Columns.Add(c);
         foreach (var row in rows)
@@ -438,7 +440,18 @@ public partial class ReportsView : UserControl
         return true;
     }
 
-    private void Print_Click(object sender, RoutedEventArgs e) { if (EnsureReport()) AppContainer.Get<ExportPrintService>().Print(_current); }
-    private void Pdf_Click(object sender, RoutedEventArgs e) { if (EnsureReport()) AppContainer.Get<ExportPrintService>().ExportPdf(_current); }
-    private void Excel_Click(object sender, RoutedEventArgs e) { if (EnsureReport()) AppContainer.Get<ExportPrintService>().ExportExcel(_current); }
+    private ReportResult VisibleReport()
+    {
+        var source = _visibleRows ?? _current.Rows;
+        return new ReportResult
+        {
+            TitleAr = _current.TitleAr, Columns = _current.Columns, Rows = source,
+            Summary = _current.Summary, PeriodLabel = _current.PeriodLabel,
+            RowLinks = _current.RowLinks, StageColumn = _current.StageColumn, Equation = _current.Equation
+        };
+    }
+
+    private void Print_Click(object sender, RoutedEventArgs e) { if (EnsureReport()) AppContainer.Get<ExportPrintService>().Print(VisibleReport()); }
+    private void Pdf_Click(object sender, RoutedEventArgs e) { if (EnsureReport()) AppContainer.Get<ExportPrintService>().ExportPdf(VisibleReport()); }
+    private void Excel_Click(object sender, RoutedEventArgs e) { if (EnsureReport()) AppContainer.Get<ExportPrintService>().ExportExcel(VisibleReport()); }
 }

@@ -58,7 +58,7 @@ public partial class FinishedGoodsView : UserControl
         // §1 — الترتيب القياسي الموحد للأزرار الأساسية
         _toolbar = new Views.ErpToolbar()
             .WithNew((_, _) => NewForm(), "سند تسليم جديد (F2)")
-            .WithSave((_, _) => SaveAndIssue(), "حفظ وتوريد السند للمخزن — يبقى أمامك كما هو (F10)")
+            .WithSave((_, _) => SaveAndIssue(), "حفظ/إصدار الأمر — لا يرحّل المخزون (F10)")
             .WithSearch((_, _) => { RefreshList(); RecSearchBox.Focus(); }, "بحث في سندات التسليم المحفوظة (F9)")
             .WithUndo((_, _) => UndoSmart(), "تراجع: يلغي الإدخالات غير المحفوظة ويعيد آخر نسخة محفوظة — لا يحذف أي سند")
             .WithPrint((_, _) => Print(), "طباعة السند (Ctrl+P)")
@@ -70,6 +70,12 @@ public partial class FinishedGoodsView : UserControl
         chrome.SetBody(this);
         chrome.CloseRequested += (_, _) => (Window.GetWindow(this) as MainWindow)?.OpenScreen("dashboard");
     }
+
+    private void OpenProductionDelivery_Click(object sender, RoutedEventArgs e)
+        => (Window.GetWindow(this) as MainWindow)?.OpenScreen("proddelivery");
+
+    private void OpenWarehouseReceipt_Click(object sender, RoutedEventArgs e)
+        => (Window.GetWindow(this) as MainWindow)?.OpenScreen("fgreceive");
 
     private void Load()
     {
@@ -197,6 +203,11 @@ public partial class FinishedGoodsView : UserControl
         try
         {
             if (_currentOrderId == 0) { AppContainer.Get<DialogService>().Error("اختر أمر إنتاج له فحص جودة معتمد."); return; }
+            if (_items.Any(i => i.Included && (i.DeliverQty < 0 || i.Packages < 0)))
+            {
+                AppContainer.Get<DialogService>().Error("لا يمكن حفظ أمر التسليم — الكمية وعدد العبوات لا يمكن أن يكونا سالبين.");
+                return;
+            }
             var selected = _items.Where(i => i.Included && i.DeliverQty > 0.001).ToList();
             if (selected.Count == 0) { AppContainer.Get<DialogService>().Error("ضمّن بنداً واحداً على الأقل بكمية أكبر من صفر (أو أزل الاستبعاد)."); return; }
 

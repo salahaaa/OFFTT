@@ -70,6 +70,7 @@ public partial class FGReceiveView : UserControl
             .WithNew((_, _) => NewForm(), "سند استلام جديد (F2)")
             .WithSave((_, _) => Save(), "حفظ السند كمسودة (F10)")
             .WithCustom("📤 إصدار السند", "ErpButton", (_, _) => Issue(), "إصدار السند للتنفيذ — لا يمس الأرصدة")
+            .WithPrint((_, _) => Print(), "طباعة سند الاستلام المحفوظ (Ctrl+P)")
             .WithSearch((_, _) => { RefreshList(); RecSearchBox.Focus(); }, "بحث في سندات الاستلام (F9)")
             .WithUndo((_, _) => UndoSmart(), "تراجع: يعيد آخر نسخة محفوظة — لا يحذف أي سند")
             .WithNavigation((_, _) => Nav(0), (_, _) => Nav(-1), (_, _) => Nav(1), (_, _) => Nav(int.MaxValue))
@@ -163,6 +164,12 @@ public partial class FGReceiveView : UserControl
         try
         {
             if (_currentId > 0) { AppContainer.Get<DialogService>().Error("السند محفوظ — السندات المحفوظة تُصدَر وتُستلَم (لا تعديل بعد الحفظ)."); return; }
+            var invalid = _lines.Where(l => l.Included && (l.Qty < 0 || l.ReceiptPackages < 0 || l.ReceiveNow < 0)).ToList();
+            if (invalid.Count > 0)
+            {
+                AppContainer.Get<DialogService>().Error("لا يمكن حفظ سند الاستلام — الكمية أو عدد الكراتين لا يمكن أن يكون سالباً.");
+                return;
+            }
             var selected = _lines.Where(l => l.Included && l.Qty > 0.001).ToList();
             if (selected.Count == 0) { AppContainer.Get<DialogService>().Error("ضمّن بنداً واحداً على الأقل بكمية أكبر من صفر."); return; }
             if (_currentOrderId == 0) { AppContainer.Get<DialogService>().Error("اختر المصدر أولاً."); return; }
@@ -218,6 +225,11 @@ public partial class FGReceiveView : UserControl
             // الخريطة الجزئية صريحة: السطر الغائب = صفر، وليس «استلم المتبقي كله».
             // الاستلام الكامل عبر API القديم (null) لا يُنشأ من هذه الشاشة ولا يُستخدم
             // إلا بأمر صريح من المستدعي المتوافق مع المسار القديم.
+            if (_lines.Any(l => l.ItemId > 0 && (l.ReceiveNow < 0 || l.ReceiptPackages < 0)))
+            {
+                AppContainer.Get<DialogService>().Error("لا يمكن تنفيذ الاستلام — الكمية أو عدد الكراتين لا يمكن أن يكون سالباً.");
+                return;
+            }
             var entered = _lines.Where(l => l.ItemId > 0 && l.ReceiveNow > 0.001).ToList();
             var map = entered.ToDictionary(l => l.ItemId, l => l.ReceiveNow);
 
@@ -238,6 +250,7 @@ public partial class FGReceiveView : UserControl
         try
         {
             if (_currentId == 0) { AppContainer.Get<DialogService>().Error("افتح سنداً أولاً."); return; }
+            if (!AppContainer.Get<DialogService>().Confirm("سيُلغى سند الاستلام ويُعكس أثره المخزني إن وُجد. لا يمكن التراجع عن هذا الإجراء من نفس الشاشة. متابعة؟")) return;
             using var scope = AppContainer.NewScope();
             var svc = scope.ServiceProvider.GetRequiredService<IFinishedGoodsService>();
             var r = svc.Unapprove(_currentId);
@@ -273,6 +286,24 @@ public partial class FGReceiveView : UserControl
             ScreenSearch.Apply(RecSearchBox, RecordsGrid, _records_all);
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "FR.List"); }
+    }
+
+    private void Print()
+    {
+        if (_currentId <= 0)
+        {
+            AppContainer.Get<DialogService>().Error("احفظ سند الاستلام أولاً؛ الطباعة تستخدم النسخة المحفوظة فقط.");
+            return;
+        }
+        try
+        {
+            using var scope = AppContainer.NewScope();
+            var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
+            var model = Printing.StoredPrintModels.FinishedReceipt(db, _currentId);
+            new PrintPreviewWindow(PhasePrint.Build(model), $"{model.DocTitle} {model.DocNo}")
+            { Owner = Window.GetWindow(this) }.ShowDialog();
+        }
+        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "FGReceive.Print"); }
     }
 
     private void Search_Click(object sender, RoutedEventArgs e) => RefreshList();

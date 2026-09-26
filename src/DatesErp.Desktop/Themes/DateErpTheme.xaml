@@ -668,7 +668,8 @@
 
     <!-- ═══ شريط الحالة ═══ -->
     <Style x:Key="StatusText" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{DynamicResource ThemeTextBrush}"/>
+        <!-- شريط الحالة ثابت داكن؛ لا نستخدم لون نص الثيم القابل للتخصيص هنا حتى لا ينخفض التباين. -->
+        <Setter Property="Foreground" Value="#F8FAFC"/>
         <Setter Property="FontSize" Value="{DynamicResource ThemeTableFontSize}"/>
         <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
         <Setter Property="Margin" Value="12,0"/>

@@ -5,6 +5,8 @@ using System.Windows.Documents;
 using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using DatesErp.Core.Interfaces.Services;
+using DatesErp.Desktop.Services;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
 
@@ -196,8 +198,11 @@ public static class PrintRenderer
                     }
                 }
                 dc.DrawLine(new Pen(Brush("#E2E8F0"),1),new Point(PrintLayout.Margin,h-40),new Point(w-PrintLayout.Margin,h-40));
-                dc.DrawText(Text($"{spec.Company} — نظام التصنيع المتكامل v1.50.66",contentW-52,9.5,false,Muted),new Point(PrintLayout.Margin,h-30));
-                dc.DrawText(Text($"المستخدم: {Environment.UserName}  •  تاريخ الطباعة: {now:dd/MM/yyyy HH:mm}  •  صفحة {pi+1} من {pages.Count}",contentW-52,9.5,false,Muted,TextAlignment.Left),new Point(PrintLayout.Margin,h-30));
+                dc.DrawText(Text($"{spec.Company} — نظام التصنيع المتكامل v{BuildInfo.Stamp}",contentW-52,9.5,false,Muted),new Point(PrintLayout.Margin,h-30));
+                string sessionUser;
+                try { sessionUser = AppContainer.Get<ICurrentSession>().UserName ?? "—"; }
+                catch { sessionUser = "—"; }
+                dc.DrawText(Text($"المستخدم: {sessionUser}  •  تاريخ الطباعة: {now:dd/MM/yyyy HH:mm}  •  صفحة {pi+1} من {pages.Count}",contentW-52,9.5,false,Muted,TextAlignment.Left),new Point(PrintLayout.Margin,h-30));
                 if(qr!=null) dc.DrawImage(qr,new Rect(w-PrintLayout.Margin-40,h-40,40,40)); // §45
             }
             var page=new FixedPage { Width=w,Height=h,Background=Brushes.White,FlowDirection=FlowDirection.LeftToRight };

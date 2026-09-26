@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using System.Text.RegularExpressions;
 using DatesErp.Desktop.Services;
 
 namespace DatesErp.Desktop.Views.Screens;
@@ -29,6 +30,11 @@ public sealed class ThemeColorField : Border
     }
 
     public event EventHandler ValueChanged;
+
+    /// <summary>الثيمات تحفظ ألوان HEX فقط؛ لا نسمح بأسماء ألوان أو نص ناقص.</summary>
+    public static bool IsValidHex(string text)
+        => !string.IsNullOrWhiteSpace(text)
+            && Regex.IsMatch(text.Trim(), @"^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$", RegexOptions.CultureInvariant);
 
     public ThemeColorField()
     {
@@ -133,6 +139,6 @@ internal sealed class ThemeColorPickerWindow : Window
         UpdatePreview();
     }
 
-    private bool IsValid() => _hex.Text.Trim().StartsWith("#") && (ThemeManager.ParseColor(_hex.Text.Trim(), Colors.Transparent) != Colors.Transparent || _hex.Text.Trim().Equals("#00000000", StringComparison.OrdinalIgnoreCase));
+    private bool IsValid() => ThemeColorField.IsValidHex(_hex.Text);
     private void UpdatePreview() => _preview.Background = new SolidColorBrush(ThemeManager.ParseColor(_hex.Text, Colors.Transparent));
 }

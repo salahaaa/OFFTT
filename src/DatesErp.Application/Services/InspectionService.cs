@@ -4,6 +4,7 @@ using DatesErp.Core.Exceptions;
 using DatesErp.Core.Interfaces.Services;
 using DatesErp.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace DatesErp.Application.Services;
 
@@ -824,8 +825,19 @@ public class InspectionService : ServiceBase, IInspectionService
         }
         Db.QualityStandardRecords.RemoveRange(Db.QualityStandardRecords.Where(x => x.CheckId == r.Id));
         foreach (var st in input.Standards ?? new())
-            if (stdById.Any(x => x.Id == st.StandardId))
-                Db.QualityStandardRecords.Add(new QualityStandardRecord { CheckId = r.Id, StandardId = st.StandardId, Value = st.Value });
+        {
+            var def = stdById.FirstOrDefault(x => x.Id == st.StandardId);
+            if (def == null) continue;
+            // لا نغيّر المخطط: Notes حقل قائم، ونحفظ فيه لقطة الحدود/الاسم
+            // حتى لا تعيد الطباعة قراءة تعريف تغيّر بعد تاريخ الفحص.
+            var snapshot = JsonSerializer.Serialize(new
+            {
+                NameAr = def.NameAr, UnitLabel = def.UnitLabel,
+                MinValue = def.MinValue, MaxValue = def.MaxValue
+            });
+            Db.QualityStandardRecords.Add(new QualityStandardRecord
+            { CheckId = r.Id, StandardId = st.StandardId, Value = st.Value, Notes = snapshot });
+        }
 
         // SaveDeliveryCheck تحقّق من تغطية كل كمية الإنتاج؛ لذلك يجب أن يبقى المحضر قابلاً للاعتماد.
         var savedCheck = Db.QualityChecks.FirstOrDefault(c => c.Id == r.Id);

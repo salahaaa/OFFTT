@@ -32,6 +32,7 @@ public partial class GenericListView : UserControl
     private bool _idFirstColumn;
     private List<string> _columns = new();
     private List<object[]> _rows = new();
+    private List<object[]> _filteredRows = new();
     private Views.ErpChrome _chrome;
     /// <summary>§B89 — حارس التعبئة: يمنع اشتعال SelectionChanged أثناء تعبئة الفلاتر برمجياً.</summary>
     private bool _populating;
@@ -82,6 +83,7 @@ public partial class GenericListView : UserControl
     private void SetEmptyState()
     {
         Grid.ItemsSource = null;
+        _filteredRows = new();
         StateText.Text = _crud != null
             ? "الشاشة جاهزة — اضغط «جديد» لإنشاء سجل جديد، أو «بحث / عرض الكل» لاستعراض السجلات المحفوظة."
             : "الشاشة جاهزة — اضغط «بحث» أو «عرض الكل» لاستعراض البيانات حسب صلاحيتك.";
@@ -111,6 +113,7 @@ public partial class GenericListView : UserControl
             using var scope = AppContainer.NewScope();
             var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
             (_columns, _rows) = _loader(db);
+            _filteredRows = _rows.ToList();
             PopulateFilterBoxes();
             ApplyFilter();
             string action = _crud != null ? "تفتحانه للتعديل" : "لعرض تفاصيله";
@@ -207,6 +210,7 @@ public partial class GenericListView : UserControl
             return one.Contains(term);
         }).ToList();
 
+        _filteredRows = filtered;
         var dt = new DataTable();
         var displayCols = _idFirstColumn ? _columns.Skip(1).ToList() : _columns;
         foreach (var c in displayCols) dt.Columns.Add(c);
@@ -319,7 +323,10 @@ public partial class GenericListView : UserControl
     private ReportResult AsReport()
     {
         var displayCols = _idFirstColumn ? _columns.Skip(1).ToList() : _columns;
-        var displayRows = _rows.Select(r => _idFirstColumn ? r.Skip(1).ToArray() : r).ToList();
+        // CSV والطباعة وExcel تتبع نفس المرشح الظاهر في الشبكة؛ لا نصدر كل
+        // السجلات بينما يصدّر CSV جزءاً منها. زر «عرض الكل» يعيد _filteredRows إلى الكل.
+        var sourceRows = _filteredRows ?? _rows;
+        var displayRows = sourceRows.Select(r => _idFirstColumn ? r.Skip(1).ToArray() : r).ToList();
         return new ReportResult { TitleAr = _title, Columns = displayCols, Rows = displayRows };
     }
 

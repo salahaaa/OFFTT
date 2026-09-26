@@ -8,7 +8,16 @@
             <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Margin="0,0,0,8">
                 <StackPanel>
                     <Border Style="{StaticResource SecHeader}" Margin="-12,-12,-12,8">
-                        <TextBlock Text="📦 أمر تسليم الإنتاج التام — يحرره مدير الإنتاج بعد فحص جودة معتمد" FontSize="12" FontWeight="Bold" Foreground="#0A246A"/>
+                        <DockPanel>
+                            <StackPanel>
+                                <TextBlock Text="📦 المسار التاريخي لتسليم/استلام الإنتاج التام" FontSize="12" FontWeight="Bold" Foreground="#0A246A"/>
+                                <TextBlock Text="للمسار الجديد استخدم «أوامر تسليم الإنتاج» ثم «أوامر استلام الإنتاج». الحفظ/الإصدار هنا لا يرحّل المخزون؛ الاستلام المخزني وحده يفعل ذلك." FontSize="10.5" Foreground="#334155" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                            </StackPanel>
+                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Margin="12,0,0,0">
+                                <Button Content="فتح أمر التسليم الجديد" Style="{StaticResource ErpButton}" Click="OpenProductionDelivery_Click" Margin="0,0,6,0" ToolTip="فتح مسار أوامر تسليم الإنتاج الجديد"/>
+                                <Button Content="فتح استلام المخزن" Style="{StaticResource ErpButton}" Click="OpenWarehouseReceipt_Click" ToolTip="فتح مسار الاستلام المخزني الجديد"/>
+                            </StackPanel>
+                        </DockPanel>
                     </Border>
                     <WrapPanel>
                         <StackPanel Margin="0,0,16,0">

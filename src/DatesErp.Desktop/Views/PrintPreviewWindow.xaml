@@ -129,7 +129,7 @@
    <Grid>
     <TextBlock Foreground="#64748B" FontSize="11.5" TextWrapping="Wrap" HorizontalAlignment="Right"
                Text="الصفحات ثابتة: تغيير التكبير لا يعيد توزيعها. قد يصغّر برنامج الطباعة الصفحة لتناسب هوامش الطابعة."/>
-    <TextBlock Foreground="#94A3B8" FontSize="11.5" HorizontalAlignment="Left" Text="نظام التصنيع — الإصدار 1.50.66"/>
+    <TextBlock Foreground="#94A3B8" FontSize="11.5" HorizontalAlignment="Left" x:Name="PrintVersionText" Text="نظام التصنيع — الإصدار"/>
    </Grid>
   </Border>
   <DocumentViewer x:Name="Viewer" Background="#E2E8F0" FlowDirection="LeftToRight">

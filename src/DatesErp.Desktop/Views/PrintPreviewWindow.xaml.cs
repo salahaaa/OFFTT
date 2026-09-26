@@ -17,7 +17,7 @@ public partial class PrintPreviewWindow : Window
     public PrintPreviewWindow(FixedDocument doc,string title)
     {
         ArgumentNullException.ThrowIfNull(doc);
-        InitializeComponent();_doc=doc;PreviewTitle.Text=title;Title="معاينة قبل الطباعة — "+title;
+        InitializeComponent();_doc=doc;PreviewTitle.Text=title;PrintVersionText.Text=$"نظام التصنيع — الإصدار {BuildInfo.Stamp}";Title="معاينة قبل الطباعة — "+title;
         Viewer.Document=doc;PageCountText.Text=doc.Pages.Count.ToString();
         var zoomProperty=System.ComponentModel.DependencyPropertyDescriptor.FromProperty(DocumentViewer.ZoomProperty,typeof(DocumentViewer));
         EventHandler syncZoom=(_,_)=>
