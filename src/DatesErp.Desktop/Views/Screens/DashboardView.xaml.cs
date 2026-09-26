@@ -28,6 +28,7 @@ public partial class DashboardView : UserControl
         try
         {
             DashDate.Text = "التاريخ: " + DateTime.Now.ToString("dd/MM/yyyy");
+            DashYear.Text = DateTime.Now.Year.ToString();
             var session0 = AppContainer.Get<Infrastructure.Session.SessionContext>();
             DashUser.Text = session0.UserName ?? "—";
             FootUser.Text = session0.UserName ?? "—";
@@ -129,6 +130,25 @@ public partial class DashboardView : UserControl
                 });
                 foreach (var a in alerts)
                     TasksPanel.Children.Add(AlertCard(a.text, a.bg, a.border, a.fg));
+            }
+
+            if (TasksPanel.Children.Count == 0)
+            {
+                TasksPanel.Children.Add(new Border
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(0xF0, 0xFD, 0xF4)),
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(0x86, 0xEF, 0xAC)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(12, 9, 12, 9),
+                    Child = new TextBlock
+                    {
+                        Text = "✓ لا توجد مهام معلقة لهذا المستخدم حالياً",
+                        Foreground = new SolidColorBrush(Color.FromRgb(0x16, 0x65, 0x34)),
+                        FontSize = 12,
+                        FontWeight = FontWeights.Bold
+                    }
+                });
             }
 
             // ── جدول الخطط بانتظار الاعتماد (اعتماد فوري من اللوحة) ──
