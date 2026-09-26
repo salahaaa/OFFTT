@@ -56,6 +56,14 @@ public static class ScreenFactory
         return c;
     }
 
+    private static UIElement ActualCloseScreen()
+    {
+        var v = new ProductionActualCloseView();
+        var c = new ErpChrome { TitleText = "[MAIN] - [نظام إدارة وتصنيع التمور - إقفال الإنتاج وتسجيل الفعلي] - (" + Company + ")" };
+        v.AttachChrome(c);
+        return c;
+    }
+
     private static UIElement FGReceiveScreen()
     {
         var v = new FGReceiveView();
@@ -107,7 +115,7 @@ public static class ScreenFactory
         var tb = new ErpToolbar()
             .WithRefresh((_, _) => { var mw = System.Windows.Window.GetWindow(body) as MainWindow; if (mw != null) mw.ReloadCurrent(); });
         if (print != null) tb = tb.WithPrint(print);
-        tb = tb.WithExit((_, _) => { var mw = System.Windows.Window.GetWindow(body) as MainWindow; mw?.OpenScreen("dashboard"); });
+        tb = tb.WithExit((_, _) => { var mw = System.Windows.Window.GetWindow(body) as MainWindow; mw?.OpenPreviousScreen(); });
         chrome.SetToolbar(tb);
         chrome.SetBody(body);
         return chrome;
@@ -156,6 +164,7 @@ public static class ScreenFactory
         "product-bom" => WrapPlain(new ProductBOMView(), "مكونات الإنتاج / احتياجات الصنف التام", "الإنتاج - الأصناف المساعدة", "MRPAUX1002"),
         "aux-issue" => WrapPlain(new ProductionAuxiliaryView(), "صرف الأصناف المساعدة للإنتاج", "الإنتاج - الأصناف المساعدة", "MRPAUX1003"),
         "customer-cartons" => WrapPlain(new CustomerCartonMappingView(), "كراتين العملاء (ماركات)", "الإنتاج - الأصناف المساعدة", "MRPAUX1004"),
+        "actualclose" => ActualCloseScreen(),
         "proddelivery" => ProdDeliveryScreen(),
 
         // الجودة

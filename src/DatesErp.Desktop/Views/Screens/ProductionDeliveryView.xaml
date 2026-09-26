@@ -29,7 +29,7 @@
     </Grid.ColumnDefinitions>
     <Border Width="5" Margin="0,0,10,0" Background="{StaticResource AccentBrush}"/>
     <StackPanel Grid.Column="1">
-     <TextBlock Text="تسليم الإنتاج — تسجيل الفعلي" FontSize="19" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
+     <TextBlock Text="أوامر تسليم الإنتاج" FontSize="19" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
      <TextBlock Text="لمن كانت الخطة؟ ماذا خططنا؟ ماذا أنتجنا؟ كم توقفنا؟ وما المخلفات؟" FontSize="11.5" Foreground="{StaticResource GrayTextBrush}" Margin="0,2,0,0"/>
     </StackPanel>
    </Grid>
@@ -153,7 +153,7 @@
     </Grid.ColumnDefinitions>
     <Border Background="{StaticResource AccentBrush}"/>
     <TextBlock Grid.Column="1" TextWrapping="Wrap" Padding="10,7" Foreground="#7A5A00" FontWeight="SemiBold"
-      Text="هذا الأمر إما سُجّل فعليه سابقاً (راجع أمر تسليم الإنتاج وحالته في شريط الحالة أعلاه) أو غير معتمد بعد — لا حقول إدخال هنا."/>
+      Text="لم يُقفل الإنتاج الفعلي لهذا الأمر بعد. استخدم شاشة «إقفال الإنتاج وتسجيل الفعلي» من أمر الإنتاج أولاً، ثم عد إلى هذه الشاشة لإنشاء أمر التسليم وتحريره للمخزن."/>
    </Grid>
   </Border>
 
@@ -258,13 +258,13 @@
     </Grid.ColumnDefinitions>
     <StackPanel Orientation="Horizontal">
      <Button x:Name="SaveButton" Content="حفظ الإنتاج الفعلي فقط"
-             Style="{StaticResource ErpApproveButton}" Click="Save_Click" MinWidth="230" FontSize="12.5" Padding="16,7" IsEnabled="False"/>
+             Style="{StaticResource ErpApproveButton}" Click="Save_Click" MinWidth="230" FontSize="12.5" Padding="16,7" IsEnabled="False" Visibility="Collapsed"/>
      <Button x:Name="CreateDeliveryButton" Content="إنشاء أمر تسليم من الفعلي"
              Style="{StaticResource ErpButton}" Click="CreateDelivery_Click" MinWidth="230" FontSize="12.5" Padding="16,7" Margin="8,0,0,0" IsEnabled="False"/>
     </StackPanel>
     <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="14,0,0,0" TextWrapping="Wrap"
                FontSize="11" Foreground="{StaticResource GrayTextBrush}"
-               Text="حفظ الفعلي يقفل جلسة الإنتاج ويرسلها للجودة، ولا ينشئ استلاماً مخزنياً تلقائياً. أنشئ أمر التسليم، عدّل كمياته قبل التحرير، ثم حرره مدير الإنتاج للصرف إلى أمين مخزن التام."/>
+               Text="هذه الشاشة تبدأ من تنفيذ فعلي مقفل: أنشئ أمر التسليم، عدّل كمياته قبل التحرير، ثم حرره مدير الإنتاج إلى أمين مخزن التام. التحرير لا يرحّل المخزون؛ الاستلام المخزني وحده يفعل ذلك."/>
    </Grid>
   </Border>
  </Grid>

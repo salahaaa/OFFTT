@@ -148,7 +148,7 @@ public partial class OrderDetailWindow : Window
     private void CloseDay_Click(object sender, RoutedEventArgs e)
     {
         Services.ErrorLog.WriteInfo($"OrderDetailWindow.CloseDay_Click OrderId={_orderId}");
-        Screens.ProductionDeliveryView.OpenForOrder(_orderId, this);
+        Screens.ProductionActualCloseView.OpenForOrder(_orderId, this);
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)

@@ -529,7 +529,7 @@ public class OrderDocumentPanel : UserControl
     private void CloseDay()
     {
         Services.ErrorLog.WriteInfo($"OrdersWindow.CloseDay CLICK OrderId={_orderId}");
-        ProductionDeliveryView.OpenForOrder(_orderId, Window.GetWindow(this));
+        ProductionActualCloseView.OpenForOrder(_orderId, Window.GetWindow(this));
     }
 
     private ReportResult BuildReport()

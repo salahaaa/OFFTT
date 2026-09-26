@@ -1,4 +1,4 @@
-﻿<Window x:Class="DatesErp.Desktop.Views.OrderDetailWindow"
+<Window x:Class="DatesErp.Desktop.Views.OrderDetailWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="أمر التشغيل" Width="1020" Height="660"
@@ -30,7 +30,7 @@
                 <Button x:Name="BtnStart" Content="🏭 بدء الإنتاج" Style="{StaticResource ErpPrimaryButton}" Margin="0,0,8,0" Click="Start_Click"/>
                 <Button x:Name="BtnStop" Content="⏸ إيقاف (بسبب)" Style="{StaticResource ErpDangerButton}" Margin="0,0,8,0" Click="Stop_Click"/>
                 <Button x:Name="BtnResume" Content="▶ استئناف" Style="{StaticResource ErpButton}" Margin="0,0,8,0" Click="Resume_Click"/>
-                <Button x:Name="BtnClose" Content="🧾 تسجيل الفعلي وتسليمه" Style="{StaticResource ErpPrimaryButton}" Margin="0,0,8,0" Click="CloseDay_Click"/>
+                <Button x:Name="BtnClose" Content="🧾 إقفال الإنتاج وتسجيل الفعلي" Style="{StaticResource ErpPrimaryButton}" Margin="0,0,8,0" Click="CloseDay_Click"/>
                 <Button x:Name="BtnCancel" Content="🗑 إلغاء الأمر" Style="{StaticResource ErpDangerButton}" Margin="0,0,8,0" Click="Cancel_Click"/>
                 <Button Content="✖ إغلاق" Style="{StaticResource ErpButton}" Click="Close_Click"/>
             </StackPanel>

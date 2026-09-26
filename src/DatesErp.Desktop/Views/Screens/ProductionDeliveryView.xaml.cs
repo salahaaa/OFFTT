@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace DatesErp.Desktop.Views.Screens;
 
-/// <summary>التسجيل الفعلي وأمر تسليم الإنتاج مساران متتابعان في إدارة الإنتاج؛ الاستلام المخزني لا يُنشأ من هنا تلقائياً.</summary>
+/// <summary>أوامر تسليم الإنتاج بعد إقفال التنفيذ؛ الاستلام المخزني لا يُنشأ من هنا تلقائياً.</summary>
 public partial class ProductionDeliveryView : UserControl
 {
     public static int? PendingOrderId { get; set; }
@@ -45,13 +45,13 @@ public partial class ProductionDeliveryView : UserControl
     }
     public void AttachChrome(Views.ErpChrome chrome)
     {
-        chrome.SetModule("تسليم الإنتاج — تسجيل الفعلي"); chrome.SetScreenCode("MRPMPS1021");
+        chrome.SetModule("أوامر تسليم الإنتاج"); chrome.SetScreenCode("MRPMPS1021");
         chrome.SetToolbar(new Views.ErpToolbar()
             .WithPrint((_, _) => Print(), "طباعة التنفيذ المحفوظ من قاعدة البيانات")
             .WithList((_, _) => LoadOrders((OrderBox.SelectedItem as ActualDeliveryOrderDto)?.OrderId, false), "تحديث أوامر اليوم")
-            .WithExit((_, _) => (Window.GetWindow(this) as MainWindow)?.OpenScreen("dashboard")));
+            .WithExit((_, _) => (Window.GetWindow(this) as MainWindow)?.OpenPreviousScreen()));
         chrome.SetBody(this);
-        chrome.CloseRequested += (_, _) => (Window.GetWindow(this) as MainWindow)?.OpenScreen("dashboard");
+        chrome.CloseRequested += (_, _) => (Window.GetWindow(this) as MainWindow)?.OpenPreviousScreen();
     }
     public static void OpenForOrder(int orderId, Window source)
     {
@@ -102,18 +102,18 @@ public partial class ProductionDeliveryView : UserControl
         ByProductDefinitions.Clear(); foreach (var b in _activeDefinitions) ByProductDefinitions.Add(b);
         _items.Clear(); _secondary.Clear(); RawBox.Text = ""; DowntimeBox.Text = "0"; ReasonBox.Text = ""; NotesBox.Text = "";
         var order = OrderBox.SelectedItem as ActualDeliveryOrderDto;
-        bool canRecord = CanProduction("Create") && CanExecution("Edit");
+        // تسجيل الفعلي انتقل إلى شاشة «إقفال الإنتاج وتسجيل الفعلي»؛ هذه الشاشة للتسليم فقط.
+        bool canRecord = false;
         bool canCreateDelivery = CanProduction("Create");
-        SaveButton.IsEnabled = order?.CanRecord == true && canRecord;
+        SaveButton.IsEnabled = false;
         CreateDeliveryButton.IsEnabled = order?.CanCreateDelivery == true && canCreateDelivery;
         DeliveryOrderPanel.Visibility = order?.ProductionDeliveryId > 0 ? Visibility.Visible : Visibility.Collapsed;
         _deliveryItems.Clear();
         if (order?.ProductionDeliveryId > 0) LoadDelivery(order.ProductionDeliveryId);
-        // §v1.50.24: لوحة الإدخال تظهر فقط للأمر القابل للتسجيل — بدل لوحة ضخمة معطّلة.
-        // والمساحة المتبقية تعرض إرشاداً واضحاً بدل حقول ميتة.
-        ActualFieldsOuter.Visibility = order?.CanRecord == true ? Visibility.Visible : Visibility.Collapsed;
-        EmptyGuide.Visibility = order?.CanRecord == true || order?.Recorded == true ? Visibility.Collapsed : Visibility.Visible;
-        ItemsGrid.IsReadOnly = order?.CanRecord != true;
+        // §v1.50.24: شاشة التسليم لا تحتوي حقول الفعلي؛ التسجيل يتم في شاشة الإقفال المستقلة.
+        ActualFieldsOuter.Visibility = Visibility.Collapsed;
+        EmptyGuide.Visibility = order?.Recorded == true ? Visibility.Collapsed : Visibility.Visible;
+        ItemsGrid.IsReadOnly = true;
         // §v1.50.38: شرائح السياق بلا رموز تعبيرية — الهوية البصرية من الثيم لا من النص
         CustChip.Text = $"العميل: {order?.Customer ?? "—"}";
         PlanChip.Text = $"الخطة: {order?.PlanNumber ?? "—"}";
@@ -121,7 +121,7 @@ public partial class ProductionDeliveryView : UserControl
         StatusLabel.Text = string.IsNullOrWhiteSpace(order?.Status) ? "اختر أمراً من الأعلى لتظهر بنوده." : order.Status;
         if (order == null) return;
         if (order.CanRecord && !canRecord)
-            StatusLabel.Text += "\n⛔ الحفظ غير متاح: يلزم صلاحية إنشاء الإنتاج وتعديل التنفيذ.";
+            StatusLabel.Text += "\n↗ هذا الأمر بانتظار الإقفال الفعلي — افتح شاشة «إقفال الإنتاج وتسجيل الفعلي» أولاً.";
         if (order.CanCreateDelivery && !canCreateDelivery)
             StatusLabel.Text += "\n⛔ إنشاء أمر التسليم غير متاح: يلزم صلاحية إنشاء مستندات الإنتاج.";
         foreach (var line in order.Items) _items.Add(new ActualProductionRow(line, order.Recorded));
@@ -256,8 +256,7 @@ public partial class ProductionDeliveryView : UserControl
         finally
         {
             _saving = false;
-            SaveButton.IsEnabled = (OrderBox.SelectedItem as ActualDeliveryOrderDto)?.CanRecord == true
-                && CanProduction("Create") && CanExecution("Edit");
+            SaveButton.IsEnabled = false;
             CreateDeliveryButton.IsEnabled = (OrderBox.SelectedItem as ActualDeliveryOrderDto)?.CanCreateDelivery == true
                 && CanProduction("Create");
         }

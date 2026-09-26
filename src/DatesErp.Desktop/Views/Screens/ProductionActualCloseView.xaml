@@ -1,0 +1,116 @@
+<UserControl x:Class="DatesErp.Desktop.Views.Screens.ProductionActualCloseView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             FlowDirection="RightToLeft">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*" MinHeight="220"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="إقفال الإنتاج وتسجيل الفعلي" FontSize="20" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
+                <TextBlock Text="الخطوة السابقة لأمر تسليم الإنتاج — لا تُنشئ حركة مخزون" FontSize="11.5" Foreground="{StaticResource GrayTextBrush}" Margin="0,2,0,0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" MinWidth="430">
+                <TextBlock Text="أمر الإنتاج" Style="{StaticResource FieldLabel}" Margin="0,0,0,3"/>
+                <ComboBox x:Name="OrderBox" DisplayMemberPath="Label" SelectionChanged="Order_Changed"/>
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="1" Background="#FBFAF3" BorderBrush="#CBD5E1" BorderThickness="1" Padding="10,7" Margin="0,0,0,8">
+            <WrapPanel>
+                <Border Background="White" BorderBrush="#9FB3CC" BorderThickness="1" CornerRadius="3" Padding="9,4" Margin="0,0,8,0">
+                    <TextBlock x:Name="CustChip" Text="العملاء: —" FontSize="11.5" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/>
+                </Border>
+                <Border Background="White" BorderBrush="#D9C27A" BorderThickness="1" CornerRadius="3" Padding="9,4" Margin="0,0,8,0">
+                    <TextBlock x:Name="PlanChip" Text="الخطة: —" FontSize="11.5" FontWeight="Bold" Foreground="#8A6A00"/>
+                </Border>
+                <Border Background="White" BorderBrush="#9FB3CC" BorderThickness="1" CornerRadius="3" Padding="9,4" Margin="0,0,8,0">
+                    <TextBlock x:Name="ShiftChip" Text="الوردية: —" FontSize="11.5" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
+                </Border>
+                <Border Background="White" BorderBrush="#9FB3CC" BorderThickness="1" CornerRadius="3" Padding="9,4" Margin="0,0,8,0">
+                    <TextBlock x:Name="DateChip" Text="تاريخ الإنتاج: —" FontSize="11.5" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
+                </Border>
+                <TextBlock x:Name="StatusLabel" Text="اختر أمراً من الأعلى." VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#1F2937" Margin="8,0,0,0" TextWrapping="Wrap"/>
+            </WrapPanel>
+        </Border>
+
+        <Border Grid.Row="2" Style="{StaticResource WhiteCard}" Padding="0" Margin="0,0,0,8">
+            <DockPanel>
+                <Border DockPanel.Dock="Top" Style="{StaticResource SecHeader}">
+                    <TextBlock Text="بنود الإنتاج — الفعلي لكل عميل وصنف" FontSize="13" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
+                </Border>
+                <DataGrid x:Name="ItemsGrid" AutoGenerateColumns="False" CanUserAddRows="False" RowHeight="32" AlternatingRowBackground="#FBFAF5" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#8CA0AC">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="العميل" Binding="{Binding Customer}" IsReadOnly="True" Width="*"/>
+                        <DataGridTextColumn Header="الصنف" Binding="{Binding Product}" IsReadOnly="True" Width="1.6*"/>
+                        <DataGridTextColumn Header="المخطط" Binding="{Binding Planned}" IsReadOnly="True" Width="90"/>
+                        <DataGridTextColumn Header="الوحدة" Binding="{Binding Unit}" IsReadOnly="True" Width="75"/>
+                        <DataGridTextColumn Header="الفعلي" Binding="{Binding Actual, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" Width="110"/>
+                        <DataGridTextColumn Header="الفرق" Binding="{Binding Difference}" IsReadOnly="True" Width="90"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </Border>
+
+        <Border x:Name="MeasurementsPanel" Grid.Row="3" Style="{StaticResource WhiteCard}" Padding="10" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="بيانات الإقفال" FontSize="13" FontWeight="Bold" Foreground="{StaticResource NavyBrush}" Margin="0,0,0,7"/>
+                <WrapPanel>
+                    <StackPanel Margin="0,0,18,0">
+                        <TextBlock Text="الخام المستهلك فعلياً (كجم)" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="RawBox" Width="150"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,18,0">
+                        <TextBlock Text="ساعات التوقف" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="DowntimeBox" Width="120" Text="0"/>
+                    </StackPanel>
+                    <StackPanel Width="360">
+                        <TextBlock Text="سبب التوقف" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="ReasonBox"/>
+                    </StackPanel>
+                </WrapPanel>
+                <StackPanel Margin="0,8,0,0">
+                    <TextBlock Text="ملاحظات مدير الإنتاج" Style="{StaticResource FieldLabel}"/>
+                    <TextBox x:Name="NotesBox" Height="45" AcceptsReturn="True" TextWrapping="Wrap"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border x:Name="ByProductsPanel" Grid.Row="4" Style="{StaticResource WhiteCard}" Padding="10">
+            <StackPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock DockPanel.Dock="Right" Text="المخرجات الثانوية" FontSize="13" FontWeight="Bold" Foreground="{StaticResource NavyBrush}"/>
+                    <Button DockPanel.Dock="Left" Content="إضافة مخرج" Style="{StaticResource ErpButton}" Click="AddByProduct_Click"/>
+                </DockPanel>
+                <DataGrid x:Name="SecondaryGrid" AutoGenerateColumns="False" CanUserAddRows="False" Height="95">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="المخرج" Width="*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <ComboBox ItemsSource="{Binding DataContext.ByProductDefinitions, RelativeSource={RelativeSource AncestorType=UserControl}}" DisplayMemberPath="Name" SelectedItem="{Binding Definition, UpdateSourceTrigger=PropertyChanged}"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="الوحدة" Binding="{Binding Unit}" IsReadOnly="True" Width="100"/>
+                        <DataGridTextColumn Header="الكمية" Binding="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}" Width="130"/>
+                        <DataGridTemplateColumn Header="" Width="75">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate><Button Content="حذف" Click="RemoveByProduct_Click"/></DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

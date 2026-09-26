@@ -109,17 +109,14 @@ public partial class ProductionDeliveryService
             .Where(e => !deliveredExeIds.Contains(e.Id))
             .Select(e => e.OrderId)
             .ToHashSet();
-        var deliveredOrderIds = latestClosedExeByOrder
-            .Where(e => deliveredExeIds.Contains(e.Id))
-            .Select(e => e.OrderId)
-            .ToHashSet();
-
         var orders = Db.ProductionOrders.AsNoTracking()
             .Where(o => o.SourceType == "FromPlan" && o.SourcePlanId != null && o.IsApproved
                 && o.Status != DocStatuses.Cancelled
                 && (selectedOrderId.HasValue
-                    ? o.Id == selectedOrderId.Value && !deliveredOrderIds.Contains(o.Id)
-                    : (!o.IsClosed && !closedExeOrderIds.Contains(o.Id) || closedExeWithNoDelivery.Contains(o.Id))))
+                    ? o.Id == selectedOrderId.Value
+                    : (!o.IsClosed && !closedExeOrderIds.Contains(o.Id)
+                        || closedExeWithNoDelivery.Contains(o.Id)
+                        || closedExeOrderIds.Contains(o.Id))))
             .OrderByDescending(o => o.Id)
             .ToList();
 
@@ -179,6 +176,11 @@ public partial class ProductionDeliveryService
             executions.TryGetValue(order.Id, out var exe);
             var qc = exe == null ? null : qualityChecks.GetValueOrDefault(exe.Id);
             var productionDelivery = exe == null ? null : deliveries.GetValueOrDefault(exe.Id);
+            var hasRemainingDelivery = exe != null
+                && GetSourceContext(DeliverySources.FromActual, exe.Id).Lines.Any(l => l.RemainingQtyKg > 0.001);
+            // لا نعرض التنفيذ المكتمل التسليم في القائمة العامة، لكنه يبقى قابلاً للفتح عند طلبه صراحةً.
+            if (!selectedOrderId.HasValue && exe != null && productionDelivery != null && !hasRemainingDelivery)
+                continue;
 
             var planNum = order.SourcePlanId != null && plans.TryGetValue(order.SourcePlanId.Value, out var pn) ? pn : "—";
             var shiftName = order.ShiftId != null && shifts.TryGetValue(order.ShiftId.Value, out var sn) ? sn : "وردية غير محددة";
@@ -207,13 +209,17 @@ public partial class ProductionDeliveryService
                 Label = $"{order.DocumentNumber} — {customerSummary} — {shiftName}",
                 Customer = customerSummary,
                 Shift = shiftName,
+                ProductionDate = order.ProductionDate?.ToString("dd/MM/yyyy"),
                 PlanNumber = planNum,
                 ExecutionId = exe?.Id ?? 0,
                 ProductionDeliveryId = productionDelivery?.Id ?? 0,
                 Recorded = exe != null,
                 CanRecord = can,
-                CanCreateDelivery = exe != null && productionDelivery == null,
-                Status = productionDelivery != null ? $"تم إنشاء أمر تسليم الإنتاج {productionDelivery.DocumentNumber} — {DocStatuses.ToArabic(productionDelivery.Status)}"
+                CanCreateDelivery = exe != null && hasRemainingDelivery
+                    && productionDelivery?.Status != DocStatuses.Draft,
+                Status = productionDelivery != null
+                    ? $"آخر أمر تسليم: {productionDelivery.DocumentNumber} — {DocStatuses.ToArabic(productionDelivery.Status)}"
+                        + (hasRemainingDelivery ? " — توجد كمية متبقية لتسليم جزئي جديد" : " — اكتمل التسليم")
                     : exe != null ? "إنتاج فعلي محفوظ — لا يوجد استلام مخزني تلقائي؛ أنشئ أمر التسليم من هنا"
                     : can ? "أدخل الفعلي فقط؛ المخطط ثابت من أمر الإنتاج" : "الأمر غير قابل للتسجيل (مغلق أو ملغى).",
                 ReceiptNumber = null,

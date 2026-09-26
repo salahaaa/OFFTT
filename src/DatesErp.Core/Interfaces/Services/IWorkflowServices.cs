@@ -735,6 +735,8 @@ public interface IProductionOrderService
     OpResult IssueTodayGroup(int planId, int? customerId, int? shiftId, int? lineId);
     /// <summary>إنشاء أمر لمجموعة مجدولة في تاريخ اليوم أو تاريخ مستقبلي، دون إدخال يدوي.</summary>
     OpResult IssuePlanGroup(int planId, string scheduledDate, int? customerId, int? shiftId, int? lineId);
+    /// <summary>إنشاء أمر واحد متعدد العملاء من مجموعة الخطة نفسها؛ العميل محفوظ على مستوى البنود.</summary>
+    OpResult IssuePlanMultiCustomerGroup(int planId, string scheduledDate, int? shiftId, int? lineId);
     List<OrderSearchRowDto> SearchOrders(string term, int take = 50);
     /// <summary>§بطاقة ملخص الأمر الحية (للشاشة وشريط التقدم والطباعة).</summary>
     OrderCardDto GetOrderCard(int orderId);

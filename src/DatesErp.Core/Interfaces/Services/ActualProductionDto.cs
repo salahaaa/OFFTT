@@ -22,6 +22,7 @@ public sealed class ActualDeliveryOrderDto
     public string Label { get; init; }
     public string Customer { get; init; }
     public string Shift { get; init; }
+    public string ProductionDate { get; init; }
     public string PlanNumber { get; init; }
     public int ExecutionId { get; init; }
     public int ProductionDeliveryId { get; init; }

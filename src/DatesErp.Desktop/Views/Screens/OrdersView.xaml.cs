@@ -57,9 +57,9 @@ public partial class OrdersView : UserControl
             .WithDelete((_, _) => Delete_Click(null, null))
             .WithRefresh((_, _) => RefreshToday())
             .WithPrint((_, _) => Print_Click(null, null))
-            .WithExit((_, _) => (Window.GetWindow(this) as MainWindow)?.OpenScreen("dashboard")));
+            .WithExit((_, _) => (Window.GetWindow(this) as MainWindow)?.OpenPreviousScreen()));
         chrome.SetBody(this);
-        chrome.CloseRequested += (_, _) => (Window.GetWindow(this) as MainWindow)?.OpenScreen("dashboard");
+        chrome.CloseRequested += (_, _) => (Window.GetWindow(this) as MainWindow)?.OpenPreviousScreen();
     }
 
     private void RefreshToday()
@@ -154,22 +154,22 @@ public partial class OrdersView : UserControl
         if (sel.Count == 0 && TodayGrid.SelectedItem is TodayProductionRowDto current && current.IsPending)
             sel.Add(current);
         if (sel.Count == 0) { AppContainer.Get<DialogService>().Info("حدد صفاً معلقاً أو ضع علامة ✓ على بند واحد على الأقل."); return; }
-        // التحديد يختار المجموعة الحقيقية؛ الإصدار ينقل كل بنودها الأصلية دون إصدار جزئي.
-        var groups = sel.GroupBy(r => new { r.PlanId, r.ScheduledDate, r.CustomerId, r.ShiftId, r.LineId }).ToList();
-        if (!_isolated && !AppContainer.Get<DialogService>().Confirm($"إصدار {groups.Count} مجموعة من البنود المحددة بكميات الخطة الأصلية؟")) return;
+        // المجموعة التشغيلية الواحدة قد تحتوي عملاء متعددين؛ العميل محفوظ في كل بند،
+        // ولا نقسم الأمر آلياً حسب CustomerId.
+        var groups = sel.GroupBy(r => new { r.PlanId, r.ScheduledDate, r.ShiftId, r.LineId }).ToList();
+        if (!_isolated && !AppContainer.Get<DialogService>().Confirm($"إصدار {groups.Count} أمر إنتاج متعدد العملاء من البنود المحددة بكميات الخطة الأصلية؟")) return;
         try
         {
             int issued = 0;
             using var scope = AppContainer.NewScope();
             var svc = scope.ServiceProvider.GetRequiredService<IProductionOrderService>();
-            // كل مجموعة تحمل تاريخها وعميلها وورديتها وخطها؛ لا نرسلها لمسار اليوم فقط.
             foreach (var g in groups)
             {
-                var res = svc.IssuePlanGroup(g.Key.PlanId, g.Key.ScheduledDate, g.Key.CustomerId, g.Key.ShiftId, g.Key.LineId);
+                var res = svc.IssuePlanMultiCustomerGroup(g.Key.PlanId, g.Key.ScheduledDate, g.Key.ShiftId, g.Key.LineId);
                 if (!res.Ok) { AppContainer.Get<DialogService>().Error(res.Message); return; }
                 issued++;
             }
-            AppContainer.Get<DialogService>().Info($"تم إصدار {issued} أمر من مجموعات البنود المحددة ({groups.Count} مجموعة) بكميات الخطة الأصلية.");
+            AppContainer.Get<DialogService>().Info($"تم إصدار {issued} أمر إنتاج متعدد العملاء بكميات الخطة الأصلية.");
             RefreshToday();
         }
         catch (Exception ex)

@@ -428,30 +428,32 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
             return (!from.HasValue || day >= from.Value) && (!to.HasValue || day <= to.Value)
                 && (!shiftId.HasValue || g.ShiftId == shiftId);
         }).ToList();
-        foreach (var group in groups)
+        var multiGroups = groups.GroupBy(g => new { g.PlanId, g.ScheduledDate, g.ShiftId, g.LineId }).ToList();
+        foreach (var group in multiGroups)
         {
-            var issued = IssuePlanGroup(planId, group.ScheduledDate, group.CustomerId, group.ShiftId, group.LineId);
+            var first = group.First();
+            var issued = IssuePlanMultiCustomerGroup(planId, group.Key.ScheduledDate, group.Key.ShiftId, group.Key.LineId);
             if (!issued.Ok)
             {
-                result.Failed.Add($"{group.ScheduledDate} / {group.CustomerName}: {issued.Message}");
+                result.Failed.Add($"{group.Key.ScheduledDate} / متعدد العملاء: {issued.Message}");
                 continue;
             }
             result.Created.Add(new IssuedOrderDto
             {
                 OrderId = issued.Id,
                 OrderNumber = issued.DocumentNumber,
-                ProductionDate = group.ScheduledDate,
-                ShiftName = group.ShiftName,
-                LineName = group.LineName,
-                ItemsCount = group.ItemsCount,
-                TotalKg = group.PlannedKg
+                ProductionDate = group.Key.ScheduledDate,
+                ShiftName = first.ShiftName,
+                LineName = first.LineName,
+                ItemsCount = group.Sum(x => x.ItemsCount),
+                TotalKg = group.Sum(x => x.PlannedKg)
             });
         }
         result.Ok = result.Failed.Count == 0;
-        result.Message = groups.Count == 0
+        result.Message = multiGroups.Count == 0
             ? "لا توجد مجموعات خطة معتمدة ومتاحة ضمن الفترة المحددة — قد تكون صادرة سابقاً أو لا توجد جدولة بهذا التاريخ."
             : result.Failed.Count == 0
-                ? $"تم إنشاء {result.Created.Count} أمر إنتاج من الخطة {plan.DocumentNumber}."
+                ? $"تم إنشاء {result.Created.Count} أمر إنتاج من الخطة {plan.DocumentNumber} — كل أمر يحتفظ بالعملاء على مستوى البنود."
                 : $"تم إنشاء {result.Created.Count} أمر، وتعذر إنشاء {result.Failed.Count} مجموعة. راجع التفاصيل.";
         return result;
     }

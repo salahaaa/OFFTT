@@ -50,9 +50,10 @@ public static class ScreenCatalog
         new("cartons", "المخازن والاستلام", "الكرتون الفارغ (عدّ/بيع)", "cartons", "📦", "MRPINV1004"),
         new("fgreceive", "المخازن والاستلام", "أوامر استلام الإنتاج", "finishedgoods", "📥", "MRPINV1006"),
 
-        // 🏭 الإنتاج — ترتيب دورة العمل: خطة ← أمر ← مستلزمات ← تسليم ← إقفال
+        // 🏭 الإنتاج — ترتيب دورة العمل: خطة ← أمر ← بدء/إقفال فعلي ← أمر تسليم ← إقفال الخطة
         new("planning", "الإنتاج", "خطط الإنتاج (MPS)", "planning", "📋", "MRPMPS1001"),
         new("orders", "الإنتاج", "أوامر الإنتاج", "production", "📝", "MRPMPS1007"),
+        new("actualclose", "الإنتاج", "إقفال الإنتاج وتسجيل الفعلي", "production", "✅", "MRPMPS1022"),
         new("aux-setup", "الإنتاج", "تهيئة الأصناف المساعدة", "auxiliary", "🧩", "MRPAUX1001"),
         new("product-bom", "الإنتاج", "مكونات الإنتاج (BOM)", "auxiliary", "📋", "MRPAUX1002"),
         new("aux-issue", "الإنتاج", "صرف الأصناف المساعدة", "auxiliary", "🧪", "MRPAUX1003"),

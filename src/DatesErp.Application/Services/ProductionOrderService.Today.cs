@@ -68,7 +68,8 @@ public partial class ProductionOrderService
         var allOrderItems = Db.ProductionOrderItems.AsNoTracking().Where(i => orderIds.Contains(i.OrderId)).ToList();
         var validOrderIds = orders.Values.Where(o =>
         {
-            var group = entries.Where(e => e.Plan.Id == o.SourcePlanId && e.Item.CustomerId == o.CustomerId
+            var group = entries.Where(e => e.Plan.Id == o.SourcePlanId
+                && (o.CustomerId == null || e.Item.CustomerId == o.CustomerId)
                 && e.Shift == o.ShiftId && e.Line == o.LineId
                 && e.Item.ScheduledDate?.Date == o.ProductionDate?.Date).ToList();
             var children = allOrderItems.Where(i => i.OrderId == o.Id).ToList();
@@ -151,10 +152,10 @@ public partial class ProductionOrderService
             }
             var pending = entries.Where(e => !e.Item.IsClosed && !e.Plan.IsClosed && e.Plan.Status == DocStatuses.Approved && !existing.Any(i => i.PlanItemId == e.Item.Id)).ToList();
             int created = 0;
-            foreach (var g in pending.GroupBy(e => new { e.Plan.Id, e.Item.CustomerId, e.Shift, e.Line }))
+            foreach (var g in pending.GroupBy(e => new { e.Plan.Id, e.Shift, e.Line }))
             {
-                var result = SaveTodayGroup("FromPlan", g.Key.Id, g.Key.CustomerId, day.ToString("dd/MM/yyyy"),
-                    g.Key.Shift, g.Key.Line, g.Select(e => FromPlan(e.Item)).ToList());
+                var result = SaveScheduledGroup("FromPlan", g.Key.Id, null, day.ToString("dd/MM/yyyy"),
+                    g.Key.Shift, g.Key.Line, g.Select(e => FromPlan(e.Item)).ToList(), requireToday: true, allowMultipleCustomers: true);
                 if (!result.Ok) throw new DomainException(result.Message);
                 created++;
             }
@@ -181,7 +182,7 @@ public partial class ProductionOrderService
     /// الهوية والكميات ومراجع الخطة وحراس الطاقة كما هي.
     /// </summary>
     private OpResult SaveScheduledGroup(string sourceType, int? planId, int? customerId, string productionDate,
-        int? shiftId, int? lineId, List<OrderItemDto> requested, bool requireToday)
+        int? shiftId, int? lineId, List<OrderItemDto> requested, bool requireToday, bool allowMultipleCustomers = false)
     {
         if (sourceType != "FromPlan" || planId == null)
             throw new DomainException("أمر الإنتاج لا ينشأ يدوياً؛ يلزم مرجع خطة معتمدة (Approved Production Plan فقط).");
@@ -205,7 +206,9 @@ public partial class ProductionOrderService
         if (entries.Count == 0)
             throw new DomainException(requireToday ? NoTodayPlanMessage : "لا توجد بنود خطة معتمدة ومجدولة بهذا التاريخ.");
         var existing = ExistingItems(entries.Select(e => e.Item.Id));
-        var group = entries.Where(e => e.Item.CustomerId == customerId && e.Shift == shiftId && e.Line == lineId).ToList();
+        var group = (allowMultipleCustomers
+            ? entries.Where(e => e.Shift == shiftId && e.Line == lineId)
+            : entries.Where(e => e.Item.CustomerId == customerId && e.Shift == shiftId && e.Line == lineId)).ToList();
         var groupIds = group.Select(e => e.Item.Id).ToHashSet();
         var existingGroupItems = existing.Where(i => i.PlanItemId is int id && groupIds.Contains(id)).ToList();
         if (existingGroupItems.Count > 0)
@@ -256,7 +259,8 @@ public partial class ProductionOrderService
     }
 
     private static bool Matches(DayEntry e, ProductionOrder o, ProductionOrderItem i) =>
-        o.SourceType == "FromPlan" && o.SourcePlanId == e.Plan.Id && o.CustomerId == e.Item.CustomerId
+        o.SourceType == "FromPlan" && o.SourcePlanId == e.Plan.Id
+        && (o.CustomerId == null || o.CustomerId == e.Item.CustomerId)
         && o.ShiftId == e.Shift && o.LineId == e.Line && i.PlanItemId == e.Item.Id
         && i.ProductId == e.Item.ProductId && i.CustomerId == e.Item.CustomerId && i.LotId == e.Item.LotId
         && i.ShipmentId == e.Item.ShipmentId && i.PackagingTypeId == e.Item.PackagingTypeId
@@ -352,6 +356,34 @@ public partial class ProductionOrderService
         });
     }
 
+    /// <summary>
+    /// إصدار أمر واحد متعدد العملاء من نفس الخطة والتاريخ والوردية والخط.
+    /// يبقى العميل في كل بند، بينما يترك CustomerId في رأس الأمر فارغاً ليدل على التعدد.
+    /// </summary>
+    public OpResult IssuePlanMultiCustomerGroup(int planId, string scheduledDate, int? shiftId, int? lineId)
+    {
+        Require("production", "Create");
+        return RunTodayWrite(() =>
+        {
+            if (!UiFormat.TryParseDate(scheduledDate, out var day))
+                return OpResult.Fail("تاريخ الخطة غير صالح؛ حدّث الشاشة واختر تاريخاً مجدولاً صحيحاً.");
+            day = day.Date;
+            var entries = TodayEntries(day)
+                .Where(e => e.Plan.Id == planId && e.Plan.Status == DocStatuses.Approved && !e.Plan.IsClosed && !e.Item.IsClosed
+                    && e.Shift == shiftId && e.Line == lineId).ToList();
+            var existing = ExistingItems(entries.Select(e => e.Item.Id));
+            if (existing.Count > 0)
+                return OpResult.Fail("يوجد إصدار سابق لبند من هذه المجموعة؛ لا يُنشأ أمر متعدد العملاء جزئياً. راجع الأمر السابق أو التخطيط.");
+            if (entries.Count == 0)
+                return OpResult.Fail("لا توجد بنود خطة معتمدة ومجدولة لهذه المجموعة.");
+            var result = SaveScheduledGroup("FromPlan", planId, null, day.ToString("dd/MM/yyyy"), shiftId, lineId,
+                entries.Select(e => FromPlan(e.Item)).ToList(), requireToday: false, allowMultipleCustomers: true);
+            if (!result.Ok) return result;
+            var customers = entries.Select(e => e.Item.CustomerId).Distinct().Count();
+            return OpResult.Success($"تم إنشاء أمر إنتاج واحد متعدد العملاء ليوم {day:dd/MM/yyyy} — {customers} عملاء و{entries.Count} بنداً.", result.Id, result.DocumentNumber);
+        });
+    }
+
     private void ValidateTodayOrder(ProductionOrder order)
         => ValidateScheduledOrder(order, requireToday: true);
 
@@ -363,7 +395,8 @@ public partial class ProductionOrderService
         if (requireToday && day > Db.BusinessNow.Date)
             throw new DomainException("لا يبدأ التنفيذ قبل يوم الخطة؛ يمكن تنفيذ الأمر المتأخر اليوم إذا كان تاريخه أقدم.");
         var entries = TodayEntries(day).Where(e => e.Plan.Id == order.SourcePlanId && e.Plan.Status == DocStatuses.Approved && !e.Plan.IsClosed && !e.Item.IsClosed
-            && e.Item.CustomerId == order.CustomerId && e.Shift == order.ShiftId && e.Line == order.LineId).ToList();
+            && (order.CustomerId == null || e.Item.CustomerId == order.CustomerId)
+            && e.Shift == order.ShiftId && e.Line == order.LineId).ToList();
         if (entries.Count == 0 || order.Items.Count != entries.Count || order.Items.Any(i => !entries.Any(e => Matches(e, order, i)))
             || order.Items.Select(i => i.PlanItemId).Distinct().Count() != order.Items.Count)
             throw new DomainException("أمر الإنتاج لا يطابق بنود وكميات الخطة المعتمدة؛ أوقف التنفيذ وراجع جهة التخطيط.");
