@@ -206,7 +206,7 @@
                     <Grid>
                         <DataGrid x:Name="ReportGrid" FontSize="14" RowHeight="36"
                                   ColumnHeaderHeight="42" GridLinesVisibility="Horizontal"
-                                  HorizontalGridLinesBrush="{StaticResource LightBgBrush}"
+                                  HorizontalGridLinesBrush="#8CA0AC" VerticalGridLinesBrush="#8CA0AC"
                                   BorderThickness="0" Background="White"
                                   ColumnHeaderStyle="{StaticResource ReportHeaderStyle}"
                                   HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">

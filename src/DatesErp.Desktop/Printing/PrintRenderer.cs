@@ -16,6 +16,10 @@ namespace DatesErp.Desktop.Printing;
 public static class PrintRenderer
 {
     private static readonly Brush Ink = Brush("#1E293B"), Navy = Brush("#14532D"), GreenDark = Brush("#0B3D1F"), Gold = Brush("#FCD34D"), Muted = Brush("#64748B");
+    // خطوط الجداول يجب أن تبقى مقروءة بعد تصغير المعاينة أو تحويلها إلى PDF.
+    // اللون السابق #CBD5E1 بعرض 0.75 كان يذوب بصرياً فوق الورق الأبيض.
+    private static readonly Brush GridLine = Brush("#8CA0AC");
+    private const double GridLineWidth = 1.0;
     private static readonly LinearGradientBrush HeaderGrad;
     static PrintRenderer()
     {
@@ -134,14 +138,17 @@ public static class PrintRenderer
                         dc.DrawLine(new Pen(Brush("#CBD5E1"),1.5){DashStyle=DashStyles.Dash},new Point(PrintLayout.Margin,band.Y),new Point(w-PrintLayout.Margin,band.Y));
                     // §43 بطاقة البيانات: إطار مدوّر يحتضن البطاقة كاملة كـ meta-card المرجعية
                     if(band.Style=="meta")
-                        dc.DrawRoundedRectangle(Brush("#F8FAFC"),new Pen(Brush("#CBD5E1"),1.5),
+                        dc.DrawRoundedRectangle(Brush("#F8FAFC"),new Pen(GridLine,1.5),
                             new Rect(PrintLayout.Margin,band.Y,contentW,band.Height),8,8);
                     double x=w-PrintLayout.Margin;
                     for(int c=0;c<band.Cells.Length;c++)
                     {
                         x-=band.Widths[c]; var cell=new Rect(x,band.Y,band.Widths[c],band.Height);
                         if(band.Style is not ("meta" or "kpi"))
-                            dc.DrawRectangle(bg,new Pen(Brush("#CBD5E1"),0.75),cell); // §43: مسطرة بلون القوالب المرجعية
+                            dc.DrawRectangle(bg,new Pen(GridLine,GridLineWidth),cell); // §43: مسطرة واضحة للطباعة (لا تذوب في الورق)
+                        else if(band.Style=="meta")
+                            // بطاقة البيانات لها إطار خارجي، لكن فواصل الحقول الداخلية مهمة أيضاً.
+                            dc.DrawRectangle(null,new Pen(GridLine,GridLineWidth),cell);
                         if(band.Style=="kpi")
                         {
                             // §43 كل زوج (بيان،قيمة) صندوق بحد علوي ملوّن كـ summary-boxes المرجعية
@@ -150,7 +157,7 @@ public static class PrintRenderer
                                 double boxW=band.Widths[c]+band.Widths[c-1];
                                 int k=(c-1)/2;
                                 Brush top=k switch {0=>Navy,1=>Brush("#16A34A"),2=>Brush("#D97706"),_=>Brush("#1E40AF")};
-                                dc.DrawRoundedRectangle(Brush("#F8FAFC"),new Pen(Brush("#CBD5E1"),1.5),new Rect(x,band.Y+1,boxW,band.Height-2),6,6);
+                                dc.DrawRoundedRectangle(Brush("#F8FAFC"),new Pen(GridLine,1.5),new Rect(x,band.Y+1,boxW,band.Height-2),6,6);
                                 dc.DrawRectangle(top,null,new Rect(x+3,band.Y+2,boxW-6,3));
                                 var lb=Text(band.Cells[c-1],boxW-12,10.5,false,Muted,TextAlignment.Center);
                                 var vl=Text(band.Cells[c],boxW-12,14,true,top,TextAlignment.Center);
@@ -161,7 +168,8 @@ public static class PrintRenderer
                         }
                         if(band.Style=="signature")
                         {
-                            // §43 الدور بأخضر ثقيل ثم سطور الفراغ بخط أهدأ — كـ sign-box المرجعية
+                            // صناديق التوقيع مرسومة كخلايا واضحة بدلاً من نص عائم على ورقة بيضاء.
+                            dc.DrawRectangle(null,new Pen(GridLine,GridLineWidth),cell);
                             var lines=(band.Cells[c]??"").Split('\n');
                             for(int li=0;li<band.LineCount;li++)
                             {
@@ -197,7 +205,7 @@ public static class PrintRenderer
                         dc.Pop();
                     }
                 }
-                dc.DrawLine(new Pen(Brush("#E2E8F0"),1),new Point(PrintLayout.Margin,h-40),new Point(w-PrintLayout.Margin,h-40));
+                dc.DrawLine(new Pen(GridLine,1),new Point(PrintLayout.Margin,h-40),new Point(w-PrintLayout.Margin,h-40));
                 dc.DrawText(Text($"{spec.Company} — نظام التصنيع المتكامل v{BuildInfo.Stamp}",contentW-52,9.5,false,Muted),new Point(PrintLayout.Margin,h-30));
                 string sessionUser;
                 try { sessionUser = AppContainer.Get<ICurrentSession>().UserName ?? "—"; }

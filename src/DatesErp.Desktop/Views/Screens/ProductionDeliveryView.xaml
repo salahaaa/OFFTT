@@ -93,7 +93,7 @@
       <TextBlock Grid.Column="1" Text="نقرة واحدة تبدأ التحرير — الفعلي كراتين صحيحة لا تتجاوز المخطط" FontSize="10.5" Foreground="{StaticResource GrayTextBrush}" VerticalAlignment="Center"/>
      </Grid>
     </Border>
-    <DataGrid x:Name="ItemsGrid" MinHeight="260" RowHeight="32" AlternatingRowBackground="#FBFAF5" Background="White" RowBackground="White" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E8E4D8" BorderBrush="#D9D4C4" ColumnHeaderHeight="36"
+    <DataGrid x:Name="ItemsGrid" MinHeight="260" RowHeight="32" AlternatingRowBackground="#FBFAF5" Background="White" RowBackground="White" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#8CA0AC" BorderBrush="#D9D4C4" ColumnHeaderHeight="36"
               AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False"
               HeadersVisibility="Column" PreviewMouseLeftButtonDown="Grid_SingleClickEdit">
      <DataGrid.Columns>

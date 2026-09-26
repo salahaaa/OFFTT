@@ -31,7 +31,8 @@
             <Setter Property="RowHeight" Value="34"/>
             <Setter Property="ColumnHeaderHeight" Value="40"/>
             <Setter Property="GridLinesVisibility" Value="Horizontal"/>
-            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource LightBgBrush}"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="#8CA0AC"/>
+            <Setter Property="VerticalGridLinesBrush" Value="#8CA0AC"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Background" Value="White"/>
             <Setter Property="ColumnHeaderStyle" Value="{StaticResource ReportHeaderStyle}"/>

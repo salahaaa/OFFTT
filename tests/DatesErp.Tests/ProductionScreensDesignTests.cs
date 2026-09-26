@@ -38,7 +38,7 @@ public class ProductionScreensDesignTests
 
         // تنسيق الجدول الموحد: صفوف متبادلة وخطوط أفقية وإطار الهوية
         Assert.Contains("AlternatingRowBackground=\"#FBFAF5\"", xaml);
-        Assert.Contains("HorizontalGridLinesBrush=\"#E8E4D8\"", xaml);
+        Assert.Contains("HorizontalGridLinesBrush=\"#8CA0AC\"", xaml);
         Assert.Contains("BorderBrush=\"#D9D4C4\"", xaml);
         Assert.Contains("RowHeight=\"32\"", xaml);
         Assert.Contains("ColumnHeaderHeight=\"36\"", xaml);
@@ -71,7 +71,7 @@ public class ProductionScreensDesignTests
         // بانر الحالة وجدولا البنود والمخلفات بالتنسيق الموحد
         Assert.Contains("x:Name=\"StatusLabel\"", xaml);
         Assert.Contains("AlternatingRowBackground=\"#FBFAF5\"", xaml);
-        Assert.Contains("HorizontalGridLinesBrush=\"#E8E4D8\"", xaml);
+        Assert.Contains("HorizontalGridLinesBrush=\"#8CA0AC\"", xaml);
         Assert.Contains("RowHeight=\"32\"", xaml);
         Assert.Contains("FieldLabel", xaml);
 

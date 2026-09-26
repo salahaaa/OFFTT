@@ -72,7 +72,7 @@
     <DataGrid x:Name="CriteriaGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
               MinHeight="86" MaxHeight="120" RowHeight="30" ColumnHeaderHeight="32" FontSize="12.5"
               AlternatingRowBackground="#FBFAF5" Background="White" RowBackground="White"
-              GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E8E4D8"
+              GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#8CA0AC"
               HeadersVisibility="Column" BorderBrush="#D9D4C4" SelectionUnit="Cell"
               PreviewMouseLeftButtonDown="Grid_SingleClickEdit">
      <DataGrid.RowStyle>
@@ -113,7 +113,7 @@
                MinRowHeight="38" ColumnHeaderHeight="36" FontSize="13"
                ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
                AlternatingRowBackground="#FBFAF5" Background="White" RowBackground="White"
-               GridLinesVisibility="Both" HorizontalGridLinesBrush="#E8E4D8" VerticalGridLinesBrush="#E8E4D8"
+               GridLinesVisibility="Both" HorizontalGridLinesBrush="#8CA0AC" VerticalGridLinesBrush="#8CA0AC"
                HeadersVisibility="Column" BorderBrush="#D9D4C4" SelectionUnit="Cell"
                CellEditEnding="Results_CellEditEnding"
                PreparingCellForEdit="Grid_PreparingCellForEdit"

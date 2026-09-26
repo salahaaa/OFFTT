@@ -49,7 +49,7 @@
   <TabControl DockPanel.Dock="Bottom" Height="215" Background="#F6F5EE" BorderBrush="#CBD5E1">
    <TabItem Header="مستخدمو القاعدة">
     <DataGrid x:Name="UsersAllGrid" AutoGenerateColumns="False" IsReadOnly="True" RowHeight="30" FontSize="12.5"
-              AlternatingRowBackground="#FBFAF5" HeadersVisibility="Column" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E8E4D8">
+              AlternatingRowBackground="#FBFAF5" HeadersVisibility="Column" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#8CA0AC">
      <DataGrid.Columns>
       <DataGridTextColumn Header="رقم المستخدم" Binding="{Binding Id}" Width="90"/>
       <DataGridTextColumn Header="اسم المستخدم" Binding="{Binding FullName}" Width="*"/>
@@ -92,7 +92,7 @@
                FontWeight="Bold" FontSize="13" Foreground="#0A246A" Margin="0,0,0,6" TextWrapping="Wrap"/>
     <DataGrid x:Name="MatrixGrid" IsEnabled="False" AutoGenerateColumns="False" RowHeight="30" ColumnHeaderHeight="34" FontSize="12.5"
               AlternatingRowBackground="#FBFAF5" Background="White" RowBackground="White"
-              GridLinesVisibility="All" HorizontalGridLinesBrush="#E2DED0" VerticalGridLinesBrush="#E2DED0"
+              GridLinesVisibility="All" HorizontalGridLinesBrush="#8CA0AC" VerticalGridLinesBrush="#8CA0AC"
               HeadersVisibility="Column" BorderBrush="#D9D4C4" CanUserAddRows="False" CanUserSortColumns="False"/>
    </DockPanel>
   </Border>

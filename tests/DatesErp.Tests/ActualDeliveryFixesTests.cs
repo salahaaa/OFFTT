@@ -92,7 +92,7 @@ public class ActualDeliveryFixesTests
         Assert.Contains("صف لكل عميل وصنف وعبوة كما في خطة الإنتاج", xaml);  // §v1.50.29: المصفوفة
         Assert.Contains("معايير الفحص المعتمدة", xaml);
         Assert.Contains("AlternatingRowBackground=\"#FBFAF5\"", xaml);
-        Assert.Contains("HorizontalGridLinesBrush=\"#E8E4D8\"", xaml);
+        Assert.Contains("HorizontalGridLinesBrush=\"#8CA0AC\"", xaml);
         Assert.Contains("Background=\"#F4F2E8\"", xaml);
         // قاعدة الحفظ معروضة للمستخدم في الشاشة نفسها
         Assert.Contains("مجموع صفات كل صنف = كميته المستلمة", xaml);

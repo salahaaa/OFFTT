@@ -210,7 +210,7 @@
                     </TextBlock>
                     <DataGrid x:Name="RowsGrid" MinHeight="280" RowHeight="38" FontSize="13" ColumnHeaderHeight="38" AutoGenerateColumns="False" CanUserAddRows="False"
                               AlternatingRowBackground="#FBFAF5" Background="White" RowBackground="White"
-                              GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E8E4D8"
+                              GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#8CA0AC"
                               HeadersVisibility="Column" BorderBrush="#7C7660"
                               LoadingRow="RowsGrid_LoadingRow">
                         <DataGrid.RowStyle>

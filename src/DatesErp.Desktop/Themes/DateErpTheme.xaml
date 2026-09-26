@@ -124,7 +124,8 @@
         <Setter Property="BorderThickness" Value="{DynamicResource ThemeTableBorderThickness}"/>
         <Setter Property="GridLinesVisibility" Value="All"/>
         <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource ThemeBorderBrush}"/>
-        <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource ThemeBackgroundBrush}"/>
+        <!-- الفاصل العمودي كان بلون الخلفية فيختفي؛ استخدم لون الحدود نفسه. -->
+        <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource ThemeBorderBrush}"/>
         <Setter Property="HeadersVisibility" Value="Column"/>
         <Setter Property="RowHeight" Value="{DynamicResource ThemeRowHeight}"/>
         <Setter Property="ColumnHeaderHeight" Value="{DynamicResource ThemeTableHeaderHeight}"/>
