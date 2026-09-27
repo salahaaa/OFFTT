@@ -441,6 +441,8 @@ public interface IPlanningService
     List<PlanSessionDto> GetPlanSessions(int planId);
     /// <summary>ينهي الجلسة الحالية بقرار إنتاج أو لا إنتاج، مع منع القفز إلى جلسة لاحقة.</summary>
     OpResult DecidePlanSession(int sessionId, string decision, string reason = null);
+    /// <summary>يعدل جلسات مستقبلية غير منفذة فقط، وينشئ Revision جديداً بلقطة السابق والجديد.</summary>
+    OpResult AmendFuturePlan(int planId, string reason, List<PlanItemDto> items);
     OpResult SavePlan(string title, string planType, string startDate, string endDate, int? shiftId, int? lineId, List<PlanItemDto> items, string notes = null, string scopeMode = null, int? singleCustomerId = null);
     /// <summary>§تعديل خطة قائمة (مسودة غير معتمدة): يستبدل البنود ويعيد فحص الطاقة والأرصدة والحجوزات.</summary>
     OpResult UpdatePlan(int planId, string title, string planType, string startDate, string endDate, int? shiftId, int? lineId, List<PlanItemDto> items, string notes = null, string scopeMode = null, int? singleCustomerId = null);

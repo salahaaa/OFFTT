@@ -271,6 +271,108 @@ public class PlanningService : ServiceBase, IPlanningService
         });
     }
 
+    /// <summary>
+    /// تعديل مضبوط بعد اعتماد الخطة: لا يُفتح الإصدار المعتمد للتحرير العام، بل تُستبدل
+    /// بنود جلسات Pending فقط وتُحفظ لقطة Revision جديدة. الجلسات المنجزة أو المرتبطة
+    /// بأمر إنتاج/إنتاج فعلي لا تدخل هذا المسار.
+    /// </summary>
+    public OpResult AmendFuturePlan(int planId, string reason, List<PlanItemDto> items)
+    {
+        Require("planning", "Edit");
+        if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < 10)
+            return OpResult.Fail("سبب تعديل الإصدار المعتمد إجباري — 10 أحرف على الأقل.");
+        if (items == null || items.Count == 0)
+            return OpResult.Fail("أرسل بنود الجلسات المستقبلية المطلوب تعديلها.");
+
+        return RunOp(() =>
+        {
+            var plan = Db.ProductionPlans
+                .Include(p => p.Items).ThenInclude(i => i.Allocations)
+                .Include(p => p.Sessions).ThenInclude(s => s.Items)
+                .Include(p => p.CustomerScopes)
+                .FirstOrDefault(p => p.Id == planId)
+                ?? throw new DomainException("الخطة غير موجودة.");
+            if (!plan.IsApproved) throw new DomainException("التعديل بالإصدار الجديد متاح بعد اعتماد الخطة فقط.");
+            if (plan.IsClosed) throw new DomainException("الخطة مقفلة — لا يمكن إنشاء إصدار تعديل.");
+
+            var sessionIds = items.Select(x => x.SessionId).Where(x => x != null).Select(x => x.Value).Distinct().ToHashSet();
+            if (sessionIds.Count == 0 || items.Any(x => x.SessionId == null))
+                throw new DomainException("كل بند تعديل يجب أن يرتبط بجلسة مستقبلية محددة.");
+            var targetSessions = plan.Sessions.Where(x => sessionIds.Contains(x.Id)).ToList();
+            if (targetSessions.Count != sessionIds.Count)
+                throw new DomainException("توجد جلسة تعديل غير تابعة لهذه الخطة.");
+            if (targetSessions.Any(x => x.Status != "Pending"))
+                throw new DomainException("لا يمكن تعديل جلسة بدأت أو انتهت؛ اختر الأيام غير المنفذة فقط.");
+
+            var oldItems = plan.Items.Where(x => x.SessionId != null && sessionIds.Contains(x.SessionId.Value)).ToList();
+            var oldItemIds = oldItems.Select(x => x.Id).Where(x => x > 0).ToList();
+            if (oldItems.Any(x => x.ProducedQtyKg > 0 || x.AcceptedQtyKg > 0 || x.DeliveredQtyKg > 0))
+                throw new DomainException("لا يمكن تعديل جلسة تحتوي إنتاجاً فعلياً أو كمية مقبولة/مرحلة.");
+            if (oldItemIds.Count > 0 && Db.ProductionOrderItems.Any(x => x.PlanItemId != null && oldItemIds.Contains(x.PlanItemId.Value)
+                && x.Status != DocStatuses.Cancelled))
+                throw new DomainException("لا يمكن تعديل جلسة لها أمر إنتاج قائم؛ ألغِ الحركة اللاحقة رسمياً أولاً.");
+
+            var allowedCustomers = plan.CustomerScopes.Where(x => x.IsEnabled).Select(x => x.CustomerId).ToHashSet();
+            foreach (var dto in items)
+            {
+                if (dto.SessionId is not int sid || !sessionIds.Contains(sid))
+                    throw new DomainException("كل بند تعديل يجب أن يرتبط بجلسة التعديل.");
+                if (dto.CustomerId is not int customerId || !allowedCustomers.Contains(customerId))
+                    throw new DomainException("العميل في الإصدار الجديد خارج نطاق الخطة.", "PLAN_CUSTOMER_SCOPE");
+                var target = targetSessions.First(x => x.Id == sid);
+                dto.ScheduledDate = target.SessionDate.ToString(UiFormat.DatePattern);
+                dto.SuggestedShiftId = target.ShiftId;
+                dto.SuggestedLineId = target.LineId;
+                ProductIdentityGuard.EnsurePlanningLink(Db, dto.ProductId, dto.LotId, dto.SelectedRawProductId);
+            }
+
+            Db.ProductionPlanItems.RemoveRange(oldItems);
+            foreach (var old in oldItems)
+            {
+                plan.Items.Remove(old);
+                var session = targetSessions.First(x => x.Id == old.SessionId);
+                session.Items.Remove(old);
+            }
+
+            var usedPerLot = new Dictionary<int, double>();
+            var priorPlanRes = PriorReservationByPlan(plan.Id);
+            foreach (var dto in items)
+            {
+                UnitsPolicy.RequireItemType(Db, dto.ProductId, "Finished", "إصدار تعديل خطة الإنتاج");
+                dto.PlannedQtyKg = UnitsPolicy.EnsureCartonKgConsistency(Db, dto.ProductId, dto.PackagingTypeId,
+                    dto.PlannedQtyKg, dto.PlannedCartons, "إصدار تعديل خطة الإنتاج");
+                if (dto.PlannedCartons <= 0 && dto.PlannedQtyKg > 0)
+                {
+                    var weight = UnitsPolicy.CartonWeight(Db, dto.ProductId, dto.PackagingTypeId);
+                    if (weight > 0) dto.PlannedCartons = (int)Math.Round(dto.PlannedQtyKg / weight);
+                }
+                var target = targetSessions.First(x => x.Id == dto.SessionId);
+                var ppi = new ProductionPlanItem
+                {
+                    PlanId = plan.Id, SessionId = target.Id, SourceType = dto.SourceType ?? "Manual",
+                    LotId = dto.LotId, SelectedRawProductId = dto.SelectedRawProductId,
+                    ShipmentId = dto.ShipmentId ?? (dto.LotId != null ? Db.Lots.Where(l => l.Id == dto.LotId).Select(l => l.ShipmentId).FirstOrDefault() : null),
+                    CustomerId = dto.CustomerId, ProductId = dto.ProductId, PackagingTypeId = dto.PackagingTypeId,
+                    PlannedQtyKg = dto.PlannedQtyKg, PlannedCartons = dto.PlannedCartons,
+                    ScheduledDate = target.SessionDate, SuggestedShiftId = target.ShiftId, SuggestedLineId = target.LineId,
+                    PriorityNo = dto.PriorityNo, Status = DocStatuses.Approved
+                };
+                ResolveSourceDraw(ppi, dto, usedPerLot, priorPlanRes);
+                AddPlanItemAllocations(ppi, dto);
+                plan.Items.Add(ppi);
+                target.Items.Add(ppi);
+            }
+
+            ValidateCapacity(CapacityItems(plan), plan);
+            ApplyLotReservations(plan);
+            plan.ModifiedBy = Session?.UserId;
+            plan.ModifiedDate = DateTime.Now;
+            AddApprovedRevision(plan, "FutureAmendment", reason.Trim());
+            Db.SaveChanges();
+            return OpResult.Success("تم إنشاء إصدار تعديل جديد للجلسات غير المنفذة وحفظ الإصدار السابق للمقارنة.", plan.Id, plan.DocumentNumber);
+        });
+    }
+
     public OpResult SavePlan(string title, string planType, string startDate, string endDate, int? shiftId, int? lineId, List<PlanItemDto> items, string notes = null, string scopeMode = null, int? singleCustomerId = null)
     {
         Require("planning", "Create");
