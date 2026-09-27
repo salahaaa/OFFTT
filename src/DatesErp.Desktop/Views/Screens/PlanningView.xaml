@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="DatesErp.Desktop.Views.Screens.PlanningView"
+<UserControl x:Class="DatesErp.Desktop.Views.Screens.PlanningView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              FlowDirection="RightToLeft">
@@ -170,7 +170,7 @@
                 </WrapPanel>
             </Border>
 
-            <!-- ٤) شريط الطاقة والعدادات -->
+            <!-- ٤) ملخص الطاقة والعدادات بعد الاختيار -->
             <Border Grid.Row="4" Background="#F8FAFC" BorderBrush="#5B7595" BorderThickness="1.4" Padding="8,4" Margin="0,0,0,6">
                 <DockPanel>
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
@@ -180,10 +180,6 @@
                                    ToolTip="تفاصيل طاقة الأيام تظهر هنا عند التمرير"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-                        <!-- §التخطيط الأفقي: شريط تقدّم بصري لاستغلال طاقة الوردية -->
-                        <ProgressBar x:Name="CapacityProgress" Width="150" Height="12" Minimum="0" Maximum="1" Value="0"
-                                     Margin="0,0,10,0" VerticalAlignment="Center"
-                                     ToolTip="المجدول من أصل طاقة الوردية — يتحوّل للأحمر عند تجاوز الطاقة"/>
                         <TextBlock x:Name="TotItemsBox" Text="البنود: 0" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Center" Margin="0,0,10,0"/>
                         <TextBlock x:Name="TotCartonsBox" Text="كراتين: 0" FontWeight="Bold" Foreground="#14532D" VerticalAlignment="Center" Margin="0,0,10,0"/>
                         <TextBlock x:Name="TotQtyBox" Text="الوزن: 0 كجم" FontWeight="Bold" Foreground="#14532D" VerticalAlignment="Center" Margin="0,0,10,0"/>
@@ -256,6 +252,8 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
+                            <!-- المخزن ظاهر مستقلاً حتى لا يخفي الاختيار مصدر الكمية -->
+                            <DataGridTextColumn Header="المخزن 🏬" Binding="{Binding WarehouseName}" Width="0.9*" MinWidth="110" IsReadOnly="True"/>
                             <!-- §1.50.69 FIX: الدفعة/الشحنة برقم سند استلام الشحنات (ShipmentNo = DocumentNumber) بدل LotCode الداخلي -->
                             <DataGridTemplateColumn Header="الدفعة / سند الاستلام 📦 *" Width="1.2*" MinWidth="140">
                                 <DataGridTemplateColumn.CellTemplate>
@@ -296,7 +294,11 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="المتاح" Binding="{Binding AvailableDisplay}" Width="130" IsReadOnly="True">
+                            <DataGridTextColumn Header="الرصيد الفعلي" Binding="{Binding OnHandKg, StringFormat=N1}" Width="105" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="المحجوز" Binding="{Binding ReservedKg, StringFormat=N1}" Width="95" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="المتاح للتخطيط" Binding="{Binding AvailableKg, StringFormat=N1}" Width="120" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="الكمية المختارة/المطلوبة" Binding="{Binding SelectedQtyKg, StringFormat=N1}" Width="140" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="المتاح بالوحدة" Binding="{Binding AvailableDisplay}" Width="130" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="HorizontalAlignment" Value="Right"/>

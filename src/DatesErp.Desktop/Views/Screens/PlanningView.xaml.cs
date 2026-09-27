@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using DatesErp.Application.Services;
+using DatesErp.Core.Domain.Entities;
 using DatesErp.Core.Interfaces.Services;
 using DatesErp.Desktop.Services;
 using DatesErp.Infrastructure.Persistence;
@@ -134,12 +135,12 @@ public partial class PlanningView : UserControl
             .WithUnapprove((_, _) => Unapprove(), "إلغاء الاعتماد وإعادة الفتح")
             .WithNavigation((_, _) => Nav(0), (_, _) => Nav(-1), (_, _) => Nav(1), (_, _) => Nav(int.MaxValue))
             .WithCustom("📋 الخطط السابقة (F9)", "ErpButton", (_, _) => OpenPlansSearch())
-            .WithExit((_, _) => (Window.GetWindow(this) as MainWindow)?.OpenScreen("dashboard"));
+            .WithExit((_, _) => (Window.GetWindow(this) as MainWindow)?.OpenPreviousScreen());
         if (_toolbar.UnapproveBtn != null) _toolbar.UnapproveBtn.Visibility = Visibility.Collapsed;
         if (_toolbar.ApproveBtn != null) _toolbar.ApproveBtn.Visibility = Visibility.Collapsed;
         chrome.SetToolbar(_toolbar);
         chrome.SetBody(this);
-        chrome.CloseRequested += (_, _) => (Window.GetWindow(this) as MainWindow)?.OpenScreen("dashboard");
+        chrome.CloseRequested += (_, _) => (Window.GetWindow(this) as MainWindow)?.OpenPreviousScreen();
     }
 
     private void Load()
@@ -392,10 +393,14 @@ public partial class PlanningView : UserControl
                 LotId = l.LotId,
                 ShipmentId = l.ShipmentId,
                 ShipmentNo = l.ShipmentNo ?? "—",
+                WarehouseId = l.WarehouseId,
+                WarehouseName = l.WarehouseName ?? (l.WarehouseId != null ? $"مخزن {l.WarehouseId}" : "غير محدد"),
                 LotCode = l.LotCode,
                 CustomerId = l.CustomerId, // §B87/M6: null = «بدون عميل» — يُحفَظ NULL لا صفراً
                 CustomerName = l.CustomerName ?? (custName ?? "—"),
                 RawName = l.ProductName ?? "—",
+                OnHandKg = l.InitialQtyKg,
+                ReservedKg = l.ReservedQtyKg,
                 Available = l.RemainingKg,
                 // §المعالجة: حالتها على الدفعة (حتى يُعرض القيد باللون الأحمر ويُمنع الإنتاج قبل التاريخ)
                 TreatmentRequired = l.RequiresTreatment,
@@ -451,7 +456,7 @@ public partial class PlanningView : UserControl
         // §B92: الاختيار اليدوي للوردية — الورديات النشطة + وردية الشاشة افتراضياً
         var shiftsForManual = db.Shifts.Where(s => s.IsActive).OrderBy(s => s.Id).ToList();
         var win = new LotsEditorWindow(editorRows, title, custId != null, planFrom, planTo, shiftsForManual, shiftId,
-            additions => EvaluateDraft(_rows.Select(CapacityItem).Concat(additions).ToList()), SelectedLineId()) { Owner = Window.GetWindow(this) };
+            additions => EvaluateDraft(_rows.Where(r => (r.LotId != null || r.ProductId != 0) && r.Cartons > 0).Select(CapacityItem).Concat(additions).ToList()), SelectedLineId()) { Owner = Window.GetWindow(this) };
         if (win.ShowDialog() != true || win.Inserted.Count == 0) return;
 
         // تحويل الصفوف المدرجة إلى بنود الخطة (صنف كامل أو جزء — حسب ما أدخله المستخدم)
@@ -522,6 +527,7 @@ public partial class PlanningView : UserControl
                 var er = new LotEditorRow
                 {
                     LotId = r.LotId, ShipmentId = r.ShipmentId, ShipmentNo = r.ShipmentNo,
+                    WarehouseId = r.WarehouseId, WarehouseName = r.WarehouseName,
                     LotCode = r.LotCode, CustomerId = r.CustomerId, CustomerName = r.CustomerName,
                     RawName = r.RawName, Available = r.AvailableKg,
                     DaysInStockText = $"{r.DaysInStock} يوماً",
@@ -550,7 +556,7 @@ public partial class PlanningView : UserControl
             var win = new LotsEditorWindow(editorRows,
                 "⚖ بنود التوزيع العادل — راجع وعدّل (صنف كامل أو جزء، تاريخ ووردية) ثم أنزل للخطة", false, fairFrom, fairTo,
                 shifts, wiz.ShiftId,
-                additions => EvaluateDraft(_rows.Select(CapacityItem).Concat(additions).ToList()), wiz.LineId)
+                additions => EvaluateDraft(_rows.Where(r => (r.LotId != null || r.ProductId != 0) && r.Cartons > 0).Select(CapacityItem).Concat(additions).ToList()), wiz.LineId)
             { Owner = Window.GetWindow(this) };
             if (win.ShowDialog() != true || win.Inserted.Count == 0) return;
             InsertEditorRows(win.Inserted, products, packs, wiz.FromDate, wiz.ShiftId, wiz.LineId, db);
@@ -562,7 +568,7 @@ public partial class PlanningView : UserControl
     private void InsertEditorRows(List<LotEditorRow> inserted, List<DatesErp.Core.Domain.Entities.Product> products,
         List<DatesErp.Core.Domain.Entities.PackagingType> packs, string fallbackDate, int shiftId, int lineId, DatesErpDbContext db)
     {
-        var capacity = EvaluateDraft(_rows.Select(CapacityItem).Concat(inserted.Select(r => LotsEditorWindow.CapacityItem(r, lineId))).ToList());
+        var capacity = EvaluateDraft(_rows.Where(r => (r.LotId != null || r.ProductId != 0) && r.Cartons > 0).Select(CapacityItem).Concat(inserted.Select(r => LotsEditorWindow.CapacityItem(r, lineId))).ToList());
         if (!capacity.IsValid) { AppContainer.Get<DialogService>().Error(capacity.Error); return; }
         foreach (var row in inserted)
         {
@@ -573,7 +579,13 @@ public partial class PlanningView : UserControl
                 CustomerName = row.CustomerName,
                 ShipmentId = row.ShipmentId,
                 ShipmentNo = row.ShipmentNo,
+                WarehouseId = row.WarehouseId,
+                WarehouseName = row.WarehouseName,
                 LotId = row.LotId,
+                OnHandKg = row.OnHandKg,
+                ReservedKg = row.ReservedKg,
+                AvailableKg = row.AvailableKg,
+                AllocationSelectedQtyKg = row.SelectedQtyKg,
                 RawProductId = row.RawProductId,
                 LotCode = row.LotCode,
                 RawName = row.RawName,
@@ -639,7 +651,7 @@ public partial class PlanningView : UserControl
             var window = new LotsEditorWindow(new() { row }, "اختر الخام ثم الصنف التام المرتبط والكمية", true,
                 StartBox.SelectedDate ?? DateTime.Today, EndBox.SelectedDate ?? StartBox.SelectedDate ?? DateTime.Today,
                 db.Shifts.Where(s => s.IsActive).ToList(), SelectedShiftId(),
-                additions => EvaluateDraft(_rows.Select(CapacityItem).Concat(additions).ToList()), SelectedLineId()) { Owner = Window.GetWindow(this) };
+                additions => EvaluateDraft(_rows.Where(r => (r.LotId != null || r.ProductId != 0) && r.Cartons > 0).Select(CapacityItem).Concat(additions).ToList()), SelectedLineId()) { Owner = Window.GetWindow(this) };
             if (window.ShowDialog() == true && window.Inserted.Count > 0)
                 InsertEditorRows(window.Inserted, products, packs, (StartBox.SelectedDate ?? DateTime.Today).ToString("dd/MM/yyyy"), SelectedShiftId(), SelectedLineId(), db);
         }
@@ -764,6 +776,8 @@ public partial class PlanningView : UserControl
                 row.CustomerName = lot.CustomerName ?? "—";
                 row.ShipmentId = lot.ShipmentId;
                 row.ShipmentNo = lot.ShipmentNo;
+                row.WarehouseId = lot.WarehouseId;
+                row.WarehouseName = lot.WarehouseName ?? (lot.WarehouseId != null ? $"مخزن {lot.WarehouseId}" : "غير محدد");
                 row.RawProductId = lot.ProductId;
                 row.RawName = lot.ProductName;
                 row.SourceQtyKg = lot.RemainingKg;
@@ -944,26 +958,47 @@ public partial class PlanningView : UserControl
                 : null;
             using var scope = AppContainer.NewScope();
             var svc = (IPlanningService)scope.ServiceProvider.GetService(typeof(IPlanningService));
-            var itemsDto = validRows.Select(row => new PlanItemDto
-            {
-                SourceType = row.LotId != null ? "FromReceiving" : "Manual",
-                LotId = row.LotId,
-                SelectedRawProductId = row.RawProductId,
-                ShipmentId = row.ShipmentId,
-                CustomerId = row.CustomerId,
-                ProductId = row.ProductId,
-                PackagingTypeId = row.PackId,
-                PlannedQtyKg = row.QtyKg,
-                PlannedCartons = row.Cartons,
-                ScheduledDate = row.Date,
-                SuggestedShiftId = row.ShiftId,
-                SuggestedLineId = row.LineId,
-                PriorityNo = row.Priority,
-                SourceUnit = row.SourceUnit,
-                SourceQtyInUnit = row.SourceQtyInUnit,
-                SourceUnitWeightKg = row.SourceUnitWeightKg,
-                SourceQtyKg = row.SourceQtyKg
-            }).ToList();
+            // الصفوف المتعددة لنفس العميل/الصنف/اليوم تصبح بند خطة واحداً مع عدة
+            // تخصيصات خام؛ هكذا لا يضيع تقسيم 10 طن من المخزن 1 و10 من المخزن 2.
+            var itemsDto = validRows
+                .GroupBy(row => new
+                {
+                    row.CustomerId, row.ProductId, row.PackId, row.Date, row.ShiftId, row.LineId,
+                    row.RawProductId, SourceType = row.LotId != null ? "FromReceiving" : "Manual"
+                })
+                .Select(group =>
+                {
+                    var first = group.First();
+                    bool oneSource = group.Select(x => x.LotId).Distinct().Count() == 1;
+                    return new PlanItemDto
+                    {
+                        SourceType = group.Key.SourceType,
+                        LotId = first.LotId,
+                        SelectedRawProductId = first.RawProductId,
+                        ShipmentId = oneSource ? first.ShipmentId : null,
+                        CustomerId = first.CustomerId,
+                        ProductId = first.ProductId,
+                        PackagingTypeId = first.PackId,
+                        PlannedQtyKg = group.Sum(x => x.QtyKg),
+                        PlannedCartons = group.Sum(x => x.Cartons),
+                        ScheduledDate = first.Date,
+                        SuggestedShiftId = first.ShiftId,
+                        SuggestedLineId = first.LineId,
+                        PriorityNo = group.Min(x => x.Priority),
+                        SourceUnit = oneSource && group.Count() == 1 ? first.SourceUnit : null,
+                        SourceQtyInUnit = oneSource && group.Count() == 1 ? first.SourceQtyInUnit : 0,
+                        SourceUnitWeightKg = oneSource && group.Count() == 1 ? first.SourceUnitWeightKg : 0,
+                        SourceQtyKg = oneSource && group.Count() == 1 ? first.SourceQtyKg : 0,
+                        // قرار مدير التخطيط محفوظ صراحةً لكل مخزن/دفعة/عميل/كمية.
+                        Allocations = group.Where(x => x.LotId != null).Select(x => new PlanItemAllocationDto
+                        {
+                            WarehouseId = x.WarehouseId,
+                            LotId = x.LotId!.Value,
+                            CustomerId = x.CustomerId,
+                            AllocatedQtyKg = x.SourceQtyKg > 0 ? x.SourceQtyKg : x.QtyKg
+                        }).ToList()
+                    };
+                }).ToList();
 
             // §تعديل خطة قائمة (مسودة) بدل إنشاء نسخة مكررة — الحفظ يعمل كحفظ وتحديث معاً
             OpResult r = _currentPlanId.HasValue && _currentPlanId.Value > 0
@@ -1302,7 +1337,7 @@ public partial class PlanningView : UserControl
         {
             using var scope = AppContainer.NewScope();
             var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
-            var plan = db.ProductionPlans.Include(p => p.Items).FirstOrDefault(p => p.Id == id);
+            var plan = db.ProductionPlans.Include(p => p.Items).ThenInclude(i => i.Allocations).FirstOrDefault(p => p.Id == id);
             if (plan == null) return;
             _currentPlanId = plan.Id;
             CodeBox.Text = plan.DocumentNumber;
@@ -1333,6 +1368,12 @@ public partial class PlanningView : UserControl
             _rows.Clear();
             foreach (var it in plan.Items.OrderBy(i => i.PriorityNo))
             {
+                var allocations = it.Allocations?.OrderBy(a => a.WarehouseId).ToList() ?? new List<ProductionPlanItemAllocation>();
+                var allocationSummary = string.Join("، ", allocations.Select(a =>
+                {
+                    var name = db.Warehouses.Where(w => w.Id == a.WarehouseId).Select(w => w.WarehouseNameAr).FirstOrDefault() ?? $"مخزن {a.WarehouseId}";
+                    return $"{name}: {a.AllocatedQtyKg:N1} كجم";
+                }));
                 _rows.Add(new PlanRowUi
                 {
                     ItemId = it.Id,   // §B108: يتيح تعديل البند المحفوظ من الجدول الرئيسي
@@ -1340,7 +1381,14 @@ public partial class PlanningView : UserControl
                     CustomerName = db.Customers.Where(c => c.Id == it.CustomerId).Select(c => c.CustomerName).FirstOrDefault() ?? "—",
                     ShipmentId = it.ShipmentId,
                     ShipmentNo = db.Shipments.Where(s => s.Id == it.ShipmentId).Select(s => s.DocumentNumber).FirstOrDefault() ?? "—",
+                    WarehouseId = allocations.Count == 1 ? allocations[0].WarehouseId : (int?)null,
+                    WarehouseName = allocations.Count > 0 ? allocationSummary : db.Shipments.Where(s => s.Id == it.ShipmentId)
+                        .Join(db.Warehouses, s => s.ReceivingWarehouseId, w => (int?)w.Id, (s, w) => w.WarehouseNameAr).FirstOrDefault() ?? "غير محدد",
                     LotId = it.LotId,
+                    OnHandKg = db.Lots.Where(l => l.Id == it.LotId).Select(l => l.InStockQtyKg).FirstOrDefault(),
+                    ReservedKg = db.Lots.Where(l => l.Id == it.LotId).Select(l => l.ReservedQtyKg).FirstOrDefault(),
+                    AvailableKg = db.Lots.Where(l => l.Id == it.LotId).Select(l => l.InStockQtyKg - l.ReservedQtyKg - l.UnderTreatmentQtyKg).FirstOrDefault(),
+                    AllocationSelectedQtyKg = allocations.Sum(a => a.AllocatedQtyKg),
                     LotCode = db.Lots.Where(l => l.Id == it.LotId).Select(l => l.LotCode).FirstOrDefault() ?? "—",
                     RawName = db.Lots.Where(l => l.Id == it.LotId).Join(db.Products, l => l.ProductId, p => p.Id, (l, p) => p.ProductNameAr).FirstOrDefault() ?? "—",
                     ProductId = it.ProductId,

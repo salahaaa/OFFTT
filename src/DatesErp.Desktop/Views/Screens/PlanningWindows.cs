@@ -16,7 +16,10 @@ namespace DatesErp.Desktop.Views.Screens;
 public class LotsEditorWindow : Window
 {
     private readonly DataGrid _grid = new() { AutoGenerateColumns = false, IsReadOnly = false, Height = 380, CanUserAddRows = false };
-    private readonly TextBlock _capacityBar = new() { TextWrapping = TextWrapping.Wrap, FontSize = 15, FontWeight = FontWeights.Bold, Margin = new Thickness(8) };
+    // شريط الطاقة موجود هنا داخل شاشة اختيار الأصناف، ويتحدث مع كل كمية قبل إنزال البند للخطة.
+    private readonly ProgressBar _capacityProgress = new() { Width = 280, Height = 18, Minimum = 0, Maximum = 100, Value = 0, Margin = new Thickness(8, 4, 10, 4) };
+    private readonly TextBlock _capacityPercent = new() { FontSize = 14, FontWeight = FontWeights.Bold, Foreground = System.Windows.Media.Brushes.SeaGreen, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _capacityBar = new() { TextWrapping = TextWrapping.Wrap, FontSize = 13, FontWeight = FontWeights.Bold, Margin = new Thickness(8, 0, 8, 6) };
     private readonly TextBlock _capacityError = new() { TextWrapping = TextWrapping.Wrap, Foreground = System.Windows.Media.Brushes.Firebrick, Margin = new Thickness(8) };
     private readonly Func<List<PlanItemDto>, PlanCapacityResult> _evaluate;
     private readonly int _lineId;
@@ -136,8 +139,15 @@ public class LotsEditorWindow : Window
         footer.Children.Add(dayLoadBtn);
         footer.Children.Add(closeBtn);
 
+        var capacityHeader = new StackPanel();
+        var capacityLine = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        capacityLine.Children.Add(new TextBlock { Text = "⏱️ استهلاك طاقة اليوم/الوردية:", FontWeight = FontWeights.Bold, Foreground = System.Windows.Media.Brushes.DarkGreen, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 6, 0) });
+        capacityLine.Children.Add(_capacityProgress);
+        capacityLine.Children.Add(_capacityPercent);
+        capacityHeader.Children.Add(capacityLine);
+        capacityHeader.Children.Add(_capacityBar);
         var panel = new StackPanel { Margin = new Thickness(12) };
-        panel.Children.Add(new Border { Background = System.Windows.Media.Brushes.Honeydew, Child = _capacityBar });
+        panel.Children.Add(new Border { Background = System.Windows.Media.Brushes.Honeydew, BorderBrush = System.Windows.Media.Brushes.SeaGreen, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Padding = new Thickness(4), Child = capacityHeader });
         panel.Children.Add(_capacityError);
         panel.Children.Add(headerBar);
         panel.Children.Add(_grid);
@@ -193,8 +203,20 @@ public class LotsEditorWindow : Window
         _refreshing = true;
         try
         {
-            var selected = _all.Where(r => r.IsChecked).ToList(); // filters NEVER change consumption
+            var selected = _all.Where(r => r.IsChecked
+                || (int.TryParse(r.CartonsText, out var entered) && entered > 0)).ToList(); // filters NEVER change consumption
             var result = Evaluate(selected);
+            var activeSlots = result.Slots.Where(s => s.UsedHours > 0.0001).ToList();
+            double displayUsedHours = activeSlots.Count > 0 ? activeSlots.Sum(s => s.UsedHours) : result.UsedHours;
+            double displayTotalHours = activeSlots.Count > 0 ? activeSlots.Sum(s => s.TotalHours) : result.TotalHours;
+            double displayUsagePercent = displayTotalHours > 0 ? displayUsedHours / displayTotalHours * 100 : 0;
+            _capacityProgress.Maximum = 100;
+            _capacityProgress.Value = Math.Min(100, Math.Max(0, displayUsagePercent));
+            _capacityProgress.Foreground = result.IsValid ? System.Windows.Media.Brushes.SeaGreen : System.Windows.Media.Brushes.IndianRed;
+            _capacityProgress.ToolTip = displayTotalHours > 0
+                ? $"المستخدم {displayUsedHours:N2} من {displayTotalHours:N2} ساعة — المتبقي {Math.Max(0, displayTotalHours - displayUsedHours):N2} ساعة"
+                : "لا توجد طاقة معرفة للوردية/الخط المحددين";
+            _capacityPercent.Text = $"{displayUsagePercent:N1}% مستخدم · المتبقي {Math.Max(0, 100 - displayUsagePercent):N1}%";
             _capacityBar.Text = BuildBar(selected, result);
             // لا تعرض خطأ ناتجاً من بنود الخطة الحالية قبل أن يحدد المستخدم أي دفعة؛
             // الرسالة الخضراء في هذه الحالة إرشادية وليست رفضاً للإدراج.
@@ -228,8 +250,12 @@ public class LotsEditorWindow : Window
     /// </summary>
     private string BuildBar(List<LotEditorRow> selected, PlanCapacityResult result)
     {
+        var activeSlots = result.Slots.Where(s => s.UsedHours > 0.0001).ToList();
+        double activeTotalHours = activeSlots.Count > 0 ? activeSlots.Sum(s => s.TotalHours) : result.TotalHours;
+        double activeUsedHours = activeSlots.Count > 0 ? activeSlots.Sum(s => s.UsedHours) : result.UsedHours;
+        double activeUsagePercent = activeTotalHours > 0 ? activeUsedHours / activeTotalHours * 100 : 0;
         if (selected.Count == 0)
-            return "⚡ الطاقة — لم تحدد بنوداً بعد: علّم بمربعات الاختيار، وتُحسب لكل صنف بحسب عبوته وورديته.";
+            return $"⚡ لا توجد بنود جديدة محددة — استهلاك الخطة الحالي {activeUsagePercent:N1}%، وسيُحدَّث المؤشر فور اختيار كمية.";
         int offset = result.Rows.Count - selected.Count;
         var lines = new List<string>();
         double totalCartons = 0;
@@ -246,10 +272,13 @@ public class LotsEditorWindow : Window
             totalCartons += rc.ProductCapacity;
             lines.Add($"• {name} — عبوة {row.PackWeight:0.#} كجم | معدل {rc.Rate:N0} كرتون/س × {hours:0.#} س = {rc.ProductCapacity:N0} كرتون");
         }
-        string head = $"⚡ طاقة الوردية (تُحسب بوزن العبوة وساعات الوردية): مجمل {totalCartons:N0} كرتون | الاستخدام {result.UsagePercent:N1}%";
+        int selectedCartons = selected.Sum(r => int.TryParse(r.CartonsText, out var c) ? c : 0);
+        double selectedKg = selected.Sum(r => r.ComputedKg);
+        string head = $"⚡ طاقة اليوم/الوردية: الاستخدام {activeUsagePercent:N1}% ({activeUsedHours:N2} من {activeTotalHours:N2} ساعة) | المحدد الآن {selectedCartons:N0} كرتون ({selectedKg:N1} كجم) | السعة المحسوبة {totalCartons:N0} كرتون";
+        var slotLines = activeSlots.Select(s => $"• {s.Label}: {s.UsedHours:N2} / {s.TotalHours:N2} ساعة ({(s.TotalHours > 0 ? s.UsedHours / s.TotalHours * 100 : 0):N1}%)").ToList();
         return lines.Count == 0
-            ? head + "\n(لم تُعرَّف طاقة بعض الأصناف في «طاقات الأصناف» — حدّدها لعرض أرقام الطاقة.)"
-            : head + "\n" + string.Join("\n", lines);
+            ? head + (slotLines.Count > 0 ? "\n" + string.Join("\n", slotLines) : "") + "\n(لم تُعرَّف طاقة بعض الأصناف في «طاقات الأصناف» — حدّدها لعرض أرقام الطاقة.)"
+            : head + "\n" + string.Join("\n", slotLines.Concat(lines));
     }
 
     private void BuildGrid(bool singleCustomer)
@@ -275,6 +304,8 @@ public class LotsEditorWindow : Window
         // ← مواصفات تلقائية ← إنتاج ← خام مطلوب ← كفاية خام ← تاريخ ← وردية ═══════════
         if (!singleCustomer)
             _grid.Columns.Add(TextCol("العميل المالك 👤", "CustomerName", new DataGridLength(1.0, DataGridLengthUnitType.Star), 130));
+        // المخزن ظاهر بجوار الشحنة حتى لا يختفي مصدر الكمية خلف إجمالي العميل.
+        _grid.Columns.Add(TextCol("المخزن 🏬", "WarehouseName", new DataGridLength(0.9, DataGridLengthUnitType.Star), 120));
         // §رقم الشحنة يُعرض بدل الدفعة — الدفعة تبقى في التلميح (ToolTip) للتتبع.
         _grid.Columns.Add(ShipmentNoCol());
         var rawCol = new DataGridTemplateColumn { Header = "الصنف الخام *", Width = 180 };
@@ -304,8 +335,8 @@ public class LotsEditorWindow : Window
         // في نافذة الاختيار قبل الأعمدة التفصيلية، مع بقائه محسوباً للقراءة فقط.
         _grid.Columns.Add(new DataGridTextColumn
         {
-            Header = "الخام المطلوب (كجم)", Width = 130, IsReadOnly = true,
-            Binding = new System.Windows.Data.Binding("RawRequiredKg") { StringFormat = "N1" }
+            Header = "الكمية المختارة/المطلوبة (كجم)", Width = 170, IsReadOnly = true,
+            Binding = new System.Windows.Data.Binding("SelectedQtyKg") { StringFormat = "N1" }
         });
 
         var prodCol = new DataGridTemplateColumn { Header = "الصنف التام (002) *", Width = 190 };

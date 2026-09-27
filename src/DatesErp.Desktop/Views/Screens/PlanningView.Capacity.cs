@@ -51,18 +51,8 @@ public partial class PlanningView
             string inputError = completeRows.FirstOrDefault(r => r.QuantityError != null)?.QuantityError;
             // إذا كان هناك بند مكتمل بكراتين>0 لكن به خطأ طاقة، يظهر في result.Error
             _capacityValid = result.IsValid && inputError == null && completeRows.Count > 0;
-            // §التخطيط الأفقي: شريط التقدّم يترجم الطاقة إلى مؤشر بصري فوري (أخضر ضمن الطاقة، أحمر عند التجاوز)
-            double usedHours = result.Slots.Sum(s => s.UsedHours);
-            double totalHours = result.Slots.Sum(s => s.TotalHours);
-            if (CapacityProgress != null)
-            {
-                CapacityProgress.Maximum = totalHours > 0 ? totalHours : 1;
-                CapacityProgress.Value = Math.Min(usedHours, CapacityProgress.Maximum);
-                CapacityProgress.Foreground = _capacityValid ? Brushes.SeaGreen : Brushes.IndianRed;
-                CapacityProgress.ToolTip = totalHours > 0
-                    ? $"المجدول {usedHours:N3} من أصل {totalHours:N3} ساعة متاحة"
-                    : "لا طاقة معرّفة للوردية المختارة";
-            }
+            // المؤشر المرئي انتقل إلى نافذة اختيار الأصناف؛ يبقى هذا الملخص النصي
+            // بعد الإنزال للتدقيق، بينما الاختيار المسبق يعرض الاستهلاك لحظياً قبل الحفظ.
             // §v1.50.35: سطر واحد مضغوط — تفاصيل الأيام في التلميح لا تغطي الشاشة في الفترة الأسبوعية.
             int overloaded = result.Slots.Count(s => s.TotalHours > 0 && s.UsedHours > s.TotalHours + 0.001);
             CapacitySummary.Text = result.Summary
