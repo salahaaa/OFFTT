@@ -993,7 +993,7 @@ public class PlanningService : ServiceBase, IPlanningService
             }).ToList(),
             Items = plan.Items.Select(i => new
             {
-                i.Id, i.ProductId, i.CustomerId, i.PackagingTypeId, i.PlannedQtyKg, i.PlannedCartons,
+                i.Id, i.SessionId, i.SourceType, i.ProductId, i.CustomerId, i.PackagingTypeId, i.PlannedQtyKg, i.PlannedCartons,
                 i.ScheduledDate, i.SelectedRawProductId, i.SuggestedShiftId, i.SuggestedLineId,
                 Allocations = i.Allocations.Select(a => new { a.WarehouseId, a.LotId, a.CustomerId, a.AllocatedQtyKg }).ToList()
             }).ToList()
