@@ -989,7 +989,7 @@ public class PlanningService : ServiceBase, IPlanningService
             Sessions = plan.Sessions.OrderBy(x => x.SequenceNo).Select(x => new
             {
                 x.SequenceNo, x.SessionDate, x.ShiftId, x.LineId, x.Status,
-                Items = x.Items.Select(i => new { i.Id, i.ProductId, i.CustomerId, i.PackagingTypeId, i.PlannedQtyKg, i.PlannedCartons, i.LotId, i.SelectedRawProductId, i.SuggestedShiftId, i.SuggestedLineId }).ToList()
+                Items = x.Items.Select(i => new { i.Id, i.SessionId, i.SourceType, i.ProductId, i.CustomerId, i.PackagingTypeId, i.PlannedQtyKg, i.PlannedCartons, i.LotId, i.SelectedRawProductId, i.SuggestedShiftId, i.SuggestedLineId }).ToList()
             }).ToList(),
             Items = plan.Items.Select(i => new
             {
