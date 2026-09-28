@@ -50,6 +50,7 @@ public partial class PlanningView : UserControl
         MoldsCount = p.MoldsCount,
         MoldWeightKg = p.MoldWeightKg,
         HourlyRate = p.HourlyProductionRate,
+        RawKgPerFinishedKg = p.YieldFactor is > 0 ? 1d / p.YieldFactor.Value : 0,
         DefaultPackagingTypeId = p.DefaultPackagingTypeId
     };
     private int? _currentPlanId; // §1.50.67 FIX: nullable to fix CS0472 and Value usage
@@ -463,7 +464,10 @@ public partial class PlanningView : UserControl
         }
 
         // §B67: مصدر واحد مُفلتر: عميل محدد ← دفعاته فقط (حتى الموروثة من السند)؛ عدة عملاء ← الكل
-        var lotDtos = svc.GetAvailableLots(custId);
+        // نعرض أيضاً الدفعات الموجودة بالكامل تحت المعالجة إذا كان تاريخ نهاية الخطة
+        // بعد جاهزيتها؛ قرار السماح النهائي يبقى حسب تاريخ كل بند في المحرك.
+        var availabilityDate = EndBox.SelectedDate ?? StartBox.SelectedDate;
+        var lotDtos = svc.GetAvailableLots(custId, availabilityDate, _currentPlanId);
         var today = DateTime.Today;
         var rawByLot = db.Lots.AsNoTracking().ToDictionary(l => l.Id, l => l.ProductId);
         var editorRows = lotDtos.Select(l =>
@@ -479,8 +483,9 @@ public partial class PlanningView : UserControl
                 CustomerId = l.CustomerId, // §B87/M6: null = «بدون عميل» — يُحفَظ NULL لا صفراً
                 CustomerName = l.CustomerName ?? (custName ?? "—"),
                 RawName = l.ProductName ?? "—",
-                OnHandKg = l.InitialQtyKg,
-                ReservedKg = l.ReservedQtyKg,
+                OnHandKg = l.ActualStockKg > 0 ? l.ActualStockKg : l.InitialQtyKg,
+                ReservedKg = l.PlannedReservationKg > 0 ? l.PlannedReservationKg : l.ReservedQtyKg,
+                OtherCommitmentsKg = l.OtherCommitmentsKg,
                 Available = l.RemainingKg,
                 // §المعالجة: حالتها على الدفعة (حتى يُعرض القيد باللون الأحمر ويُمنع الإنتاج قبل التاريخ)
                 TreatmentRequired = l.RequiresTreatment,
@@ -664,6 +669,9 @@ public partial class PlanningView : UserControl
                 LotId = row.LotId,
                 OnHandKg = row.OnHandKg,
                 ReservedKg = row.ReservedKg,
+                OtherCommitmentsKg = row.OtherCommitmentsKg,
+                UnderTreatmentKg = row.UnderTreatmentKg,
+                TreatmentReadyDate = row.TreatmentReadyDate ?? row.TreatmentUntilDate,
                 AvailableKg = row.AvailableKg,
                 AllocationSelectedQtyKg = row.SelectedQtyKg,
                 RawProductId = row.RawProductId,
@@ -675,6 +683,7 @@ public partial class PlanningView : UserControl
                 PackName = pack?.PackageNameAr ?? "-",
                 UnitDisplay = products.FirstOrDefault(p => p.Id == row.ProductId) is var prod3 && prod3 != null && prod3.CartonWeightKg>0 ? $"{(prod3.UnitOfMeasure ?? "كرتون")} ({prod3.CartonWeightKg:N1} كجم)" : (products.FirstOrDefault(p => p.Id == row.ProductId)?.UnitOfMeasure ?? "كرتون"),
                 CartonWeight = products.FirstOrDefault(p => p.Id == row.ProductId)?.CartonWeightKg ?? pack?.UnitWeightKg ?? 0,
+                RawKgPerFinishedKg = row.AllProducts.FirstOrDefault(p => p.Id == row.ProductId)?.RawKgPerFinishedKg ?? 0,
                 QtyKg = row.ComputedKg,
                 Cartons = int.TryParse(row.CartonsText, out var c) ? c : 0,
                 // §B80: التاريخ من عمود التاريخ في النافذة (إلزامي) ثم السقط المسبق ثم بداية الفترة
@@ -768,11 +777,25 @@ public partial class PlanningView : UserControl
         }
     }
 
+    private static ProductOption ToProductOpt(Product p, int rawId, DatesErpDbContext db)
+    {
+        var option = ToProductOpt(p);
+        var source = db.ProductRawSources.AsNoTracking()
+            .Where(x => x.FinishedProductId == p.Id && x.RawProductId == rawId && x.IsActive && x.RawKgPerFinishedKg > 0)
+            .OrderBy(x => x.PackagingTypeId == null ? 0 : 1).ThenBy(x => x.PriorityNo).ThenBy(x => x.Id)
+            .Select(x => (decimal?)x.RawKgPerFinishedKg).FirstOrDefault();
+        if (source is decimal factor) option.RawKgPerFinishedKg = (double)factor;
+        else if (p.SourceProductId == rawId && p.YieldFactor is > 0) option.RawKgPerFinishedKg = 1d / p.YieldFactor.Value;
+        else option.RawKgPerFinishedKg = 0;
+        return option;
+    }
+
     private static void ConfigureRawSelector(LotEditorRow row, int? rawId, DatesErpDbContext db, IPlanningService svc)
     {
         row.RawOptions = db.Products.AsNoTracking().Where(p => p.IsActive && p.ItemType == "Raw")
             .OrderBy(p => p.ProductNameAr).ToList().Select(ToProductOpt).ToList();
-        row.LoadFinishedProducts = raw => svc.GetFinishedProductsForRaw(raw).Select(ToProductOpt).ToList();
+        row.LoadFinishedProducts = raw => svc.GetFinishedProductsForRaw(raw)
+            .Select(p => ToProductOpt(p, raw, db)).ToList();
         row.RawProductId = rawId;
         if (rawId == null) row.ReloadFinishedProducts();
     }
@@ -846,7 +869,8 @@ public partial class PlanningView : UserControl
         try
         {
             var currentIds = _rows.Where(r => r.LotId != null).Select(r => r.LotId.Value).ToList();
-            var dlg = new Views.LotPickerWindow(currentIds) { Owner = Window.GetWindow(this) };
+            var dlg = new Views.LotPickerWindow(currentIds, null, _currentPlanId,
+                EndBox.SelectedDate ?? StartBox.SelectedDate) { Owner = Window.GetWindow(this) };
             if (dlg.ShowDialog() == true && dlg.SelectedLot != null)
             {
                 var lot = dlg.SelectedLot;
@@ -1070,17 +1094,21 @@ public partial class PlanningView : UserControl
                         SuggestedShiftId = first.ShiftId,
                         SuggestedLineId = first.LineId,
                         PriorityNo = group.Min(x => x.Priority),
-                        SourceUnit = oneSource && group.Count() == 1 ? first.SourceUnit : null,
-                        SourceQtyInUnit = oneSource && group.Count() == 1 ? first.SourceQtyInUnit : 0,
-                        SourceUnitWeightKg = oneSource && group.Count() == 1 ? first.SourceUnitWeightKg : 0,
-                        SourceQtyKg = oneSource && group.Count() == 1 ? first.SourceQtyKg : 0,
+                        SourceUnit = oneSource && group.Count() == 1 && first.LotId != null
+                            && Math.Abs(first.SourceQtyKg - first.RawRequiredKg) <= 0.01 ? first.SourceUnit : null,
+                        SourceQtyInUnit = oneSource && group.Count() == 1 && first.LotId != null
+                            && Math.Abs(first.SourceQtyKg - first.RawRequiredKg) <= 0.01 ? first.SourceQtyInUnit : 0,
+                        SourceUnitWeightKg = oneSource && group.Count() == 1 && first.LotId != null
+                            && Math.Abs(first.SourceQtyKg - first.RawRequiredKg) <= 0.01 ? first.SourceUnitWeightKg : 0,
+                        SourceQtyKg = oneSource && group.Count() == 1 && first.LotId != null
+                            && Math.Abs(first.SourceQtyKg - first.RawRequiredKg) <= 0.01 ? first.SourceQtyKg : 0,
                         // قرار مدير التخطيط محفوظ صراحةً لكل مخزن/دفعة/عميل/كمية.
                         Allocations = group.Where(x => x.LotId != null).Select(x => new PlanItemAllocationDto
                         {
                             WarehouseId = x.WarehouseId,
                             LotId = x.LotId!.Value,
                             CustomerId = x.CustomerId,
-                            AllocatedQtyKg = x.SourceQtyKg > 0 ? x.SourceQtyKg : x.QtyKg
+                            AllocatedQtyKg = x.SourceQtyKg > 0 ? x.SourceQtyKg : x.RawRequiredKg
                         }).ToList()
                     };
                 }).ToList();
@@ -1434,6 +1462,10 @@ public partial class PlanningView : UserControl
             var plan = db.ProductionPlans.Include(p => p.Items).ThenInclude(i => i.Allocations)
                 .Include(p => p.Sessions).Include(p => p.CustomerScopes).FirstOrDefault(p => p.Id == id);
             if (plan == null) return;
+            var centralLots = scope.ServiceProvider.GetRequiredService<IPlanningService>()
+                .GetAvailableLots(null, null, plan.Id)
+                .GroupBy(x => (x.WarehouseId ?? 0, x.LotId))
+                .ToDictionary(g => g.Key, g => g.First());
             _currentPlanId = plan.Id;
             _contextLocked = plan.PlanningContextLocked;
             CodeBox.Text = plan.DocumentNumber;
@@ -1479,6 +1511,10 @@ public partial class PlanningView : UserControl
                     var name = db.Warehouses.Where(w => w.Id == a.WarehouseId).Select(w => w.WarehouseNameAr).FirstOrDefault() ?? $"مخزن {a.WarehouseId}";
                     return $"{name}: {a.AllocatedQtyKg:N1} كجم";
                 }));
+                var metricWarehouseId = allocations.FirstOrDefault()?.WarehouseId
+                    ?? db.Shipments.Where(s => s.Id == it.ShipmentId).Select(s => s.ReceivingWarehouseId).FirstOrDefault()
+                    ?? 0;
+                centralLots.TryGetValue((metricWarehouseId, it.LotId ?? 0), out var metric);
                 _rows.Add(new PlanRowUi
                 {
                     ItemId = it.Id,   // §B108: يتيح تعديل البند المحفوظ من الجدول الرئيسي
@@ -1491,9 +1527,12 @@ public partial class PlanningView : UserControl
                         .Join(db.Warehouses, s => s.ReceivingWarehouseId, w => (int?)w.Id, (s, w) => w.WarehouseNameAr).FirstOrDefault() ?? "غير محدد",
                     LotId = it.LotId,
                     RawProductId = it.SelectedRawProductId ?? db.Lots.Where(l => l.Id == it.LotId).Select(l => (int?)l.ProductId).FirstOrDefault(),
-                    OnHandKg = db.Lots.Where(l => l.Id == it.LotId).Select(l => l.InStockQtyKg).FirstOrDefault(),
-                    ReservedKg = db.Lots.Where(l => l.Id == it.LotId).Select(l => l.ReservedQtyKg).FirstOrDefault(),
-                    AvailableKg = db.Lots.Where(l => l.Id == it.LotId).Select(l => l.InStockQtyKg - l.ReservedQtyKg - l.UnderTreatmentQtyKg).FirstOrDefault(),
+                    OnHandKg = metric?.ActualStockKg ?? db.Lots.Where(l => l.Id == it.LotId).Select(l => l.InStockQtyKg).FirstOrDefault(),
+                    ReservedKg = metric?.PlannedReservationKg ?? db.Lots.Where(l => l.Id == it.LotId).Select(l => l.ReservedQtyKg).FirstOrDefault(),
+                    OtherCommitmentsKg = metric?.OtherCommitmentsKg ?? 0,
+                    UnderTreatmentKg = metric?.UnderTreatmentKg ?? db.Lots.Where(l => l.Id == it.LotId).Select(l => l.UnderTreatmentQtyKg).FirstOrDefault(),
+                    TreatmentReadyDate = metric?.TreatmentReadyDate ?? metric?.TreatmentUntilDate,
+                    AvailableKg = metric?.RemainingKg ?? db.Lots.Where(l => l.Id == it.LotId).Select(l => l.InStockQtyKg - l.ReservedQtyKg - l.UnderTreatmentQtyKg).FirstOrDefault(),
                     AllocationSelectedQtyKg = allocations.Sum(a => a.AllocatedQtyKg),
                     LotCode = db.Lots.Where(l => l.Id == it.LotId).Select(l => l.LotCode).FirstOrDefault() ?? "—",
                     RawName = db.Lots.Where(l => l.Id == it.LotId).Join(db.Products, l => l.ProductId, p => p.Id, (l, p) => p.ProductNameAr).FirstOrDefault() ?? "—",
@@ -1503,6 +1542,11 @@ public partial class PlanningView : UserControl
                     PackName = db.PackagingTypes.Where(p => p.Id == it.PackagingTypeId).Select(p => p.PackageNameAr).FirstOrDefault() ?? "-",
                     UnitDisplay = db.Products.AsNoTracking().Where(pp => pp.Id == it.ProductId).Select(pp => pp.UnitOfMeasure).FirstOrDefault() ?? "—",
                     CartonWeight = db.Products.AsNoTracking().Where(pp => pp.Id == it.ProductId).Select(pp => pp.CartonWeightKg).FirstOrDefault(),
+                    RawKgPerFinishedKg = db.ProductRawSources.AsNoTracking()
+                        .Where(x => x.FinishedProductId == it.ProductId && x.RawProductId == (it.SelectedRawProductId ?? 0) && x.IsActive)
+                        .OrderBy(x => x.PackagingTypeId == null ? 0 : 1).ThenBy(x => x.PriorityNo)
+                        .Select(x => (double?)x.RawKgPerFinishedKg).FirstOrDefault()
+                        ?? (db.Products.Where(pp => pp.Id == it.ProductId).Select(pp => pp.YieldFactor).FirstOrDefault() is double yf && yf > 0 ? 1d / yf : 0),
                     QtyKg = it.PlannedQtyKg,
                     Cartons = it.PlannedCartons,
                     DateValue = it.ScheduledDate,

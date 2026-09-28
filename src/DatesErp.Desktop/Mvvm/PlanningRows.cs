@@ -57,6 +57,7 @@ public class LotEditorRow : INotifyPropertyChanged
     /// <summary>أعمدة الرصيد التفصيلية حسب الدفعة/المخزن — لا تُختزل في إجمالي العميل.</summary>
     public double OnHandKg { get; set; }
     public double ReservedKg { get; set; }
+    public double OtherCommitmentsKg { get; set; }
     public double Available { get; set; }
     public double AvailableKg => Available;
     public double SelectedQtyKg => RawRequiredKg > 0 ? RawRequiredKg : ComputedKg;
@@ -94,8 +95,9 @@ public class LotEditorRow : INotifyPropertyChanged
             bool under = UnderTreatmentKg > 0;
             if (!under) return "معالجة مكتملة ✓";
             DateTime? until = TreatmentBlockUntil();
-            if (TreatmentBlocked) return $"🔴 قيد المعالجة حتى {until:dd/MM/yyyy}";
-            return $"🟢 جاهز من {until:dd/MM/yyyy}";
+            string date = until.HasValue ? $" حتى {until:dd/MM/yyyy}" : " — موعد الجاهزية غير معرّف";
+            if (TreatmentBlocked) return $"🔴 تحت المعالجة: {UnderTreatmentKg:N1} كجم{date}";
+            return $"🟢 ستصبح جاهزة: {UnderTreatmentKg:N1} كجم{date}";
         }
     }
     private DateTime? TreatmentBlockUntil()
@@ -267,7 +269,10 @@ public class LotEditorRow : INotifyPropertyChanged
         PackWeight = packW;
         MoldsCount = (prod != null && prod.MoldsCount > 0) ? prod.MoldsCount : (pack?.MoldsCount ?? 0);
         ComputedKg = ctn > 0 && packW > 0 ? Math.Round(ctn * packW, 2) : 0;
-        RawRequiredKg = ComputedKg;
+        // احتياج الخام مشتق من قاعدة التحويل الرسمية المرتبطة بالمصدر المحدد،
+        // وليس من وزن المنتج التام نفسه.
+        double rawFactor = prod?.RawKgPerFinishedKg ?? 0;
+        RawRequiredKg = rawFactor > 0 ? Math.Round(ComputedKg * rawFactor, 3) : 0;
 
         // §1.50.66 — تحقق فوري من تطابق وزن العبوة بين بطاقة الصنف والعبوة المحددة
         if (prod != null && pack != null && prod.CartonWeightKg > 0 && pack.UnitWeightKg > 0)
@@ -293,8 +298,10 @@ public class LotEditorRow : INotifyPropertyChanged
         {
             // بند بلا شحنة/دفعة (إدخال يدوي) — لا تتبع خام، ولا يُرسل أي سحب إلى الخلفية.
             SourceUnit = null; SourceUnitWeightKg = 0; SourceQtyKg = 0; SourceQtyInUnit = 0;
-            RawShortageKg = 0; RawSufficient = true; _sourceError = null;
-            RawStatusText = RawRequiredKg > 0 ? "— (بلا شحنة)" : "—";
+            RawShortageKg = RawRequiredKg;
+            RawSufficient = RawRequiredKg <= 0;
+            _sourceError = RawRequiredKg > 0 ? "اربط البند بدفعة خام ومخزن ليُحجز الخام." : null;
+            RawStatusText = RawRequiredKg > 0 ? "اربط دفعة خام" : "—";
         }
         else
         {
@@ -314,11 +321,15 @@ public class LotEditorRow : INotifyPropertyChanged
                 && date.HasValue && date.Value >= untilT.Value;
             // §بعد تاريخ المعالجة تُضاف الكمية التي ستكتمل إلى المتاح؛ قبلها تُحسب المتاح فقط.
             double availForRow = treatMatures ? availKg + UnderTreatmentKg : availKg;
-            RawShortageKg = Math.Max(0, RawRequiredKg - availForRow);
-            RawSufficient = RawRequiredKg <= 0 || availForRow <= 0 ? true : RawRequiredKg <= availForRow + 0.001;
-            _sourceError = RawSufficient ? null
+            bool hasRule = prod?.RawKgPerFinishedKg > 0;
+            RawShortageKg = hasRule ? Math.Max(0, RawRequiredKg - availForRow) : RawRequiredKg;
+            RawSufficient = hasRule && RawRequiredKg > 0 && RawRequiredKg <= availForRow + 0.001;
+            _sourceError = !hasRule
+                ? "لا توجد قاعدة تحويل رسمية لهذا المنتج/الخام."
+                : RawSufficient ? null
                 : $"غير كافٍ — المطلوب {RawRequiredKg:N1} كجم / المتاح {availForRow:N1} كجم (عجز {RawShortageKg:N1} كجم)";
-            RawStatusText = RawRequiredKg <= 0 ? "أدخل كمية الإنتاج"
+            RawStatusText = !hasRule ? "قاعدة التحويل ناقصة"
+                : RawRequiredKg <= 0 ? "أدخل كمية الإنتاج"
                 : RawSufficient ? "متوفر ✓" : "غير كافٍ ❌";
         }
         OnChange(nameof(PackWeight)); OnChange(nameof(MoldsCount)); OnChange(nameof(ComputedKg)); OnChange(nameof(ProductCapacityDisplay));
@@ -358,6 +369,8 @@ public class ProductOption
     public int MoldsCount { get; set; }
     public double MoldWeightKg { get; set; }
     public double HourlyRate { get; set; }
+    /// <summary>كجم خام لكل كجم منتج تام من قاعدة التحويل الرسمية.</summary>
+    public double RawKgPerFinishedKg { get; set; }
     public int? DefaultPackagingTypeId { get; set; }
 }
 /// <summary>§B92 — خيار وردية في الاختيار اليدوي (الاسم يتضمن الساعات الفعالة لقرار الإدارة).</summary>
@@ -402,9 +415,26 @@ public class PlanRowUi : System.ComponentModel.INotifyPropertyChanged
     public string RawName { get; set; }
     public double OnHandKg { get; set; }
     public double ReservedKg { get; set; }
+    public double OtherCommitmentsKg { get; set; }
+    public double UnderTreatmentKg { get; set; }
+    public DateTime? TreatmentReadyDate { get; set; }
+    public string TreatmentStatus => UnderTreatmentKg > 0
+        ? $"تحت المعالجة: {UnderTreatmentKg:N1} كجم" + (TreatmentReadyDate.HasValue ? $" حتى {TreatmentReadyDate:dd/MM/yyyy}" : "")
+        : "جاهز/لا معالجة";
     public double AvailableKg { get; set; }
     public double AllocationSelectedQtyKg { get; set; }
-    public double SelectedQtyKg => AllocationSelectedQtyKg > 0 ? AllocationSelectedQtyKg : (SourceQtyKg > 0 ? SourceQtyKg : QtyKg);
+    /// <summary>المتاح بحسب تاريخ بند الخطة؛ يضم الخام الذي تنتهي معالجته قبله.</summary>
+    public double AvailableForPlanningDateKg
+        => UnderTreatmentKg > 0 && TreatmentReadyDate.HasValue && DateValue.HasValue
+            && DateValue.Value.Date >= TreatmentReadyDate.Value.Date
+            ? AvailableKg + UnderTreatmentKg
+            : AvailableKg;
+    /// <summary>المؤشرات الخمسة من دفتر الخام المركزي.</summary>
+    public double RawRequiredKg => RawKgPerFinishedKg > 0 && QtyKg > 0
+        ? Math.Round(QtyKg * RawKgPerFinishedKg, 3)
+        : SourceQtyKg;
+    public string PlanningStatus => RawRequiredKg <= AvailableForPlanningDateKg + 0.001 ? "كافٍ" : "غير كافٍ";
+    public double SelectedQtyKg => AllocationSelectedQtyKg > 0 ? AllocationSelectedQtyKg : RawRequiredKg;
     public int ProductId { get; set; }
     public string ProductName { get; set; }
     private int? _planPackId;
@@ -412,6 +442,8 @@ public class PlanRowUi : System.ComponentModel.INotifyPropertyChanged
     public string PackName { get; set; }
     /// <summary>§B80: وحدة الصنف التام كما في بطاقته (شاشة الأصناف) — مثل «كرتون 5كجم».</summary>
     public string UnitDisplay { get; set; }
+    /// <summary>معامل الخام الرسمي المستخدم لتحديث احتياج الخام عند تعديل المنتج التام.</summary>
+    public double RawKgPerFinishedKg { get; set; }
     private double _qtyKg;
     public double QtyKg 
     { 
@@ -433,8 +465,12 @@ public class PlanRowUi : System.ComponentModel.INotifyPropertyChanged
                         OnChanged(nameof(CartonsText));
                     }
                 }
-                _qtyKg = value; 
+                _qtyKg = value;
+                // SourceQtyKg هو توثيق سحب قديم، وليس مدخلاً لاحتياج الخام؛
+                // التخصيص عند الحفظ يعتمد على RawRequiredKg المحسوب أدناه.
                 OnChanged(nameof(QtyKg));
+                OnChanged(nameof(RawRequiredKg));
+                OnChanged(nameof(PlanningStatus));
                 OnChanged(nameof(SelectedQtyKg));
                 OnChanged(nameof(RemainingAfterKg));
                 ValidateCartonKgImmediate();
@@ -518,6 +554,9 @@ public class PlanRowUi : System.ComponentModel.INotifyPropertyChanged
             if (_dateValue == value) return;
             _dateValue = value; OnChanged(nameof(DateValue));
             _date = value?.ToString("dd/MM/yyyy") ?? ""; OnChanged(nameof(Date));
+            OnChanged(nameof(AvailableForPlanningDateKg));
+            OnChanged(nameof(PlanningStatus));
+            OnChanged(nameof(RemainingAfterKg));
         }
     }
     private int _shiftId;
@@ -594,6 +633,6 @@ public class PlanRowUi : System.ComponentModel.INotifyPropertyChanged
     }
 
     // §1.50.57 — المتبقي بعد التخطيط: المتاح - المجدول — يجيب سؤال المستخدم "عند إضافة صنف جديد كم ستظهر كميته"
-    public double RemainingAfterKg => Math.Max(0, SourceQtyKg - QtyKg);
+    public double RemainingAfterKg => Math.Max(0, AvailableForPlanningDateKg - RawRequiredKg);
     public bool IsInvalid => !string.IsNullOrEmpty(QuantityError) || Cartons <= 0;
 }

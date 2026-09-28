@@ -36,8 +36,9 @@
                     <DataGridTextColumn Header="المحجوز كجم" Binding="{Binding ReservedQtyKg, StringFormat=N1}" Width="105"/>
                     <DataGridTextColumn Header="المتاح للتخطيط" Binding="{Binding RemainingKg, StringFormat=N1}" Width="120"/>
                     <DataGridTextColumn Header="المتاح حتى التاريخ" Binding="{Binding AvailableForDateKg, StringFormat=N1}" Width="125"/>
+                    <DataGridTextColumn Header="الكمية تحت المعالجة" Binding="{Binding UnderTreatmentKg, StringFormat=N1}" Width="125"/>
                     <DataGridTextColumn Header="الوحدة" Binding="{Binding ReceiptUnit}" Width="70"/>
-                    <DataGridTextColumn Header="حالة المعالجة" Binding="{Binding TreatmentStatus}" Width="110"/>
+                    <DataGridTextColumn Header="حالة المعالجة" Binding="{Binding TreatmentStatus}" Width="240"/>
                     <DataGridTextColumn Header="أيام بالمخزن" Binding="{Binding DaysInStock}" Width="90"/>
                 </DataGrid.Columns>
             </DataGrid>

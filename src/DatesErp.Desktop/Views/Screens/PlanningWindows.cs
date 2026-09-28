@@ -316,6 +316,9 @@ public class LotsEditorWindow : Window
         rawCombo.SetBinding(ComboBox.IsEnabledProperty, new System.Windows.Data.Binding("CanChangeRaw"));
         rawCol.CellTemplate = new DataTemplate { VisualTree = rawCombo }; _grid.Columns.Add(rawCol);
 
+        // وحدة الاستلام من سند الشحنات — لا تُستنتج من اسم الخام.
+        _grid.Columns.Add(TextCol("وحدة الاستلام", "ReceiptUnitText", new DataGridLength(0.8, DataGridLengthUnitType.Star), 100));
+
         // طريقة السحب — حسب وحدة الاستلام الفعلية (سلة/كرتون/كجم) + كجم
         var modeCol = new DataGridTemplateColumn { Header = "طريقة السحب", Width = 140 };
         var modeCombo = new FrameworkElementFactory(typeof(ComboBox));
@@ -327,6 +330,7 @@ public class LotsEditorWindow : Window
 
         // المتاح — يتغير حسب طريقة السحب (وحدات + كجم، أو كجم فقط)
         _grid.Columns.Add(TextCol("المتاح", "AvailableDisplay", new DataGridLength(1.6, DataGridLengthUnitType.Star), 170));
+        _grid.Columns.Add(TextCol("بيانات الاستلام", "ContextDisplay", new DataGridLength(1.8, DataGridLengthUnitType.Star), 190));
 
         // §عدد أيام الشحنة بالمستودع — يبقى (الأقدم أولوية الإنتاج)
         _grid.Columns.Add(TextCol("أيام بالمخزن ⏳", "DaysInStockText", new DataGridLength(0.6, DataGridLengthUnitType.Star), 85));

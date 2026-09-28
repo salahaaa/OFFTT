@@ -104,6 +104,8 @@ public class ProductionPlanItem : BaseEntity
     public int? PackagingTypeId { get; set; }
     public double PlannedQtyKg { get; set; }
     public int PlannedCartons { get; set; }
+    /// <summary>احتياج الخام المحسوب مركزياً من كمية المنتج التام وقاعدة التحويل الرسمية.</summary>
+    public decimal RawRequiredQtyKg { get; set; }
     public DateTime? ScheduledDate { get; set; }
     public int? SuggestedShiftId { get; set; }
     public int? SuggestedLineId { get; set; }

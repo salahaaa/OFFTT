@@ -99,6 +99,8 @@ public class PlanItemDto
     public int? PackagingTypeId { get; set; }
     public double PlannedQtyKg { get; set; }
     public int PlannedCartons { get; set; }
+    /// <summary>يُملأ من محرك التحويل؛ لا يُقبل كمدخل مستقل من الشاشة.</summary>
+    public double RawRequiredQtyKg { get; set; }
     public string ScheduledDate { get; set; }
     public int? SuggestedShiftId { get; set; }
     public int? SuggestedLineId { get; set; }
@@ -107,11 +109,11 @@ public class PlanItemDto
     // ═══ §تتبع سحب الخام من الشحنة (تحديث الإصدار) ═══
     /// <summary>وحدة السحب كما دخلت بها الشحنة. صفر/فارغ = بلا سحب موثق.</summary>
     public string SourceUnit { get; set; }
-    /// <summary>الكمية المسحوبة بوحدة الاستلام.</summary>
+    /// <summary>عرض مكافئ لاحتياج الخام المحسوب بوحدة الاستلام؛ ليس مدخلاً مستقلاً.</summary>
     public double SourceQtyInUnit { get; set; }
     /// <summary>وزن وحدة الاستلام (كجم) — يُجمَّد وتُشتق منه الحقول إن غاب.</summary>
     public double SourceUnitWeightKg { get; set; }
-    /// <summary>الوزن المكافئ للكمية المسحوبة.</summary>
+    /// <summary>الوزن المكافئ لاحتياج الخام المحسوب.</summary>
     public double SourceQtyKg { get; set; }
 }
 
@@ -141,6 +143,13 @@ public class OrderableItemDto
     public List<PlanItemAllocationDto> Allocations { get; set; } = new();
     public string WarehouseSummary { get; set; }
     public double SelectedRawKg { get; set; }
+    public double ActualStockKg { get; set; }
+    public double PlannedReservationKg { get; set; }
+    public double OtherCommitmentsKg { get; set; }
+    public double RawNeedKg { get; set; }
+    public double RemainingAfterPlanningKg { get; set; }
+    public string RawPlanningStatus { get; set; }
+    // أسماء التوافق مع شاشة أوامر الإنتاج القديمة.
     public double OnHandKg { get; set; }
     public double ReservedKg { get; set; }
     public double AvailableKg { get; set; }
@@ -459,7 +468,7 @@ public interface IPlanningService
     OpResult DeletePlan(int planId);
     OpResult ClosePlan(int planId, string notes);
     /// <summary>الدفعات المتاحة للتخطيط مع المتبقي بعد خصم الخطط النشطة — لكل الأصناف.</summary>
-    List<AvailableLotDto> GetAvailableLots(int? customerId = null, DateTime? forDate = null);
+    List<AvailableLotDto> GetAvailableLots(int? customerId = null, DateTime? forDate = null, int? excludePlanId = null);
     /// <summary>§1.50.56 — فحص أقدمية FIFO: هل توجد دفعات أقدم لم تُخطط بعد؟</summary>
     FifoWarningDto CheckFifoWarning(int selectedLotId, List<int> currentPlanLotIds = null);
     /// <summary>
@@ -714,6 +723,12 @@ public class AvailableLotDto
     public double InitialQtyKg { get; set; }
     public double ReservedQtyKg { get; set; }
     public double RemainingKg { get; set; }
+    public double ActualStockKg { get; set; }
+    public double PlannedReservationKg { get; set; }
+    public double OtherCommitmentsKg { get; set; }
+    public double NewPlanNeedKg { get; set; }
+    public double RemainingAfterPlanningKg { get; set; }
+    public string PlanningStatus { get; set; }
     /// <summary>§ تتبع السحب — وحدة الاستلام ووزنها (للعرض وحِساب الكمية المكافئة).</summary>
     public string ReceiptUnit { get; set; }
     public double UnitWeightKg { get; set; }

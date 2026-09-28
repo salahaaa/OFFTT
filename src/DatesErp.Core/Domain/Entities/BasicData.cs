@@ -110,6 +110,22 @@ public class Product : AuditableEntity
     public int? SourceProductId { get; set; }
 }
 
+/// <summary>
+/// مصدر خام رسمي مستقل للمنتج التام. يدعم أكثر من خام مستقل للمنتج نفسه،
+/// مع إبقاء Product.SourceProductId/YieldFactor مساراً توافقياً للبيانات القديمة.
+/// RawKgPerFinishedKg هو قاعدة التحويل الرسمية: كمية الخام المطلوبة لكل كجم منتج تام.
+/// </summary>
+public class ProductRawSource : BaseEntity
+{
+    public int FinishedProductId { get; set; }
+    public int RawProductId { get; set; }
+    public decimal RawKgPerFinishedKg { get; set; }
+    public int? PackagingTypeId { get; set; }
+    public int PriorityNo { get; set; }
+    public bool IsActive { get; set; } = true;
+    public string Notes { get; set; }
+}
+
 public class PackagingType : BaseEntity
 {
     public string PackageCode { get; set; }

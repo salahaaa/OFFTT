@@ -9,7 +9,8 @@ namespace DatesErp.Application.Services;
 
 /// <summary>
 /// §تتبع الصنف — حراس الهوية: الصنف المستلم هو هوية المادة حتى نهاية الدورة.
-/// كل تحويل (خام ← تام) يجب أن يستند إلى تعريف رسمي في بطاقة المنتج (SourceProductId):
+/// كل تحويل (خام ← تام) يجب أن يستند إلى تعريف رسمي في بطاقة المنتج
+/// (ProductRawSource متعدد المصادر أو SourceProductId/YieldFactor القديم):
 /// لا إنتاج خلاص من دفعة سكري، ولا تسليم خلاص من مخزون سكري، في أي مرحلة من المراحل.
 /// </summary>
 public static class ProductIdentityGuard
@@ -23,12 +24,15 @@ public static class ProductIdentityGuard
         if (lotId != null && lotRaw == null) throw new DomainException("الدفعة المحددة غير موجودة.");
         if (selectedRawId != null && lotRaw != null && selectedRawId != lotRaw)
             throw new DomainException("الصنف الخام المختار لا يطابق خام الدفعة الفعلي.", "WRONG_CONVERSION");
-        // Receipt-backed plans use the lot, never a client-supplied override. Legacy manual APIs
-        // without a raw field derive it from Master Items; a supplied raw is always validated.
-        int? rawId = lotRaw ?? selectedRawId ?? finished.SourceProductId;
-        if (rawId == null || finished.SourceProductId != rawId ||
-            !db.Products.AsNoTracking().Any(p => p.Id == rawId && p.IsActive && p.ItemType == "Raw"))
-            throw new DomainException("منع تحويل خاطئ: الصنف التام غير مرتبط بالصنف الخام المختار. راجع تعريف التحويل الرسمي وربط الصنف المصدر (الخام) في شاشة الأصناف.", "WRONG_CONVERSION");
+        // Receipt-backed plans use the lot, never a client-supplied override. The new
+        // ProductRawSource table permits several independent raw sources; the legacy
+        // Product.SourceProductId remains a compatibility source when no rows exist.
+        var allowedRawIds = RawRequirementEngine.GetRules(db, finishedId)
+            .Select(x => x.RawProductId).Distinct().ToHashSet();
+        int? rawId = lotRaw ?? selectedRawId ?? (allowedRawIds.Count == 1 ? allowedRawIds.Single() : null);
+        if (rawId == null || !allowedRawIds.Contains(rawId.Value)
+            || !db.Products.AsNoTracking().Any(p => p.Id == rawId && p.IsActive && p.ItemType == "Raw"))
+            throw new DomainException("منع تحويل خاطئ: الصنف التام غير مرتبط بالصنف الخام المختار بقاعدة تحويل رسمية. راجع مصادر الخام ومعامل التحويل في بطاقة الصنف.", "WRONG_CONVERSION");
         EnsureConversionAllowed(db, finishedId, lotId);
     }
 
@@ -47,24 +51,22 @@ public static class ProductIdentityGuard
                   ?? throw new DomainException("الدفعة غير موجودة.");
         var raw = db.Products.AsNoTracking().FirstOrDefault(p => p.Id == lot.ProductId);
 
-        if (product.SourceProductId is int sourceId)
-        {
-            if (sourceId == lot.ProductId) return; // التعريف الرسمي مطابق ✓
-            string sourceName = db.Products.AsNoTracking().Where(p => p.Id == sourceId)
-                .Select(p => p.ProductNameAr).FirstOrDefault() ?? $"صنف #{sourceId}";
-            throw new DomainException(
-                $"⛔ منع تحويل خاطئ: المنتج «{product.ProductNameAr}» معرَّف في بطاقته أنه يُنتَج من «{sourceName}».\n" +
-                $"لا يمكن ربطه بالدفعة {lot.LotCode} وهي من خام «{raw?.ProductNameAr ?? "-"}».\n" +
-                $"هوية الصنف لا تتغير: اختر دفعة من «{sourceName}» أو راجع بطاقة المنتج.",
-                "WRONG_CONVERSION");
-        }
+        var allowedRawIds = RawRequirementEngine.GetRules(db, productId)
+            .Select(x => x.RawProductId).ToHashSet();
+        if (allowedRawIds.Contains(lot.ProductId)) return; // التعريف الرسمي مطابق ✓
 
-        // لا تعريف رسمي — التحويل بين خام ومنتج تام يتطلب تعريفاً في بطاقة المنتج (§13)
         if (raw != null && raw.ItemType == "Raw" && product.ItemType == "Finished")
+        {
+            var allowedNames = db.Products.AsNoTracking()
+                .Where(p => allowedRawIds.Contains(p.Id))
+                .Select(p => p.ProductNameAr).ToList();
             throw new DomainException(
-                $"⛔ لا يوجد تعريف تحويل رسمي في بطاقة المنتج «{product.ProductNameAr}» يربطه بالخام «{raw.ProductNameAr}».\n" +
-                $"افتح شاشة الأصناف وحدد «الصنف المصدر (الخام)» للمنتج أولاً — التحويل بدون تعريف رسمي ممنوع.",
-                "NO_CONVERSION_DEF");
+                $"⛔ منع تحويل خاطئ: المنتج «{product.ProductNameAr}» لا يملك قاعدة إنتاج من خام «{raw.ProductNameAr}».\n"
+                + (allowedNames.Count > 0
+                    ? $"المصادر الرسمية المسموحة: {string.Join("، ", allowedNames)}."
+                    : "لا توجد قاعدة تحويل رسمية — عرّف مصدر الخام ومعامل التحويل أولاً."),
+                allowedNames.Count > 0 ? "WRONG_CONVERSION" : "NO_CONVERSION_DEF");
+        }
     }
 
     /// <summary>نسخة لا ترمي استثناء — تعيد رسالة الخطأ أو null عند السلامة (للمسارات التي لا تستخدم معاملات).</summary>

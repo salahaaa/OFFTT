@@ -327,9 +327,12 @@
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="الرصيد الفعلي" Binding="{Binding OnHandKg, StringFormat=N1}" Width="105" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="المحجوز" Binding="{Binding ReservedKg, StringFormat=N1}" Width="95" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="مخصص للخطط السابقة" Binding="{Binding ReservedKg, StringFormat=N1}" Width="125" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="التزامات تشغيلية أخرى" Binding="{Binding OtherCommitmentsKg, StringFormat=N1}" Width="125" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="تحت المعالجة" Binding="{Binding TreatmentStatus}" Width="180" IsReadOnly="True"/>
                             <DataGridTextColumn Header="المتاح للتخطيط" Binding="{Binding AvailableKg, StringFormat=N1}" Width="120" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="الكمية المختارة/المطلوبة" Binding="{Binding SelectedQtyKg, StringFormat=N1}" Width="140" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="احتياج الخام المحسوب" Binding="{Binding RawRequiredKg, StringFormat=N1}" Width="135" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="الحالة" Binding="{Binding PlanningStatus}" Width="75" IsReadOnly="True"/>
                             <DataGridTextColumn Header="المتاح بالوحدة" Binding="{Binding AvailableDisplay}" Width="130" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">

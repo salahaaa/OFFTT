@@ -172,7 +172,8 @@ public partial class MasterDataService : ServiceBase
                         || Db.QualityCheckItems.Any(i => i.ProductId == id)
                         || Db.FinishedGoodsReceiptItems.Any(i => i.ProductId == id)
                         || Db.CustomerDeliveryItems.Any(i => i.ProductId == id)
-                        || Db.StockBalances.Any(b => b.ProductId == id && b.QtyKg != 0);
+                        || Db.StockBalances.Any(b => b.ProductId == id && b.QtyKg != 0)
+                        || Db.ProductRawSources.Any(x => x.FinishedProductId == id || x.RawProductId == id);
             if (used)
             {
                 p.IsActive = false;
@@ -333,6 +334,40 @@ public partial class MasterDataService
         });
     }
 
+    /// <summary>حفظ قاعدة تحويل خام مستقلة للمنتج التام (يدعم أكثر من مصدر للمنتج نفسه).</summary>
+    public OpResult SaveProductRawSource(int? id, int finishedProductId, int rawProductId,
+        decimal rawKgPerFinishedKg, int? packagingTypeId = null, int priorityNo = 1, bool isActive = true, string notes = null)
+    {
+        Require("products", id == null ? "Create" : "Edit");
+        if (rawKgPerFinishedKg <= 0) return OpResult.Fail("كمية الخام لكل كجم منتج تام يجب أن تكون أكبر من صفر.");
+        return RunOp(() =>
+        {
+            var finished = Db.Products.FirstOrDefault(x => x.Id == finishedProductId && x.IsActive && x.ItemType == "Finished")
+                ?? throw new DomainException("الصنف التام غير موجود أو غير نشط.");
+            var raw = Db.Products.FirstOrDefault(x => x.Id == rawProductId && x.IsActive && x.ItemType == "Raw")
+                ?? throw new DomainException("مصدر الخام غير موجود أو ليس صنفاً خاماً.");
+            if (packagingTypeId != null && !Db.PackagingTypes.Any(x => x.Id == packagingTypeId && x.IsActive))
+                throw new DomainException("العبوة المرتبطة بقاعدة التحويل غير موجودة أو غير نشطة.");
+            var row = id is int existing
+                ? Db.ProductRawSources.FirstOrDefault(x => x.Id == existing)
+                    ?? throw new DomainException("قاعدة التحويل غير موجودة.")
+                : new ProductRawSource();
+            if (Db.ProductRawSources.Any(x => x.Id != row.Id && x.FinishedProductId == finishedProductId
+                && x.RawProductId == rawProductId && x.PackagingTypeId == packagingTypeId))
+                throw new DomainException("توجد قاعدة تحويل مكررة لنفس المنتج التام/الخام/العبوة.");
+            row.FinishedProductId = finishedProductId;
+            row.RawProductId = rawProductId;
+            row.RawKgPerFinishedKg = rawKgPerFinishedKg;
+            row.PackagingTypeId = packagingTypeId;
+            row.PriorityNo = Math.Max(1, priorityNo);
+            row.IsActive = isActive;
+            row.Notes = notes;
+            if (id == null) Db.ProductRawSources.Add(row);
+            Db.SaveChanges();
+            return OpResult.Success("تم حفظ قاعدة تحويل الخام الرسمية.", row.Id);
+        });
+    }
+
     /// <summary>
     /// §B80 — العبوات تُقرأ من شاشة الوحدات: كل وحدة قياس نشطة يقابلها نوع عبوة بالاسم نفسه.
     /// تُنشأ العبوة الناقصة تلقائياً (بلا وزن — الوزن يُدخل في الاستلام أو بطاقة الصنف)،
@@ -383,7 +418,8 @@ public partial class MasterDataService
         if (Db.ProductionPlanItems.Any(i => i.ProductId == id) || Db.ProductionOrderItems.Any(i => i.ProductId == id)
             || Db.ShipmentItems.Any(i => i.ProductId == id) || Db.Lots.Any(l => l.ProductId == id)
             || Db.QualityCheckItems.Any(i => i.ProductId == id) || Db.FinishedGoodsReceiptItems.Any(i => i.ProductId == id)
-            || Db.CustomerDeliveryItems.Any(i => i.ProductId == id))
+            || Db.CustomerDeliveryItems.Any(i => i.ProductId == id)
+            || Db.ProductRawSources.Any(x => x.FinishedProductId == id || x.RawProductId == id))
         {
             p.IsActive = false;
             Db.SaveChanges();

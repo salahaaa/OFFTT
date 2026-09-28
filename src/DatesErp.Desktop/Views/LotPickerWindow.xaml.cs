@@ -18,25 +18,26 @@ public partial class LotPickerWindow : Window
     private List<int> _currentPlanLotIds = new();
     public AvailableLotDto SelectedLot { get; private set; }
 
-    public LotPickerWindow(List<int> currentPlanLotIds = null, int? customerId = null)
+    public LotPickerWindow(List<int> currentPlanLotIds = null, int? customerId = null,
+        int? excludePlanId = null, DateTime? availabilityDate = null)
     {
         InitializeComponent();
         _currentPlanLotIds = currentPlanLotIds ?? new List<int>();
         Loaded += (_, _) =>
         {
-            LoadLots(customerId);
+            LoadLots(customerId, excludePlanId, availabilityDate);
             LotsGrid.Focus();
             if (LotsGrid.Items.Count > 0) LotsGrid.SelectedIndex = 0;
         };
     }
 
-    private void LoadLots(int? customerId)
+    private void LoadLots(int? customerId, int? excludePlanId, DateTime? availabilityDate)
     {
         try
         {
             using var scope = AppContainer.NewScope();
             var svc = scope.ServiceProvider.GetRequiredService<IPlanningService>();
-            _all = svc.GetAvailableLots(customerId, null);
+            _all = svc.GetAvailableLots(customerId, availabilityDate, excludePlanId);
             ApplyFilter();
         }
         catch (Exception ex)
@@ -72,8 +73,14 @@ public partial class LotPickerWindow : Window
             r.ReservedQtyKg,
             r.RemainingKg,
             r.AvailableForDateKg,
+            r.UnderTreatmentKg,
+            r.TreatmentReadyDate,
             r.ReceiptUnit,
-            TreatmentStatus = r.RequiresTreatment ? (r.ReadyNowKg > 0 ? "جاهز" : "تحت المعالجة") : "لا يحتاج",
+            TreatmentStatus = r.RequiresTreatment
+                ? (r.UnderTreatmentKg > 0
+                    ? $"تحت المعالجة — {r.UnderTreatmentKg:N1} كجم حتى {r.TreatmentReadyDate:dd/MM/yyyy}"
+                    : "معالجة مكتملة ✓")
+                : "لا يحتاج",
             DaysInStock = r.ArrivalDate != null ? (DateTime.Now.Date - r.ArrivalDate.Value.Date).Days : 0,
             Entity = r
         }).ToList();

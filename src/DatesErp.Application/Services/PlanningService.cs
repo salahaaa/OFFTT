@@ -87,6 +87,17 @@ public class PlanningService : ServiceBase, IPlanningService
         }
     }
 
+    /// <summary>يحسب احتياج الخام من المنتج التام، ويستبدل أي رقم خام قادم من الواجهة.</summary>
+    private RawRequirementResult NormalizeRawRequirement(PlanItemDto dto, string operation)
+    {
+        var result = RawRequirementEngine.Calculate(Db, dto.ProductId, dto.PlannedQtyKg,
+            dto.SelectedRawProductId, dto.PackagingTypeId);
+        if (!result.IsConfigured)
+            throw new DomainException($"{operation}: {result.Error}", result.ErrorCode);
+        dto.RawRequiredQtyKg = (double)result.RawRequiredQtyKg;
+        return result;
+    }
+
     /// <summary>
     /// ينشئ رأس الخطة وسياقها التشغيلي في خطوة واحدة: العملاء المسموحون، الورديات،
     /// والفترة الكاملة تتحول إلى جلسات مرتبة. لا يعتمد هذا المسار أي توزيع للكميات؛
@@ -346,6 +357,7 @@ public class PlanningService : ServiceBase, IPlanningService
                     var weight = UnitsPolicy.CartonWeight(Db, dto.ProductId, dto.PackagingTypeId);
                     if (weight > 0) dto.PlannedCartons = (int)Math.Round(dto.PlannedQtyKg / weight);
                 }
+                NormalizeRawRequirement(dto, "إصدار تعديل خطة الإنتاج");
                 var target = targetSessions.First(x => x.Id == dto.SessionId);
                 var ppi = new ProductionPlanItem
                 {
@@ -354,6 +366,7 @@ public class PlanningService : ServiceBase, IPlanningService
                     ShipmentId = dto.ShipmentId ?? (dto.LotId != null ? Db.Lots.Where(l => l.Id == dto.LotId).Select(l => l.ShipmentId).FirstOrDefault() : null),
                     CustomerId = dto.CustomerId, ProductId = dto.ProductId, PackagingTypeId = dto.PackagingTypeId,
                     PlannedQtyKg = dto.PlannedQtyKg, PlannedCartons = dto.PlannedCartons,
+                    RawRequiredQtyKg = (decimal)dto.RawRequiredQtyKg,
                     ScheduledDate = target.SessionDate, SuggestedShiftId = target.ShiftId, SuggestedLineId = target.LineId,
                     PriorityNo = dto.PriorityNo, Status = DocStatuses.Approved
                 };
@@ -363,6 +376,7 @@ public class PlanningService : ServiceBase, IPlanningService
                 target.Items.Add(ppi);
             }
 
+            ValidatePlanRawAllocations(plan);
             ValidateCapacity(CapacityItems(plan), plan);
             ApplyLotReservations(plan);
             plan.ModifiedBy = Session?.UserId;
@@ -435,10 +449,12 @@ public class PlanningService : ServiceBase, IPlanningService
                     if (w > 0) dto.PlannedCartons = (int)Math.Round(dto.PlannedQtyKg / w);
                 }
 
-                // §قاعدة توازن الإنتاج: المخطط كمية منتج تام مستهدفة، لا حجزاً للخام.
-                // وفي تصنيع التمور يزيد وزن الخارج عن الداخل لإضافة الماء أثناء التشغيل،
-                // فالتخطيط بكمية أكبر من رصيد الخام مشروع — ولا معادلة ثابتة تربطهما.
-                // الحجز الفعلي للخام يتم عند اعتماد الأمر، وهناك يُمنع تجاوز الرصيد فعلاً.
+                // المستخدم يحدد المنتج التام فقط؛ الخام الناتج عن قاعدة التحويل الرسمية.
+                NormalizeRawRequirement(dto, "خطة الإنتاج");
+
+                // كمية المنتج التام هي مدخل التخطيط؛ احتياج الخام محفوظ من قاعدة التحويل
+                // الرسمية أعلاه. لا تُنشئ هذه الخطوة حركة مخزون — التخصيص حجز تخطيطي فقط،
+                // والصرف الفعلي يبقى في مسار التنفيذ.
                 if (dto.SourceType == "FromReceiving" && dto.LotId is int lotId)
                 {
                     if (!Db.Lots.AsNoTracking().Any(l => l.Id == lotId))
@@ -473,6 +489,7 @@ public class PlanningService : ServiceBase, IPlanningService
                     PackagingTypeId = dto.PackagingTypeId,
                     PlannedQtyKg = dto.PlannedQtyKg,
                     PlannedCartons = dto.PlannedCartons,
+                    RawRequiredQtyKg = (decimal)dto.RawRequiredQtyKg,
                     ScheduledDate = UiFormat.TryParseDate(dto.ScheduledDate, out var d) ? d : null,
                     SuggestedShiftId = dto.SuggestedShiftId,
                     SuggestedLineId = dto.SuggestedLineId,
@@ -486,6 +503,7 @@ public class PlanningService : ServiceBase, IPlanningService
             }
 
             // حجز كميات الدفعات (لكل الأصناف) بمجرد إنشاء الخطة
+            ValidatePlanRawAllocations(plan);
             ValidateCapacity(items, plan);
             ApplyLotReservations(plan);
             Db.SaveChanges();
@@ -528,6 +546,29 @@ public class PlanningService : ServiceBase, IPlanningService
         catch { return false; }
     }
 
+    private string CheckRawRequirementForApproval(ProductionPlan plan)
+    {
+        foreach (var item in plan.Items.Where(i => !i.IsClosed && i.PlannedQtyKg > 0))
+        {
+            int? rawId = item.Allocations.FirstOrDefault()?.LotId is int allocatedLot
+                ? Db.Lots.AsNoTracking().Where(l => l.Id == allocatedLot).Select(l => (int?)l.ProductId).FirstOrDefault()
+                : item.LotId is int lotId
+                    ? Db.Lots.AsNoTracking().Where(l => l.Id == lotId).Select(l => (int?)l.ProductId).FirstOrDefault()
+                    : item.SelectedRawProductId;
+            var result = RawRequirementEngine.Calculate(Db, item.ProductId, item.PlannedQtyKg, rawId, item.PackagingTypeId);
+            if (!result.IsConfigured) return result.Error;
+            if (item.RawRequiredQtyKg <= 0 || Math.Abs((double)item.RawRequiredQtyKg - (double)result.RawRequiredQtyKg) > 0.01)
+                return $"قاعدة تحويل الخام للبند «{item.ProductId}» تغيّرت أو لم تُحفظ — أعد حفظ/تعديل الخطة قبل الاعتماد.";
+            if (item.Allocations.Count > 0)
+            {
+                var allocated = item.Allocations.Sum(a => Math.Max(0, a.AllocatedQtyKg));
+                if (Math.Abs(allocated - (double)item.RawRequiredQtyKg) > 0.01)
+                    return $"تخصيص الخام للبند «{item.ProductId}» ({allocated:N3} كجم) لا يساوي الاحتياج المحسوب ({item.RawRequiredQtyKg:N3} كجم).";
+            }
+        }
+        return null;
+    }
+
     /// <summary>§1.50.66.3 — فحص جاهزية الدفعات والكميات المتاحة عند الاعتماد.</summary>
     private string CheckLotAvailabilityForApproval(ProductionPlan plan)
     {
@@ -543,27 +584,23 @@ public class PlanningService : ServiceBase, IPlanningService
             {
                 var lot = Db.Lots.AsNoTracking().FirstOrDefault(l => l.Id == group.Key.LotId);
                 if (lot == null) return $"الدفعة {group.Key.LotId} غير موجودة — راجع الاستلام.";
-                double onHand = Db.StockBalances.AsNoTracking().Where(b => b.WarehouseId == group.Key.WarehouseId && b.LotId == group.Key.LotId).Sum(b => (double?)b.QtyKg) ?? 0;
-                var receiptWarehouse = Db.Shipments.Where(s => s.Id == lot.ShipmentId).Select(s => s.ReceivingWarehouseId).FirstOrDefault();
-                if (onHand <= 0 && receiptWarehouse == group.Key.WarehouseId) onHand = lot.InStockQtyKg;
-                double others = Db.ProductionPlanItemAllocations.AsNoTracking()
-                    .Where(a => a.WarehouseId == group.Key.WarehouseId && a.LotId == group.Key.LotId && a.Status != "Released" && a.Status != "Consumed" && !allocationIds.Contains(a.PlanItemId))
-                    .Join(Db.ProductionPlanItems.AsNoTracking(), a => a.PlanItemId, i => i.Id, (a, i) => new { a, i })
-                    .Join(Db.ProductionPlans.AsNoTracking(), x => x.i.PlanId, p => p.Id, (x, p) => new { x.a, x.i, p })
-                    .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled && !x.p.IsClosed && !x.i.IsClosed)
-                    .AsEnumerable().Sum(x => Math.Max(0, x.a.AllocatedQtyKg - x.a.ConsumedQtyKg - x.a.ReleasedQtyKg));
-                double under = receiptWarehouse == group.Key.WarehouseId ? lot.UnderTreatmentQtyKg : 0;
-                double available = Math.Max(0, onHand - others - under);
                 double need = group.Sum(a => Math.Max(0, a.AllocatedQtyKg - a.ConsumedQtyKg - a.ReleasedQtyKg));
-                if (need > available + 0.001)
-                    return $"⛔ الدفعة {lot.LotCode} في المخزن {group.Key.WarehouseId}: المطلوب {need:N1} كجم، والمتاح عند الاعتماد {available:N1} كجم.";
+                var groupItemIds = group.Select(a => a.PlanItemId).ToHashSet();
+                var asOfDate = plan.Items.Where(i => groupItemIds.Contains(i.Id) && i.ScheduledDate != null)
+                    .Select(i => i.ScheduledDate.Value).DefaultIfEmpty(plan.StartDate ?? Db.BusinessNow).Max();
+                var snapshot = new RawPlanningAvailabilityEngine(Db)
+                    .ForLot(group.Key.WarehouseId, group.Key.LotId, need, plan.Id, null, asOfDate);
+                if (!snapshot.IsSufficient)
+                    return $"⛔ الدفعة {lot.LotCode} في المخزن {group.Key.WarehouseId}: المطلوب {need:N1} كجم، "
+                        + $"المتاح عند الاعتماد {snapshot.AvailableForPlanningKg:N1} كجم "
+                        + $"(فعلي {snapshot.ActualStockKg:N1} − حجز خطط {snapshot.PlannedReservationKg:N1} − التزامات أخرى {snapshot.OtherCommitmentsKg:N1}).";
             }
             return null;
         }
 
         var demands = plan.Items.Where(i => i.LotId != null && !i.IsClosed)
             .GroupBy(i => i.LotId.Value)
-            .Select(g => new { LotId = g.Key, Kg = g.Sum(x => x.PlannedQtyKg) })
+            .Select(g => new { LotId = g.Key, Kg = g.Sum(x => (double)x.RawRequiredQtyKg) })
             .ToList();
         if (demands.Count == 0) return null;
         var lotIds = demands.Select(d => d.LotId).Distinct().ToList();
@@ -579,7 +616,13 @@ public class PlanningService : ServiceBase, IPlanningService
             if (lot.Status == DocStatuses.Closed)
                 return $"الدفعة {lot.LotCode} مقفلة — لا يمكن اعتماد خطة عليها.";
             // المتاح بعد استبعاد حجوزات الخطط/الأوامر الأخرى (بدون هذه الخطة)
-            double available = LotAvailableExcluding(lot.Id, plan.Id);
+            double available = LotAvailableExcluding(lot.Id, plan.Id, plan.Items
+                .Where(i => i.LotId == lot.Id && !i.IsClosed)
+                .Select(i => i.ScheduledDate)
+                .Where(d => d != null)
+                .Select(d => d.Value)
+                .DefaultIfEmpty(d.ScheduledDate ?? Db.BusinessNow)
+                .Max());
             // المجموع المطلوب لهذه الدفعة في هذه الخطة
             double need = d.Kg;
             // نسمح بفرق بسيط بسبب التقريب
@@ -689,6 +732,7 @@ public class PlanningService : ServiceBase, IPlanningService
                     double w = UnitsPolicy.CartonWeight(Db, dto.ProductId, dto.PackagingTypeId);
                     if (w > 0) dto.PlannedCartons = (int)Math.Round(dto.PlannedQtyKg / w);
                 }
+                NormalizeRawRequirement(dto, "تعديل خطة الإنتاج");
 
                 // §كما في SavePlan: المخطط مستهدف إنتاجي لا حجز خام — لا معادلة ثابتة
                 if (dto.SourceType == "FromReceiving" && dto.LotId is int lotId)
@@ -725,6 +769,7 @@ public class PlanningService : ServiceBase, IPlanningService
                     PackagingTypeId = dto.PackagingTypeId,
                     PlannedQtyKg = dto.PlannedQtyKg,
                     PlannedCartons = dto.PlannedCartons,
+                    RawRequiredQtyKg = (decimal)dto.RawRequiredQtyKg,
                     ScheduledDate = UiFormat.TryParseDate(dto.ScheduledDate, out var d) ? d : null,
                     SuggestedShiftId = dto.SuggestedShiftId,
                     SuggestedLineId = dto.SuggestedLineId,
@@ -738,6 +783,7 @@ public class PlanningService : ServiceBase, IPlanningService
             }
 
             // إعادة احتساب الحجوزات بالبنود الجديدة
+            ValidatePlanRawAllocations(plan);
             ValidateCapacity(items, plan);
             if (currentSession != null)
                 currentSession.UsedHours = items.Sum(i =>
@@ -756,25 +802,12 @@ public class PlanningService : ServiceBase, IPlanningService
         });
     }
 
-    /// <summary>المتاح الفعلي من دفعة بعد خصم حجوزات الخطط النشطة والأوامر، مع استثناء خطة محددة.</summary>
-    private double LotAvailableExcluding(int lotId, int? excludePlanId)
+    /// <summary>المتاح الفعلي من دفعة بعد دفتر الالتزامات المركزي، مع استثناء خطة محددة.</summary>
+    private double LotAvailableExcluding(int lotId, int? excludePlanId, DateTime? asOfDate = null)
     {
-        var lot = Db.Lots.AsNoTracking().FirstOrDefault(l => l.Id == lotId);
-        if (lot == null) return 0;
-        double planCommitted = Db.ProductionPlanItems.AsNoTracking()
-            .Where(i => i.LotId == lotId && (excludePlanId == null || i.PlanId != excludePlanId))
-            .Join(Db.ProductionPlans.AsNoTracking(), i => i.PlanId, p => p.Id, (i, p) => new { i, p })
-            .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled && !x.p.IsClosed)
-            .Where(x => !x.i.IsClosed)
-            .Sum(x => x.i.PlannedQtyKg - x.i.ProducedQtyKg > 0 ? x.i.PlannedQtyKg - x.i.ProducedQtyKg : 0);
-        double orderCommitted = Db.ProductionOrderItems.AsNoTracking()
-            .Where(i => i.LotId == lotId)
-            .Join(Db.ProductionOrders.AsNoTracking(), i => i.OrderId, o => o.Id, (i, o) => new { i, o })
-            .Where(x => x.o.Status != DocStatuses.Cancelled && x.o.Status != DocStatuses.Closed)
-            .Where(x => !x.i.IsClosed)
-            .Sum(x => x.i.PlannedQtyKg - x.i.ProducedQtyKg > 0 ? x.i.PlannedQtyKg - x.i.ProducedQtyKg : 0);
-        // §المعالجة والتعقيم (الموضعان 8 و9): ما هو داخل دورة معالجة جارية ليس متاحاً
-        return Math.Max(0, Math.Round(lot.InStockQtyKg - lot.UnderTreatmentQtyKg - planCommitted - orderCommitted, 3));
+        return Math.Max(0, Math.Round(
+            new RawPlanningAvailabilityEngine(Db).ForLotAllWarehouses(lotId, 0, excludePlanId, null, asOfDate)
+                .Sum(x => x.AvailableForPlanningKg), 3));
     }
 
     /// <summary>
@@ -796,7 +829,7 @@ public class PlanningService : ServiceBase, IPlanningService
                 ? i.Allocations.Where(a => a.AllocatedQtyKg > 0)
                     .Select(a => (LotId: a.LotId, Day: i.ScheduledDate.Value.Date, Kg: a.AllocatedQtyKg))
                 : i.LotId is int lid
-                    ? new[] { (LotId: lid, Day: i.ScheduledDate.Value.Date, Kg: i.PlannedQtyKg) }
+                    ? new[] { (LotId: lid, Day: i.ScheduledDate.Value.Date, Kg: i.RawRequiredQtyKg > 0 ? (double)i.RawRequiredQtyKg : RawPlanningAvailabilityEngine.LegacyRawRemainingKg(Db, i)) }
                     : Array.Empty<(int LotId, DateTime Day, double Kg)>())
             .ToList();
         var demand = demandRows
@@ -842,7 +875,7 @@ public class PlanningService : ServiceBase, IPlanningService
                 .Join(Db.ProductionPlans.AsNoTracking(), i => i.PlanId, p => p.Id, (i, p) => new { i, p })
                 .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled && !x.p.IsClosed)
                 .AsEnumerable()
-                .Sum(x => Math.Max(0, x.i.PlannedQtyKg - x.i.ProducedQtyKg));
+                .Sum(x => RawPlanningAvailabilityEngine.LegacyRawRemainingKg(Db, x.i));
 
             double availableForDate = Math.Max(0,
                 lot.TreatmentReadyQtyKg + maturing - Math.Max(0, reservedOthers) - lot.ProducedQtyKg);
@@ -889,9 +922,20 @@ public class PlanningService : ServiceBase, IPlanningService
                 WarehouseId = warehouseId,
                 LotId = legacyLot,
                 CustomerId = item.CustomerId,
-                AllocatedQtyKg = item.PlannedQtyKg
+                AllocatedQtyKg = (double)item.RawRequiredQtyKg
             });
         }
+
+        var requiredRawKg = (double)item.RawRequiredQtyKg;
+        if (requiredRawKg <= 0.001)
+            throw new DomainException("لا يوجد احتياج خام محسوب لهذا البند — عرّف قاعدة التحويل الرسمية أولاً.", "RAW_REQUIREMENT_REQUIRED");
+        if (requested.Count == 0)
+            throw new DomainException("يجب ربط احتياج الخام بمخزن ودفعة؛ التخطيط بلا تخصيص خام غير مسموح.", "RAW_ALLOCATION_REQUIRED");
+        var requestedTotalKg = requested.Sum(a => Math.Max(0, a.AllocatedQtyKg));
+        if (Math.Abs(requestedTotalKg - requiredRawKg) > 0.01)
+            throw new DomainException(
+                $"إجمالي تخصيص الخام ({requestedTotalKg:N3} كجم) لا يساوي الاحتياج المحسوب ({requiredRawKg:N3} كجم) للمنتج التام ({item.PlannedQtyKg:N3} كجم). عدّل كمية المنتج أو توزيع الدفعات.",
+                "RAW_ALLOCATION_MISMATCH");
 
         // يسمح بند الخطة بأكثر من دفعة عند وجود تخصيصات صريحة؛ LotId القديم يبقى
         // مرجعاً توافقياً فقط، ولا يُستخدم لدمج الكميات أو إخفاء توزيعها.
@@ -926,25 +970,16 @@ public class PlanningService : ServiceBase, IPlanningService
                     throw new DomainException($"الدفعة {lot.LotCode} مملوكة لعميل آخر ولا يمكن تخصيصها لهذا العميل.", "ALLOCATION_OWNERSHIP");
             }
 
-            double onHand = Db.StockBalances.AsNoTracking()
-                .Where(b => b.WarehouseId == warehouseId && b.LotId == group.Key.LotId)
-                .Sum(b => (double?)b.QtyKg) ?? 0;
-            // بيانات ما قبل أرصدة المخزن: لا نكسر الخطط القديمة، لكن لا نعتبرها
-            // مخزناً آخر؛ المصدر الوحيد الآمن هو مخزن استلام الشحنة.
-            int? receiptWarehouse = Db.Shipments.Where(s => s.Id == lot.ShipmentId).Select(s => s.ReceivingWarehouseId).FirstOrDefault();
-            if (onHand <= 0 && receiptWarehouse == warehouseId) onHand = lot.InStockQtyKg;
-
-            double reserved = Db.ProductionPlanItemAllocations.AsNoTracking()
-                .Where(a => a.WarehouseId == warehouseId && a.LotId == group.Key.LotId && a.Status != "Released" && a.Status != "Consumed")
-                .Join(Db.ProductionPlanItems.AsNoTracking(), a => a.PlanItemId, i => i.Id, (a, i) => new { a, i })
-                .Join(Db.ProductionPlans.AsNoTracking(), x => x.i.PlanId, p => p.Id, (x, p) => new { x.a, x.i, p })
-                .Where(x => x.i.PlanId != item.PlanId && x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled && !x.p.IsClosed)
-                .AsEnumerable().Sum(x => Math.Max(0, x.a.AllocatedQtyKg - x.a.ConsumedQtyKg - x.a.ReleasedQtyKg));
-            double underTreatment = receiptWarehouse == warehouseId ? lot.UnderTreatmentQtyKg : 0;
-            double available = Math.Max(0, onHand - reserved - underTreatment);
             double requestedKg = group.Sum(a => a.AllocatedQtyKg);
-            if (requestedKg > available + 0.001)
-                throw new DomainException($"⛔ لا يمكن حجز {requestedKg:N1} كجم من الدفعة {lot.LotCode} في المخزن {warehouseId}. المتاح للتخطيط: {available:N1} كجم.", "ALLOCATION_EXCEEDED");
+            var availability = new RawPlanningAvailabilityEngine(Db)
+                .ForLot(warehouseId, group.Key.LotId, requestedKg,
+                    item.PlanId > 0 ? item.PlanId : null, null, item.ScheduledDate);
+            if (!availability.IsSufficient)
+                throw new DomainException(
+                    $"⛔ لا يمكن حجز {requestedKg:N1} كجم من الدفعة {lot.LotCode} في المخزن {warehouseId}. "
+                    + $"الفعلي: {availability.ActualStockKg:N1} | حجز الخطط: {availability.PlannedReservationKg:N1} "
+                    + $"| الالتزامات الأخرى: {availability.OtherCommitmentsKg:N1} | المتاح للتخطيط: {availability.AvailableForPlanningKg:N1} كجم.",
+                    "ALLOCATION_EXCEEDED");
         }
 
         foreach (var allocation in requested)
@@ -957,6 +992,38 @@ public class PlanningService : ServiceBase, IPlanningService
                 AllocatedQtyKg = allocation.AllocatedQtyKg,
                 Status = "Reserved"
             });
+        }
+    }
+
+    private void ValidatePlanRawAllocations(ProductionPlan plan)
+    {
+        var demands = plan.Items.SelectMany(i => i.Allocations
+                .Where(a => !i.IsClosed && a.AllocatedQtyKg > 0)
+                .Select(a => new { a.WarehouseId, a.LotId, a.AllocatedQtyKg, Item = i }))
+                .GroupBy(x => new { x.WarehouseId, x.LotId })
+            .Select(g => new
+            {
+                g.Key.WarehouseId,
+                g.Key.LotId,
+                NeedKg = g.Sum(x => x.AllocatedQtyKg),
+                AsOfDate = g.Select(x => x.Item.ScheduledDate).Where(d => d != null).Select(d => d.Value)
+                    .DefaultIfEmpty(plan.StartDate ?? Db.BusinessNow).Max()
+            })
+            .ToList();
+        var ledger = new RawPlanningAvailabilityEngine(Db);
+        foreach (var demand in demands)
+        {
+            var snapshot = ledger.ForLot(demand.WarehouseId, demand.LotId, demand.NeedKg,
+                plan.Id > 0 ? plan.Id : null, null, demand.AsOfDate);
+            if (!snapshot.IsSufficient)
+            {
+                var code = Db.Lots.AsNoTracking().Where(l => l.Id == demand.LotId)
+                    .Select(l => l.LotCode).FirstOrDefault() ?? $"#{demand.LotId}";
+                throw new DomainException(
+                    $"تجميع تخصيصات الخطة يتجاوز المتاح للدفعة {code} في المخزن {demand.WarehouseId}: "
+                    + $"المطلوب {demand.NeedKg:N1} كجم، المتاح {snapshot.AvailableForPlanningKg:N1} كجم.",
+                    "RAW_ALLOCATION_EXCEEDED");
+            }
         }
     }
 
@@ -985,7 +1052,7 @@ public class PlanningService : ServiceBase, IPlanningService
                 .Where(i => i.LotId == lid && i.PlanId != plan.Id && !allocationPlanItemIds.Contains(i.Id))
                 .Join(Db.ProductionPlans, i => i.PlanId, p => p.Id, (i, p) => new { i, p })
                 .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled && !x.p.IsClosed && !x.i.IsClosed)
-                .AsEnumerable().Sum(x => Math.Max(0, x.i.PlannedQtyKg - x.i.ProducedQtyKg));
+                .AsEnumerable().Sum(x => RawPlanningAvailabilityEngine.LegacyRawRemainingKg(Db, x.i));
             lot.ReservedQtyKg = Math.Max(0, reserved);
         }
         if (plan.Status != DocStatuses.Closed && plan.Status != DocStatuses.Cancelled && !plan.IsClosed)
@@ -993,7 +1060,7 @@ public class PlanningService : ServiceBase, IPlanningService
             foreach (var group in plan.Items.SelectMany(i => i.Allocations.Any()
                     ? i.Allocations.Where(a => !i.IsClosed).Select(a => (LotId: a.LotId, Qty: Math.Max(0, a.AllocatedQtyKg - a.ConsumedQtyKg - a.ReleasedQtyKg)))
                     : i.LotId is int lid && !i.IsClosed
-                        ? new[] { (LotId: lid, Qty: Math.Max(0, i.PlannedQtyKg - i.ProducedQtyKg)) }
+                        ? new[] { (LotId: lid, Qty: RawPlanningAvailabilityEngine.LegacyRawRemainingKg(Db, i)) }
                         : Array.Empty<(int LotId, double Qty)>())
                 .GroupBy(x => x.LotId))
             {
@@ -1025,7 +1092,7 @@ public class PlanningService : ServiceBase, IPlanningService
                 .Where(i => i.LotId == lid && !allocationItemIds.Contains(i.Id))
                 .Join(Db.ProductionPlans, i => i.PlanId, p => p.Id, (i, p) => new { i, p })
                 .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled && !x.p.IsClosed && !x.i.IsClosed)
-                .AsEnumerable().Sum(x => Math.Max(0, x.i.PlannedQtyKg - x.i.ProducedQtyKg));
+                .AsEnumerable().Sum(x => RawPlanningAvailabilityEngine.LegacyRawRemainingKg(Db, x.i));
             lot.ReservedQtyKg = Math.Max(0, reserved);
         }
     }
@@ -1052,30 +1119,62 @@ public class PlanningService : ServiceBase, IPlanningService
     /// هذا الصنف من الخطط النشطة لا حجوزات الأصناف الأخرى — فلا تداخل بين أصناف الدفعة الواحدة.
     /// سكري: رصيد الدفعة − حجوز سكري فقط | برمي: رصيد الدفعة − حجوز برمي فقط.
     /// </summary>
+    private double OrderRawRemaining(ProductionOrderItem item)
+    {
+        if (item == null || item.PlannedQtyKg <= 0) return 0;
+        int? rawId = item.LotId is int lotId
+            ? Db.Lots.AsNoTracking().Where(l => l.Id == lotId).Select(l => (int?)l.ProductId).FirstOrDefault()
+            : null;
+        var rule = RawRequirementEngine.Calculate(Db, item.ProductId, item.PlannedQtyKg, rawId, item.PackagingTypeId);
+        if (!rule.IsConfigured) return 0;
+        var ratio = Math.Max(0, Math.Min(1, item.ProducedQtyKg / item.PlannedQtyKg));
+        return Math.Max(0, (double)rule.RawRequiredQtyKg * (1 - ratio));
+    }
+
+    private decimal CurrentRawRequired(ProductionPlanItem item)
+    {
+        if (item == null || item.PlannedQtyKg <= 0) return 0;
+        int? rawId = item.SelectedRawProductId;
+        if (rawId == null && item.LotId is int lotId)
+            rawId = Db.Lots.AsNoTracking().Where(l => l.Id == lotId).Select(l => (int?)l.ProductId).FirstOrDefault();
+        var result = RawRequirementEngine.Calculate(Db, item.ProductId, item.PlannedQtyKg, rawId, item.PackagingTypeId);
+        return result.IsConfigured ? result.RawRequiredQtyKg : 0;
+    }
+
     public double GetProductLotRemaining(int lotId, int productId, int? excludePlanId = null)
     {
         var lot = Db.Lots.AsNoTracking().FirstOrDefault(l => l.Id == lotId);
         if (lot == null) return 0;
-
-        // حجوزات هذا الصنف فقط من بنود الخطط النشطة (غير المقفلة/الملغاة)
-        var planCommitted = Db.ProductionPlanItems.AsNoTracking()
-            .Where(i => i.LotId == lotId && i.ProductId == productId
-                        && (excludePlanId == null || i.PlanId != excludePlanId))
+        // التخصيصات هي مصدر الحجز الوحيد؛ أمر الخطة لا يضاف مرة ثانية.
+        var planItemIds = Db.ProductionPlanItems.AsNoTracking()
+            .Where(i => i.ProductId == productId && !i.IsClosed
+                && (excludePlanId == null || i.PlanId != excludePlanId))
             .Join(Db.ProductionPlans.AsNoTracking(), i => i.PlanId, p => p.Id, (i, p) => new { i, p })
             .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled && !x.p.IsClosed)
-            .Where(x => !x.i.IsClosed)
-            .Sum(x => x.i.PlannedQtyKg - x.i.ProducedQtyKg > 0 ? x.i.PlannedQtyKg - x.i.ProducedQtyKg : 0);
-
-        // حجوزات هذا الصنف من أوامر الإنتاج النشطة (غير الملغاة/المكتملة)
-        var orderCommitted = Db.ProductionOrderItems.AsNoTracking()
-            .Where(i => i.LotId == lotId && i.ProductId == productId)
+            .Select(x => x.i.Id).ToHashSet();
+        var allocations = Db.ProductionPlanItemAllocations.AsNoTracking()
+            .Where(a => a.LotId == lotId && planItemIds.Contains(a.PlanItemId)
+                && a.Status != "Released" && a.Status != "Consumed")
+            .AsEnumerable()
+            .Sum(a => Math.Max(0, a.AllocatedQtyKg - a.ConsumedQtyKg - a.ReleasedQtyKg));
+        var allocationItems = Db.ProductionPlanItemAllocations.AsNoTracking()
+            .Where(a => a.LotId == lotId).Select(a => a.PlanItemId).ToHashSet();
+        var legacy = Db.ProductionPlanItems.AsNoTracking()
+            .Where(i => i.LotId == lotId && i.ProductId == productId && !allocationItems.Contains(i.Id)
+                && !i.IsClosed && (excludePlanId == null || i.PlanId != excludePlanId))
+            .Join(Db.ProductionPlans.AsNoTracking(), i => i.PlanId, p => p.Id, (i, p) => new { i, p })
+            .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled && !x.p.IsClosed)
+            .AsEnumerable()
+            .Sum(x => RawPlanningAvailabilityEngine.LegacyRawRemainingKg(Db, x.i));
+        var standalone = Db.ProductionOrderItems.AsNoTracking()
+            .Where(i => i.LotId == lotId && i.ProductId == productId && i.PlanItemId == null && !i.IsClosed)
             .Join(Db.ProductionOrders.AsNoTracking(), i => i.OrderId, o => o.Id, (i, o) => new { i, o })
             .Where(x => x.o.Status != DocStatuses.Cancelled && x.o.Status != DocStatuses.Closed)
-            .Where(x => !x.i.IsClosed)
-            .Sum(x => x.i.PlannedQtyKg - x.i.ProducedQtyKg > 0 ? x.i.PlannedQtyKg - x.i.ProducedQtyKg : 0);
-
-        // §المعالجة والتعقيم (الموضعان 8 و9): ما هو داخل دورة معالجة جارية ليس متاحاً
-        return Math.Max(0, Math.Round(lot.InStockQtyKg - lot.UnderTreatmentQtyKg - planCommitted - orderCommitted, 3));
+            .AsEnumerable()
+            .Sum(x => OrderRawRemaining(x.i));
+        var actual = new RawPlanningAvailabilityEngine(Db).ForLotAllWarehouses(lotId, 0, excludePlanId)
+            .Sum(x => x.ActualStockKg);
+        return Math.Max(0, Math.Round(actual - allocations - legacy - standalone - lot.UnderTreatmentQtyKg, 3));
     }
 
     /// <summary>يحفظ لقطة الإصدار المعتمد، وليس لقطة لكل حفظ مسودة.</summary>
@@ -1091,12 +1190,12 @@ public class PlanningService : ServiceBase, IPlanningService
             Sessions = plan.Sessions.OrderBy(x => x.SequenceNo).Select(x => new
             {
                 x.SequenceNo, x.SessionDate, x.ShiftId, x.LineId, x.Status,
-                Items = x.Items.Select(i => new { i.Id, i.SessionId, i.SourceType, i.ProductId, i.CustomerId, i.PackagingTypeId, i.PlannedQtyKg, i.PlannedCartons, i.LotId, i.SelectedRawProductId, i.SuggestedShiftId, i.SuggestedLineId }).ToList()
+                Items = x.Items.Select(i => new { i.Id, i.SessionId, i.SourceType, i.ProductId, i.CustomerId, i.PackagingTypeId, i.PlannedQtyKg, i.PlannedCartons, i.RawRequiredQtyKg, i.LotId, i.SelectedRawProductId, i.SuggestedShiftId, i.SuggestedLineId }).ToList()
             }).ToList(),
             Items = plan.Items.Select(i => new
             {
                 i.Id, i.SessionId, i.SourceType, i.ProductId, i.CustomerId, i.PackagingTypeId, i.PlannedQtyKg, i.PlannedCartons,
-                i.ScheduledDate, i.SelectedRawProductId, i.SuggestedShiftId, i.SuggestedLineId,
+                i.ScheduledDate, i.RawRequiredQtyKg, i.SelectedRawProductId, i.SuggestedShiftId, i.SuggestedLineId,
                 Allocations = i.Allocations.Select(a => new { a.WarehouseId, a.LotId, a.CustomerId, a.AllocatedQtyKg }).ToList()
             }).ToList()
         };
@@ -1248,6 +1347,9 @@ public class PlanningService : ServiceBase, IPlanningService
         // §لا خطة فوق خطة (فحص طاقة لا منع أعمى): يُسمح بخطة ثانية في نفس اليوم والوردية
         // ما دامت الطاقة الفعلية المتبقية تكفي، ويُرفض فقط التجاوز الذي يتعدى الطاقة.
         // §إصلاح حرج: تراكم بنود الخطة نفسها على نفس اليوم/الوردية/الخط عند الاعتماد أيضاً.
+        var rawMsg = CheckRawRequirementForApproval(plan);
+        if (rawMsg != null) return OpResult.Fail(rawMsg);
+
         // §المعالجة والتعقيم — حارس الاعتماد: لا تُعتمد خطة على خام لن يكون جاهزاً
         // في تاريخ إنتاجها. الفحص **حسب تاريخ كل بند** لا حسب إجمالي المستلم.
         var treatMsg = CheckTreatmentReadiness(plan);
@@ -1308,7 +1410,7 @@ public class PlanningService : ServiceBase, IPlanningService
     /// **المعامل اختياري بقيمة null = السلوك القديم حرفياً**، فلا تتأثر أي شاشة
     /// قائمة لا تمرّره — التزاماً بمنع حذف أي وظيفة قائمة.
     /// </summary>
-    public List<AvailableLotDto> GetAvailableLots(int? customerId = null, DateTime? forDate = null)
+    public List<AvailableLotDto> GetAvailableLots(int? customerId = null, DateTime? forDate = null, int? excludePlanId = null)
     {
         EnsureReceiptTreatmentsCurrent();
         var q = Db.Lots.AsQueryable();
@@ -1349,7 +1451,7 @@ public class PlanningService : ServiceBase, IPlanningService
                 // يُستبدل بالتعبير القابل للترجمة (يطرح الأعمدة المخزّنة).
                 RemainingKg = l.InStockQtyKg - l.ReservedQtyKg - l.UnderTreatmentQtyKg
             })
-            .Where(l => l.RemainingKg > 0 || (forDate != null && l.UnderTreatmentKg > 0))
+            .Where(l => l.InitialQtyKg - l.UnderTreatmentKg > 0 || (forDate != null && l.UnderTreatmentKg > 0))
             .ToList();
 
         // §تعدد المخازن: إذا كان للدفعة أرصدة فعلية موزعة، يصبح كل (مخزن، دفعة)
@@ -1368,6 +1470,7 @@ public class PlanningService : ServiceBase, IPlanningService
             .Join(Db.ProductionPlanItems.AsNoTracking(), a => a.PlanItemId, i => i.Id, (a, i) => new { a, i })
             .Join(Db.ProductionPlans.AsNoTracking(), x => x.i.PlanId, p => p.Id, (x, p) => new { x.a, x.i, p })
             .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled && !x.p.IsClosed && !x.i.IsClosed)
+            .Where(x => excludePlanId == null || x.i.PlanId != excludePlanId)
             .AsEnumerable()
             .GroupBy(x => new { x.a.LotId, x.a.WarehouseId })
             .Select(g => new { g.Key.LotId, g.Key.WarehouseId, ReservedKg = g.Sum(x => Math.Max(0, x.a.AllocatedQtyKg - x.a.ConsumedQtyKg - x.a.ReleasedQtyKg)) })
@@ -1386,8 +1489,8 @@ public class PlanningService : ServiceBase, IPlanningService
             foreach (var balance in balances)
             {
                 allocationReserved.TryGetValue((row.LotId, balance.WarehouseId), out var reservedKg);
-                if (reservedKg <= 0 && receiptWarehouse == balance.WarehouseId)
-                    reservedKg = row.ReservedQtyKg; // توافق مع حجوزات ما قبل جدول التخصيص
+                // لا نستخدم مرآة Lot.ReservedQtyKg هنا؛ الدفتر المركزي يعيد
+                // حساب الخطط القديمة والجديدة بعد توسيع الصف إلى (مخزن، دفعة).
                 var underTreatment = receiptWarehouse == balance.WarehouseId ? row.UnderTreatmentKg : 0;
                 var expanded = row.ForWarehouse(balance.WarehouseId,
                     warehouseNames.TryGetValue(balance.WarehouseId, out var wn) ? wn : $"مخزن {balance.WarehouseId}",
@@ -1401,7 +1504,29 @@ public class PlanningService : ServiceBase, IPlanningService
         }
         rows = expandedRows;
 
-        // §تتبع سحب الخام: إثراء كل دفعة بسياق سطر الاستلام (الوحدة، وزن الوحدة، المستلم بالكيلو)
+        // المؤشرات المعروضة هنا تأتي من دفتر الخام المركزي، لا من ReservedQtyKg
+        // كمرآة ثانية. ويُستثنى plan الجاري عند تعديل المسودة حتى لا تحجز نفسها.
+        var rawLedger = new RawPlanningAvailabilityEngine(Db);
+        foreach (var row in rows)
+        {
+            var warehouseId = row.WarehouseId ?? Db.Shipments.AsNoTracking()
+                .Where(s => s.Id == row.ShipmentId).Select(s => s.ReceivingWarehouseId).FirstOrDefault() ?? 0;
+            if (warehouseId <= 0) continue;
+            var snapshot = rawLedger.ForLot(warehouseId, row.LotId, 0, excludePlanId);
+            row.InitialQtyKg = snapshot.ActualStockKg;
+            row.ReservedQtyKg = snapshot.PlannedReservationKg;
+            row.RemainingKg = snapshot.AvailableForPlanningKg;
+            row.ActualStockKg = snapshot.ActualStockKg;
+            row.PlannedReservationKg = snapshot.PlannedReservationKg;
+            row.OtherCommitmentsKg = snapshot.OtherCommitmentsKg;
+            row.NewPlanNeedKg = snapshot.NewPlanNeedKg;
+            row.RemainingAfterPlanningKg = snapshot.RemainingAfterPlanningKg;
+            row.PlanningStatus = snapshot.IsSufficient ? "كافٍ" : "غير كافٍ";
+            row.AvailableForDateKg = row.RemainingKg;
+        }
+        rows = rows.Where(r => r.RemainingKg > 0.001 || (forDate != null && r.UnderTreatmentKg > 0)).ToList();
+
+        // §تتبع سحب الخام: إثراء كل دفعة بسياق سطر الاستلام (الوحدة، الوزن، المستلم بالكيلو)
         // من ShipmentItem عبر ShipmentItemId — يُقرأ في الذاكرة لأن العلاقة تُبنى خارج الاستعلام.
         var srcIds = rows.Select(r => r.ShipmentId).Where(s => s != null).Distinct().ToList();
         var srcByLot = Db.Shipments.AsNoTracking()
@@ -1471,7 +1596,7 @@ public class PlanningService : ServiceBase, IPlanningService
                 }
                 r.ExpectedReadyByDateKg = maturing.TryGetValue(r.LotId, out var m) ? Math.Max(0, m) : 0;
                 r.AvailableForDateKg = Math.Max(0,
-                    r.ReadyNowKg + r.ExpectedReadyByDateKg - r.ReservedQtyKg);
+                    r.ReadyNowKg + r.ExpectedReadyByDateKg - r.ReservedQtyKg - r.OtherCommitmentsKg);
             }
         }
         else
@@ -1559,19 +1684,13 @@ public class PlanningService : ServiceBase, IPlanningService
         };
     }
 
-    /// <summary>الخام المتاح من الشحنة/الدفعة (كجم) — يطرح الحجوزات وما تحت المعالجة.</summary>
+    /// <summary>الخام المتاح من الدفعة — من دفتر الفعلي والالتزامات، لا من مرآة الحجز وحدها.</summary>
     private double SourceAvailableKg(int lotId)
     {
-        var lot = Db.Lots.AsNoTracking().Where(l => l.Id == lotId)
-            .Select(l => new { l.ShipmentItemId, l.ShipmentId, l.ProductId }).FirstOrDefault()
-            ?? throw new DomainException("الدفعة غير موجودة.");
-        if (lot.ShipmentItemId != null)
-            return Db.Lots.AsNoTracking()
-                .Where(l => l.ShipmentItemId == lot.ShipmentItemId)
-                .Sum(l => l.InStockQtyKg - l.ReservedQtyKg - l.UnderTreatmentQtyKg);
-        return Db.Lots.AsNoTracking()
-            .Where(l => l.ShipmentId == lot.ShipmentId && l.ProductId == lot.ProductId)
-            .Sum(l => l.InStockQtyKg - l.ReservedQtyKg - l.UnderTreatmentQtyKg);
+        if (!Db.Lots.AsNoTracking().Any(l => l.Id == lotId))
+            throw new DomainException("الدفعة غير موجودة.");
+        return Math.Max(0, new RawPlanningAvailabilityEngine(Db)
+            .ForLotAllWarehouses(lotId).Sum(x => x.AvailableForPlanningKg));
     }
 
     /// <summary>
@@ -1605,6 +1724,10 @@ public class PlanningService : ServiceBase, IPlanningService
         }
         if (kg <= 0 && qtyInUnit > 0) kg = Math.Round(qtyInUnit * (uw > 0 ? uw : 0), 2);
         if (kg <= 0) throw new DomainException("الكمية المسحوبة يجب أن تكون موجبة.", "SOURCE_QTY");
+        if (item.RawRequiredQtyKg > 0 && Math.Abs(kg - (double)item.RawRequiredQtyKg) > 0.01)
+            throw new DomainException(
+                $"كمية الخام المدخلة ({kg:N3} كجم) لا تطابق الاحتياج المحسوب ({item.RawRequiredQtyKg:N3} كجم). عدّل كمية المنتج التام، ولا تدخل احتياج خام مستقلاً.",
+                "SOURCE_QTY_DERIVED");
 
         // المتاح مع استبعاد حجز هذه الخطة نفسها (الثقة المزدوجة عند التعديل).
         double avail = SourceAvailableKg(lotId)
@@ -1645,11 +1768,23 @@ public class PlanningService : ServiceBase, IPlanningService
         if (planId <= 0) return new();
         try
         {
-            return Db.ProductionPlanItems.AsNoTracking()
-                .Where(i => i.PlanId == planId && i.LotId != null)
-                .GroupBy(i => i.LotId.Value)
-                .Select(g => new { LotId = g.Key, Res = g.Sum(x => x.PlannedQtyKg - x.ProducedQtyKg) })
-                .ToDictionary(x => x.LotId, x => x.Res);
+            var itemIds = Db.ProductionPlanItems.AsNoTracking()
+                .Where(i => i.PlanId == planId).Select(i => i.Id).ToHashSet();
+            var result = Db.ProductionPlanItemAllocations.AsNoTracking()
+                .Where(a => itemIds.Contains(a.PlanItemId) && a.Status != "Released" && a.Status != "Consumed")
+                .AsEnumerable()
+                .GroupBy(a => a.LotId)
+                .ToDictionary(g => g.Key,
+                    g => g.Sum(a => Math.Max(0, a.AllocatedQtyKg - a.ConsumedQtyKg - a.ReleasedQtyKg)));
+            var allocatedItemIds = Db.ProductionPlanItemAllocations.AsNoTracking()
+                .Where(a => itemIds.Contains(a.PlanItemId)).Select(a => a.PlanItemId).ToHashSet();
+            foreach (var row in Db.ProductionPlanItems.AsNoTracking()
+                .Where(i => itemIds.Contains(i.Id) && i.LotId != null && !allocatedItemIds.Contains(i.Id)).ToList())
+            {
+                result.TryGetValue(row.LotId!.Value, out var current);
+                result[row.LotId.Value] = current + RawPlanningAvailabilityEngine.LegacyRawRemainingKg(Db, row);
+            }
+            return result;
         }
         catch { return new(); }
     }
@@ -1692,6 +1827,7 @@ public class PlanningService : ServiceBase, IPlanningService
                 PackagingTypeId = it.PackagingTypeId,
                 PlannedQtyKg = it.PlannedQtyKg,
                 PlannedCartons = it.PlannedCartons,
+                RawRequiredQtyKg = CurrentRawRequired(it),
                 SuggestedShiftId = it.SuggestedShiftId,
                 SuggestedLineId = it.SuggestedLineId,
                 PriorityNo = it.PriorityNo,
@@ -1735,6 +1871,7 @@ public class PlanningService : ServiceBase, IPlanningService
                 PackagingTypeId = it.PackagingTypeId,
                 PlannedQtyKg = it.PlannedQtyKg,
                 PlannedCartons = it.PlannedCartons,
+                RawRequiredQtyKg = CurrentRawRequired(it),
                 ScheduledDate = Db.BusinessNow.Date,
                 SuggestedShiftId = it.SuggestedShiftId,
                 SuggestedLineId = it.SuggestedLineId,
@@ -1768,7 +1905,12 @@ public class PlanningService : ServiceBase, IPlanningService
     public List<Product> GetFinishedProductsForRaw(int rawProductId)
     {
         if (!Db.Products.AsNoTracking().Any(p => p.Id == rawProductId && p.IsActive && p.ItemType == "Raw")) return new();
-        return Db.Products.AsNoTracking().Where(p => p.IsActive && p.ItemType == "Finished" && p.SourceProductId == rawProductId)
+        var explicitIds = Db.ProductRawSources.AsNoTracking()
+            .Where(x => x.RawProductId == rawProductId && x.IsActive && x.RawKgPerFinishedKg > 0)
+            .Select(x => x.FinishedProductId).Distinct().ToHashSet();
+        return Db.Products.AsNoTracking()
+            .Where(p => p.IsActive && p.ItemType == "Finished"
+                && (p.SourceProductId == rawProductId || explicitIds.Contains(p.Id)))
             .OrderBy(p => p.ProductNameAr).ThenBy(p => p.Id).ToList();
     }
 
@@ -1908,14 +2050,14 @@ public class PlanningService : ServiceBase, IPlanningService
             .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled && !x.p.IsClosed)
             .ToList()
             .GroupBy(x => x.i.LotId!.Value)
-            .ToDictionary(g => g.Key, g => g.Sum(x => x.i.PlannedQtyKg - x.i.ProducedQtyKg > 0 ? x.i.PlannedQtyKg - x.i.ProducedQtyKg : 0));
+            .ToDictionary(g => g.Key, g => g.Sum(x => RawPlanningAvailabilityEngine.LegacyRawRemainingKg(Db, x.i)));
         var standaloneLiveByLot = Db.ProductionOrderItems.AsNoTracking()
             .Where(i => i.LotId != null && i.PlanItemId == null && !i.IsClosed)
             .Join(Db.ProductionOrders.AsNoTracking(), i => i.OrderId, o => o.Id, (i, o) => new { i, o })
             .Where(x => x.o.Status != DocStatuses.Cancelled && x.o.Status != DocStatuses.Closed)
             .ToList()
             .GroupBy(x => x.i.LotId!.Value)
-            .ToDictionary(g => g.Key, g => g.Sum(x => x.i.PlannedQtyKg - x.i.ProducedQtyKg > 0 ? x.i.PlannedQtyKg - x.i.ProducedQtyKg : 0));
+            .ToDictionary(g => g.Key, g => g.Sum(x => OrderRawRemaining(x.i)));
 
         // تحسين 2: الإنجاز التراكمي من بداية الموسم (1 يناير) — عدالة تاريخية
         var histByCust = new Dictionary<int, double>();
@@ -2267,14 +2409,14 @@ public class PlanningService : ServiceBase, IPlanningService
             .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled && !x.p.IsClosed)
             .ToList()
             .GroupBy(x => x.i.LotId!.Value)
-            .ToDictionary(g => g.Key, g => g.Sum(x => x.i.PlannedQtyKg - x.i.ProducedQtyKg > 0 ? x.i.PlannedQtyKg - x.i.ProducedQtyKg : 0));
+            .ToDictionary(g => g.Key, g => g.Sum(x => RawPlanningAvailabilityEngine.LegacyRawRemainingKg(Db, x.i)));
         var standaloneLiveByLot = Db.ProductionOrderItems.AsNoTracking()
             .Where(i => i.LotId != null && i.PlanItemId == null && !i.IsClosed)
             .Join(Db.ProductionOrders.AsNoTracking(), i => i.OrderId, o => o.Id, (i, o) => new { i, o })
             .Where(x => x.o.Status != DocStatuses.Cancelled && x.o.Status != DocStatuses.Closed)
             .ToList()
             .GroupBy(x => x.i.LotId!.Value)
-            .ToDictionary(g => g.Key, g => g.Sum(x => x.i.PlannedQtyKg - x.i.ProducedQtyKg > 0 ? x.i.PlannedQtyKg - x.i.ProducedQtyKg : 0));
+            .ToDictionary(g => g.Key, g => g.Sum(x => OrderRawRemaining(x.i)));
         var lotRemaining = new Dictionary<int, double>();
         double LotAvail(int lotId)
         {

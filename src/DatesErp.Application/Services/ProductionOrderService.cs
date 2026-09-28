@@ -46,6 +46,28 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
             if (!plan.IsApproved || plan.Status != DocStatuses.Approved || plan.IsClosed)
                 throw new DomainException($"لا يمكن اعتماد أمر الإنتاج: الخطة المرجعية {plan.DocumentNumber} ليست معتمدة حالياً (حالتها: {DocStatuses.ToArabic(plan.Status)}).", "PLAN_NOT_APPROVED");
         }
+        // إعادة تطبيق قاعدة التحويل الرسمية قبل الاعتماد؛ لا يُسمح بتحويل
+        // رقم خام يدوي أو قاعدة تغيّرت بعد حفظ الخطة دون إعادة تخطيط.
+        foreach (var item in order.Items)
+        {
+            int? rawId = item.Allocations.FirstOrDefault()?.LotId is int allocatedLot
+                ? Db.Lots.AsNoTracking().Where(l => l.Id == allocatedLot).Select(l => (int?)l.ProductId).FirstOrDefault()
+                : item.LotId is int itemLot
+                    ? Db.Lots.AsNoTracking().Where(l => l.Id == itemLot).Select(l => (int?)l.ProductId).FirstOrDefault()
+                    : null;
+            if (rawId == null && order.SourcePlanId == null) continue;
+            var rawRule = RawRequirementEngine.Calculate(Db, item.ProductId, item.PlannedQtyKg, rawId, item.PackagingTypeId);
+            if (!rawRule.IsConfigured)
+                throw new DomainException($"لا يمكن اعتماد أمر الإنتاج: {rawRule.Error}", rawRule.ErrorCode);
+            if (item.PlanItemId is int planItemId)
+            {
+                var planItem = Db.ProductionPlanItems.AsNoTracking().FirstOrDefault(i => i.Id == planItemId);
+                if (planItem != null && planItem.RawRequiredQtyKg > 0
+                    && Math.Abs((double)planItem.RawRequiredQtyKg - (double)rawRule.RawRequiredQtyKg) > 0.01)
+                    throw new DomainException("تغيّرت قاعدة تحويل الخام بعد حفظ الخطة — أنشئ تعديل تخطيط رسمي قبل إصدار الأمر.", "RAW_FORMULA_CHANGED");
+            }
+        }
+
         // فحص الدفعات: حالة معتمدة ورصيد
         var lotIds = order.Items.SelectMany(i => i.Allocations.Count > 0
                 ? i.Allocations.Select(a => a.LotId)
@@ -67,11 +89,15 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
             foreach (var allocation in item.Allocations.Where(a => a.AllocatedQtyKg > 0))
             {
                 ProductIdentityGuard.EnsurePlanningLink(Db, item.ProductId, allocation.LotId, null);
-                double warehouseOnHand = Db.StockBalances.AsNoTracking()
-                    .Where(b => b.WarehouseId == allocation.WarehouseId && b.LotId == allocation.LotId)
-                    .Sum(b => b.QtyKg);
-                if (warehouseOnHand > 0.001 && allocation.AllocatedQtyKg > warehouseOnHand + 0.001)
-                    throw new DomainException($"تخصيص الدفعة {lots[allocation.LotId].LotCode} في المخزن {allocation.WarehouseId} يتجاوز الرصيد الفعلي.", "WAREHOUSE_STOCK_EXCEEDED");
+                var snapshot = new RawPlanningAvailabilityEngine(Db)
+                    .ForLot(allocation.WarehouseId, allocation.LotId, allocation.AllocatedQtyKg,
+                        order.SourcePlanId, order.SourcePlanId == null ? order.Id : null, order.ProductionDate);
+                if (!snapshot.IsSufficient)
+                    throw new DomainException(
+                        $"تخصيص الدفعة {lots[allocation.LotId].LotCode} في المخزن {allocation.WarehouseId} يتجاوز المتاح للتشغيل. "
+                        + $"الفعلي: {snapshot.ActualStockKg:N1} | حجز الخطط: {snapshot.PlannedReservationKg:N1} "
+                        + $"| الالتزامات الأخرى: {snapshot.OtherCommitmentsKg:N1} | المتاح: {snapshot.AvailableForPlanningKg:N1}.",
+                        "WAREHOUSE_STOCK_EXCEEDED");
             }
         }
     }
@@ -328,47 +354,25 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
             orderedCartons = prev.Sum(x => x.PlannedCartons);
 
             var lot = pi.LotId != null ? Db.Lots.AsNoTracking().FirstOrDefault(l => l.Id == pi.LotId) : null;
-            // §B86/L2: متبقي الدفعة الحقيقي = الرصيد − حجوزات الخطط − الأوامر المستقلة (بلا ازدواج: أمر الخطة داخل حصة خطته)
-            double lotAvail = lot != null ? Math.Max(0, lot.InStockQtyKg - lot.UnderTreatmentQtyKg) : 0;
-            if (lot != null)
-            {
-                var livePlanRows = Db.ProductionPlanItems.AsNoTracking().Include(i => i.Allocations)
-                    .Where(i => i.LotId == lot.Id || i.Allocations.Any(a => a.LotId == lot.Id))
-                    .Join(Db.ProductionPlans.AsNoTracking(), i => i.PlanId, p => p.Id, (i, p) => new { i, p })
-                    .Where(x => x.p.Status != DocStatuses.Closed && x.p.Status != DocStatuses.Cancelled && !x.p.IsClosed)
-                    .Where(x => !x.i.IsClosed).ToList();
-                double planLive = livePlanRows.Sum(x => x.i.Allocations.Count > 0
-                    ? x.i.Allocations.Where(a => a.LotId == lot.Id)
-                        .Sum(a => Math.Max(0, a.AllocatedQtyKg - a.ConsumedQtyKg - a.ReleasedQtyKg))
-                    : Math.Max(0, x.i.PlannedQtyKg - x.i.ProducedQtyKg));
-                double standaloneLive = Db.ProductionOrderItems.AsNoTracking()
-                    .Where(i => i.LotId == lot.Id && i.PlanItemId == null)
-                    .Join(Db.ProductionOrders.AsNoTracking(), i => i.OrderId, o => o.Id, (i, o) => new { i, o })
-                    .Where(x => x.o.Status != DocStatuses.Cancelled && x.o.Status != DocStatuses.Closed)
-                    .Where(x => !x.i.IsClosed)
-                    .Sum(x => x.i.PlannedQtyKg - x.i.ProducedQtyKg > 0 ? x.i.PlannedQtyKg - x.i.ProducedQtyKg : 0);
-                // §المعالجة والتعقيم (الموضع 11): بوابة أمر الإنتاج تستبعد ما تحت المعالجة
-                lotAvail = Math.Max(0, lot.InStockQtyKg - lot.UnderTreatmentQtyKg - planLive - standaloneLive);
-            }
             var allocations = pi.Allocations.Where(a => a.AllocatedQtyKg > 0).ToList();
+            var rawLedger = new RawPlanningAvailabilityEngine(Db);
+            var allocationSnapshots = allocations
+                .Select(a => rawLedger.ForLot(a.WarehouseId, a.LotId, 0, planId))
+                .ToList();
+            // إتاحة الدفعة خارج حجز هذه الخطة: أمر الخطة لا يضاف مرة ثانية.
+            double lotAvail = allocationSnapshots.Count > 0
+                ? allocationSnapshots.Sum(x => x.AvailableForPlanningKg)
+                : lot != null ? rawLedger.ForLotAllWarehouses(lot.Id, 0, planId).Sum(x => x.AvailableForPlanningKg) : 0;
             double selectedRawKg = allocations.Sum(a => a.AllocatedQtyKg);
-            double onHandKg = 0;
-            double reservedKg = 0;
-            double underTreatmentKg = 0;
-            var treatedLotIds = new HashSet<int>();
-            foreach (var allocation in allocations)
-            {
-                onHandKg += Db.StockBalances.AsNoTracking()
-                    .Where(b => b.WarehouseId == allocation.WarehouseId && b.LotId == allocation.LotId)
-                    .Sum(b => b.QtyKg);
-                reservedKg += Math.Max(0, allocation.AllocatedQtyKg - allocation.ConsumedQtyKg - allocation.ReleasedQtyKg);
-                if (treatedLotIds.Add(allocation.LotId))
-                    underTreatmentKg += Db.Lots.AsNoTracking().Where(l => l.Id == allocation.LotId)
-                        .Select(l => l.UnderTreatmentQtyKg).FirstOrDefault();
-            }
+            double reservedKg = allocations.Sum(a => Math.Max(0, a.AllocatedQtyKg - a.ConsumedQtyKg - a.ReleasedQtyKg));
             var warehouseSummary = allocations.Count == 0 ? "غير محدد" : string.Join("، ", allocations
                 .GroupBy(a => a.WarehouseId)
                 .Select(g => $"{(warehouseNames.TryGetValue(g.Key, out var wn) ? wn : $"مخزن {g.Key}")}: {g.Sum(a => a.AllocatedQtyKg):N1} كجم"));
+            double rawNeed = pi.RawRequiredQtyKg > 0 ? (double)pi.RawRequiredQtyKg : selectedRawKg;
+            double actualStock = allocationSnapshots.Sum(x => x.ActualStockKg);
+            double plannedReservation = allocationSnapshots.Sum(x => x.PlannedReservationKg);
+            double otherCommitments = allocationSnapshots.Sum(x => x.OtherCommitmentsKg);
+            double availableBeforeThisPlan = allocationSnapshots.Sum(x => x.AvailableForPlanningKg);
 
             result.Add(new OrderableItemDto
             {
@@ -380,11 +384,17 @@ public partial class ProductionOrderService : ServiceBase, IProductionOrderServi
                     AllocatedQtyKg = a.AllocatedQtyKg
                 }).ToList(),
                 WarehouseSummary = warehouseSummary,
-                SelectedRawKg = selectedRawKg > 0 ? selectedRawKg : pi.SourceQtyKg,
-                OnHandKg = allocations.Count > 0 ? onHandKg : lot?.InStockQtyKg ?? 0,
-                ReservedKg = allocations.Count > 0 ? reservedKg : lot?.ReservedQtyKg ?? 0,
+                SelectedRawKg = rawNeed,
+                ActualStockKg = actualStock,
+                PlannedReservationKg = plannedReservation,
+                OtherCommitmentsKg = otherCommitments,
+                RawNeedKg = rawNeed,
+                RemainingAfterPlanningKg = Math.Max(0, availableBeforeThisPlan - rawNeed),
+                RawPlanningStatus = rawNeed <= availableBeforeThisPlan + 0.001 ? "كافٍ" : "غير كافٍ",
+                OnHandKg = allocationSnapshots.Count > 0 ? actualStock : lotAvail,
+                ReservedKg = allocations.Count > 0 ? reservedKg : 0,
                 AvailableKg = allocations.Count > 0
-                    ? Math.Max(0, onHandKg - reservedKg - underTreatmentKg)
+                    ? Math.Max(0, allocationSnapshots.Sum(x => x.AvailableForPlanningKg) - selectedRawKg)
                     : lotAvail,
                 PlanNumber = plan.DocumentNumber,
                 PlanTitle = plan.PlanTitle,

@@ -30,6 +30,7 @@ public class DatesErpDbContext : DbContext
     public DbSet<ItemGroup> ItemGroups => Set<ItemGroup>();
     public DbSet<ItemCategory> ItemCategories => Set<ItemCategory>();
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<ProductRawSource> ProductRawSources => Set<ProductRawSource>();
     public DbSet<PackagingType> PackagingTypes => Set<PackagingType>();
     public DbSet<AuxiliaryMaterial> AuxiliaryMaterials => Set<AuxiliaryMaterial>();
     public DbSet<ConsumptionFormula> ConsumptionFormulas => Set<ConsumptionFormula>();
@@ -215,6 +216,10 @@ public class DatesErpDbContext : DbContext
         // ── التخطيط ──
         b.Entity<ProductionPlan>().HasMany(p => p.Items).WithOne().HasForeignKey(i => i.PlanId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProductionPlan>().HasIndex(p => p.DocumentNumber).IsUnique();
+        b.Entity<ProductRawSource>().Property(x => x.RawKgPerFinishedKg).HasPrecision(18, 6);
+        b.Entity<ProductRawSource>().HasIndex(x => new { x.FinishedProductId, x.RawProductId, x.PackagingTypeId }).IsUnique();
+        b.Entity<ProductRawSource>().HasIndex(x => new { x.FinishedProductId, x.IsActive });
+        b.Entity<ProductionPlanItem>().Property(x => x.RawRequiredQtyKg).HasPrecision(18, 6);
         b.Entity<ProductionPlanItem>().HasIndex(i => new { i.ScheduledDate, i.SuggestedShiftId, i.SuggestedLineId });
         b.Entity<ProductionPlan>().HasMany(p => p.CustomerScopes).WithOne().HasForeignKey(x => x.PlanId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProductionPlanCustomerScope>().HasIndex(x => new { x.PlanId, x.CustomerId }).IsUnique();
