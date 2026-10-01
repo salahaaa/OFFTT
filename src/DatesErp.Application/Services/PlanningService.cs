@@ -615,14 +615,16 @@ public class PlanningService : ServiceBase, IPlanningService
                 return $"الدفعة {lot.LotCode} رصيدها صفر — لا يمكن اعتماد خطة إنتاج عليها.";
             if (lot.Status == DocStatuses.Closed)
                 return $"الدفعة {lot.LotCode} مقفلة — لا يمكن اعتماد خطة عليها.";
-            // المتاح بعد استبعاد حجوزات الخطط/الأوامر الأخرى (بدون هذه الخطة)
-            double available = LotAvailableExcluding(lot.Id, plan.Id, plan.Items
+            // المتاح بعد استبعاد حجوزات الخطط/الأوامر الأخرى (بدون هذه الخطة).
+            // لا نستخدم d.ScheduledDate هنا؛ d هو ملخص طلب لا يحتوي تاريخ البند.
+            var availabilityDate = plan.Items
                 .Where(i => i.LotId == lot.Id && !i.IsClosed)
                 .Select(i => i.ScheduledDate)
-                .Where(d => d != null)
-                .Select(d => d.Value)
-                .DefaultIfEmpty(d.ScheduledDate ?? Db.BusinessNow)
-                .Max());
+                .Where(date => date != null)
+                .Select(date => date.Value)
+                .DefaultIfEmpty(plan.StartDate ?? Db.BusinessNow)
+                .Max();
+            double available = LotAvailableExcluding(lot.Id, plan.Id, availabilityDate);
             // المجموع المطلوب لهذه الدفعة في هذه الخطة
             double need = d.Kg;
             // نسمح بفرق بسيط بسبب التقريب
@@ -2084,6 +2086,8 @@ public class PlanningService : ServiceBase, IPlanningService
         var rawNames = Db.Products.AsNoTracking().AsEnumerable().ToDictionary(p => p.Id, p => p.ProductNameAr);
         var custNames = Db.Customers.AsNoTracking().AsEnumerable().ToDictionary(c => c.Id, c => c.CustomerName);
         var custPrio = Db.Customers.AsNoTracking().AsEnumerable().ToDictionary(c => c.Id, c => c.PriorityNo);
+        var warehouseNames = Db.Warehouses.AsNoTracking().AsEnumerable()
+            .ToDictionary(w => w.Id, w => w.WarehouseNameAr);
         var today = DateTime.Today;
 
         var allowedCache = new Dictionary<int, List<Product>>();
@@ -2139,6 +2143,9 @@ public class PlanningService : ServiceBase, IPlanningService
             var seed = new LotSeed
             {
                 Id = l.Id, LotCode = l.LotCode, CustomerId = cid, ShipmentId = l.ShipmentId,
+                WarehouseId = s?.ReceivingWarehouseId,
+                WarehouseName = s?.ReceivingWarehouseId is int wid && warehouseNames.TryGetValue(wid, out var wn)
+                    ? wn : null,
                 RawProductId = l.ProductId, Remaining = remaining,
                 ArrivalDate = s?.ArrivalDate, ContainerNumber = s?.ContainerNumber, ShipmentNo = s?.DocumentNumber
             };
@@ -2319,6 +2326,7 @@ public class PlanningService : ServiceBase, IPlanningService
     private class LotSeed
     {
         public int Id; public string LotCode; public int? CustomerId; public int? ShipmentId;
+        public int? WarehouseId; public string WarehouseName;
         public int RawProductId; public double Remaining; public DateTime? ArrivalDate;
         public string ContainerNumber; public string ShipmentNo; public int DaysInStock;
         /// <summary>§B87: عدّاد الدوّار بين الأصناف المسموحة لهذه الدفعة.</summary>

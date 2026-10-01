@@ -49,7 +49,7 @@ public partial class ProductionActualCloseView : UserControl
     public static void OpenForOrder(int orderId, Window source)
     {
         PendingOrderId = orderId;
-        var main = Application.Current.MainWindow as MainWindow;
+        var main = System.Windows.Application.Current.MainWindow as MainWindow;
         if (source != null && source != main) source.Close();
         main?.OpenScreen("actualclose");
     }
