@@ -1,0 +1,19 @@
+ D DateERP_1.50.37_FULL_SOURCE.zip
+ D DateERP_1.50.41_Update_Mini.zip
+ D DateERP_1.50.42_Update_Mini.zip
+ D DateERP_Source_1.50.67.zip
+?? .gitignore
+?? CI/
+?? DateERP.sln
+?? Directory.Build.props
+?? Documentation/
+?? Installer/
+?? LICENSE
+?? README.md
+?? UpdateProject.vbs
+?? audit/
+?? backups/
+?? docs/
+?? src/
+?? tests/
+?? tools/
