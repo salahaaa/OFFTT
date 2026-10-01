@@ -8,7 +8,7 @@
     <!-- §التخطيط الأفقي — شاشة واحدة: لا مستطيل «الخطط السابقة» أسفل الشاشة.
          البحث عن الخطط المحفوظة صار في نافذة منبثقة (F9 / زر الشريط)، وبالنقر المزدوج
          تُنزل الخطة بجميع بنودها إلى هذه الواجهة. -->
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" CanContentScroll="False">
         <Grid Margin="8">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -175,7 +175,7 @@
                     <Button x:Name="ApproveActionBtn" Content="✅ اعتماد الخطة" Style="{StaticResource ErpApproveButton}" Click="ApproveAction_Click" Margin="0,0,6,0"/>
                     <Button x:Name="SaveActionBtn" Content="💾 حفظ الخطة" Style="{StaticResource ErpPrimaryButton}" Click="Save_Click" Visibility="Collapsed" Margin="0,0,6,0"/>
                     <Button x:Name="CustLotsBtn" Content="👤 أصناف العميل (F4)" Style="{StaticResource ErpButton}" Foreground="#14532D" Click="PickLot_Click" Margin="0,0,6,0"/>
-                    <Button Content="👥 أصناف العملاء (F6)" Style="{StaticResource ErpButton}" Foreground="#1F2937" Click="MultiCustomers_Click" Margin="0,0,6,0"/>
+                    <Button x:Name="MultiCustomersBtn" Content="👥 أصناف العملاء (F6)" Style="{StaticResource ErpButton}" Foreground="#1F2937" Click="MultiCustomers_Click" Margin="0,0,6,0"/>
                     <Button Content="📥 من استلام مباشر" Style="{StaticResource ErpButton}" Foreground="#B45309" Click="DirectReceipt_Click" Margin="0,0,6,0"/>
                     <Button Content="⚖ اقتراح توزيع عادل" Style="{StaticResource ErpButton}" Foreground="#7C3AED" Click="Fair_Click" Margin="0,0,6,0"/>
                     <Button Content="🔍 فحص الخطة" Style="{StaticResource ErpButton}" Foreground="#0A246A" Click="CheckPlan_Click" Margin="0,0,6,0"
@@ -242,7 +242,8 @@
                         <Run FontWeight="Bold">طريقة العمل:</Run>
                         <Run>1) اختر دفعة من الجدول — جميع الدفعات معروضة للاختيار اليدوي مع الرصيد الفعلي والمحجوز والمتاح. 2) عدّل الكراتين في نفس الصف — الوزن والطاقة تُحسب تلقائياً. 3) صف جديد يظهر تلقائياً تحته. عند اختيار دفعة حديثة بينما توجد أقدم، يظهر تنبيه: «العميل فلان له دفعة بتاريخ أسبق، هل تريد الاستمرار؟»</Run>
                     </TextBlock>
-                    <DataGrid x:Name="RowsGrid" MinHeight="280" RowHeight="38" FontSize="13" ColumnHeaderHeight="38" AutoGenerateColumns="False" CanUserAddRows="False"
+                    <DataGrid x:Name="RowsGrid" MinHeight="280" MinWidth="2200" RowHeight="38" FontSize="13" ColumnHeaderHeight="38" AutoGenerateColumns="False" CanUserAddRows="False"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
                               AlternatingRowBackground="#FBFAF5" Background="White" RowBackground="White"
                               GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#8CA0AC"
                               HeadersVisibility="Column" BorderBrush="#7C7660"

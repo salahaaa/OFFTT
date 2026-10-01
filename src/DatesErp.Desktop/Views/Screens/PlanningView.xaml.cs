@@ -100,6 +100,9 @@ public partial class PlanningView : UserControl
             Load();
             // §إصلاح: قائمة الخطط المحفوظة تُحمّل فور فتح الشاشة لتظهر مباشرة في شبكة السجل
             RefreshPlansList();
+            // نطاق عدة عملاء هو الوضع الافتراضي: لا نفتح نافذة عميل ولا نترك
+            // زري أصناف العميل/أصناف العملاء قابلين للنقر في هذا الوضع.
+            UpdateScopeActionButtons();
             // §1.50.67 FIX: إلغاء استعادة مسودة تلقائية — يسبب خطط وهمية
             // §1.50.69 FIX: حذف ملفات الحفظ التلقائي القديمة التي تسبب خطط وهمية + الدفعة برقم السند
             try
@@ -359,9 +362,31 @@ public partial class PlanningView : UserControl
             ScopeChip.Text = single ? "النطاق: 👤 عميل محدد" : distribution ? "النطاق: ⚖ توزيع مقترح قابل للتعديل" : "النطاق: 👥 عدة عملاء (مجمع)";
         if (ScopeCustomersBtn != null)
             ScopeCustomersBtn.IsEnabled = !single && !_locked && !_contextLocked;
+        UpdateScopeActionButtons();
         UpdateScopeCustomersSummary();
         // في كل مرة يختار المستخدم «خطة لعميل محدد» تُعاد قراءة قائمة العملاء لضمان ألا تكون فارغة
         if (single) RefreshCustomerList();
+    }
+
+    /// <summary>
+    /// أزرار إدراج أصناف العملاء لا تعمل في نطاق «عدة عملاء»؛ هذا النطاق يبدأ
+    /// بدون عميل محدد، وتتم إضافة البنود يدوياً/من صفوف الجدول مع اختيار العميل
+    /// داخل الصف. بذلك لا يعيد الزر فتح نافذة تجبر المستخدم على تعيين عميل أولاً.
+    /// </summary>
+    private void UpdateScopeActionButtons()
+    {
+        if (CustLotsBtn == null || MultiCustomersBtn == null) return;
+        bool single = SingleRadio?.IsChecked == true;
+        bool multiScope = !single && (MultiRadio?.IsChecked == true || DistributionRadio?.IsChecked == true);
+        bool editable = !_locked && !_contextLocked;
+        CustLotsBtn.IsEnabled = editable && !multiScope;
+        MultiCustomersBtn.IsEnabled = editable && !multiScope;
+        CustLotsBtn.ToolTip = multiScope
+            ? "غير متاح في نطاق عدة عملاء — أضف البنود من الجدول وحدد العميل داخل كل صف."
+            : "فتح أصناف ودفعات العميل المحدد.";
+        MultiCustomersBtn.ToolTip = multiScope
+            ? "غير متاح في نطاق عدة عملاء — لا يلزم اختيار عميل قبل بدء التخطيط."
+            : "يتاح فقط عند التخطيط بنطاق غير متعدد العملاء.";
     }
 
     /// <summary>نوع الخطة — يومية = تاريخ واحد فقط، الباقي فترة من-إلى. أزرار المدد السريعة أزيلت (1.50.57) بناءً على طلب المستخدم: الاكتفاء بتحديد التاريخ.</summary>
@@ -1370,6 +1395,7 @@ public partial class PlanningView : UserControl
             MultiRadio.IsChecked = true;
             UpdateScopeCustomersSummary();
             SetLocked(false);
+            UpdateScopeActionButtons();
             SetStatusUI("Draft");
             TypeBox_Changed(null, null); // إعادة تطبيق قاعدة «اليومية = تاريخ واحد»
             UpdateCapacityBar();
@@ -1505,6 +1531,7 @@ public partial class PlanningView : UserControl
         if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !locked;
         if (ApproveActionBtn != null) ApproveActionBtn.IsEnabled = !locked;
         if (SubmitBtn != null) SubmitBtn.IsEnabled = !locked;
+        UpdateScopeActionButtons();
     }
 
     // ══════════ التنقل والسجل ══════════
