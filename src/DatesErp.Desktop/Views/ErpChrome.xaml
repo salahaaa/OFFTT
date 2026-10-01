@@ -1,0 +1,25 @@
+<UserControl x:Class="DatesErp.Desktop.Views.ErpChrome"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             FlowDirection="RightToLeft">
+    <!--
+        الإطار الداخلي لم يعد يعيد رسم شريط العنوان أو شريط المعلومات أو التذييل.
+        هذه العناصر أصبحت موحّدة مرة واحدة في MainWindow، بينما يبقى هنا فقط
+        شريط أدوات النموذج ومحتواه.
+    -->
+    <Border BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="1"
+            Background="{DynamicResource ThemeBackgroundBrush}">
+        <DockPanel>
+            <Border DockPanel.Dock="Top"
+                    Background="{DynamicResource ThemeBackgroundBrush}"
+                    BorderBrush="{DynamicResource ThemeBorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="6,4">
+                <ContentPresenter x:Name="ToolbarArea"/>
+            </Border>
+            <Border Background="{DynamicResource ThemeBackgroundBrush}" Padding="8">
+                <ContentPresenter x:Name="BodyArea"/>
+            </Border>
+        </DockPanel>
+    </Border>
+</UserControl>
