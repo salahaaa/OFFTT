@@ -28,6 +28,9 @@ public partial class PlanningView : UserControl
     private List<Views.PlanSearchWindow.PlanSearchItem> _plans_all = new();
     private readonly ObservableCollection<PlanRowUi> _rows = new();
     private List<(int? id, string name)> _planCustomers = new();
+    // نطاق العملاء يُختار من نافذة منبثقة؛ القائمة الفارغة تعني «كل العملاء النشطين» في خطة عدة عملاء.
+    private readonly List<int> _scopeCustomerIds = new();
+    private List<Customer> _allCustomers = new();
     private List<int> _planIds = new();
     // §إصلاح: معرّفات الورديات/الخطوط الفعلية المعروضة — بدل افتراض SelectedIndex+1
     private List<int> _shiftIds = new();
@@ -200,8 +203,9 @@ public partial class PlanningView : UserControl
             using var scope = AppContainer.NewScope();
             var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
             var customers = db.Customers.AsNoTracking().Where(c => c.IsActive).OrderBy(c => c.CustomerName).ToList();
+            _allCustomers = customers;
             SingleCustBox.ItemsSource = customers;
-            ScopeCustomersList.ItemsSource = customers;
+            UpdateScopeCustomersSummary();
             if (customers.Count == 0)
                 AppContainer.Get<DialogService>().Error("لا يوجد عملاء نشطون في البيانات الأساسية — أضف العملاء أولاً من شاشة بيانات العملاء.");
             else if (SingleCustBox.SelectedIndex < 0)
@@ -213,6 +217,62 @@ public partial class PlanningView : UserControl
         }
     }
 
+    private void UpdateScopeCustomersSummary()
+    {
+        if (ScopeCustomersSummary == null) return;
+        bool single = SingleRadio?.IsChecked == true;
+        if (single)
+        {
+            var customer = SingleCustBox?.SelectedItem as Customer;
+            ScopeCustomersSummary.Text = customer == null
+                ? "اختر العميل المحدد من الحقل أعلاه"
+                : $"العميل المحدد: {customer.CustomerName}";
+            return;
+        }
+
+        if (_allCustomers.Count == 0)
+        {
+            ScopeCustomersSummary.Text = "لا يوجد عملاء نشطون";
+            return;
+        }
+
+        var selected = _scopeCustomerIds.Distinct().Where(id => _allCustomers.Any(c => c.Id == id)).ToList();
+        if (selected.Count == 0 || selected.Count == _allCustomers.Count)
+        {
+            ScopeCustomersSummary.Text = $"جميع العملاء النشطين ({_allCustomers.Count}) — اختيار العميل داخل نافذة البنود";
+            return;
+        }
+
+        var names = _allCustomers.Where(c => selected.Contains(c.Id)).Select(c => c.CustomerName).ToList();
+        ScopeCustomersSummary.Text = names.Count <= 3
+            ? $"عملاء النطاق: {string.Join("، ", names)}"
+            : $"عملاء النطاق: {string.Join("، ", names.Take(3))} … ({names.Count} عميل)";
+    }
+
+    /// <summary>اختيار عملاء نطاق الخطة من نافذة مستقلة بدلاً من قائمة داخل شاشة التخطيط.</summary>
+    private void ChooseScopeCustomers_Click(object sender, RoutedEventArgs e)
+    {
+        if (_locked || _contextLocked) return;
+        try
+        {
+            RefreshCustomerList();
+            if (_allCustomers.Count == 0) return;
+            // عند فتح النافذة لأول مرة يكون الافتراضي كل العملاء النشطين.
+            var initial = _scopeCustomerIds.Count == 0
+                ? _allCustomers.Select(c => c.Id).ToList()
+                : _scopeCustomerIds.ToList();
+            var picker = new Views.CustomerScopePickerWindow(_allCustomers, initial)
+            {
+                Owner = Window.GetWindow(this)
+            };
+            if (picker.ShowDialog() != true) return;
+            _scopeCustomerIds.Clear();
+            _scopeCustomerIds.AddRange(picker.SelectedCustomers.Select(c => c.Id).Distinct());
+            UpdateScopeCustomersSummary();
+        }
+        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Planning.ScopeCustomers"); }
+    }
+
     private void StartPlanning_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -222,8 +282,8 @@ public partial class PlanningView : UserControl
                 AppContainer.Get<DialogService>().Info("سياق الخطة مقفول بالفعل؛ عدّل بنود الجلسة الحالية ثم احفظها.");
                 return;
             }
-            var customerIds = ScopeCustomersList.SelectedItems.Cast<object>()
-                .OfType<Customer>().Select(x => x.Id).Distinct().ToList();
+            // خطة «عدة عملاء/توزيع» بلا اختيار صريح = جميع العملاء النشطين؛ لا نوقف بدء التخطيط برسالة «حدد عميلاً».
+            var customerIds = _scopeCustomerIds.Distinct().ToList();
             bool single = SingleRadio.IsChecked == true;
             int? singleCustomerId = single ? (SingleCustBox.SelectedItem as Customer)?.Id : null;
             if (single && singleCustomerId is int one) customerIds = new List<int> { one };
@@ -297,6 +357,9 @@ public partial class PlanningView : UserControl
             CustomerColumn.Visibility = single ? Visibility.Collapsed : Visibility.Visible;
         if (ScopeChip != null)
             ScopeChip.Text = single ? "النطاق: 👤 عميل محدد" : distribution ? "النطاق: ⚖ توزيع مقترح قابل للتعديل" : "النطاق: 👥 عدة عملاء (مجمع)";
+        if (ScopeCustomersBtn != null)
+            ScopeCustomersBtn.IsEnabled = !single && !_locked && !_contextLocked;
+        UpdateScopeCustomersSummary();
         // في كل مرة يختار المستخدم «خطة لعميل محدد» تُعاد قراءة قائمة العملاء لضمان ألا تكون فارغة
         if (single) RefreshCustomerList();
     }
@@ -1290,7 +1353,7 @@ public partial class PlanningView : UserControl
             _currentPlanId = 0;
             _contextLocked = false;
             SessionPanel.Visibility = Visibility.Collapsed;
-            ScopeCustomersList.UnselectAll();
+            _scopeCustomerIds.Clear();
             ShiftBox.UnselectAll();
             _rows.Clear();
             _planCustomers.Clear();
@@ -1305,6 +1368,7 @@ public partial class PlanningView : UserControl
             NotesBox.Text = "";
             StartBox.SelectedDate = EndBox.SelectedDate = null;
             MultiRadio.IsChecked = true;
+            UpdateScopeCustomersSummary();
             SetLocked(false);
             SetStatusUI("Draft");
             TypeBox_Changed(null, null); // إعادة تطبيق قاعدة «اليومية = تاريخ واحد»
@@ -1420,7 +1484,7 @@ public partial class PlanningView : UserControl
         SingleRadio.IsEnabled = !locked && !_contextLocked;
         DistributionRadio.IsEnabled = !locked && !_contextLocked;
         SingleCustBox.IsEnabled = !locked && !_contextLocked;
-        ScopeCustomersList.IsEnabled = !locked && !_contextLocked;
+        ScopeCustomersBtn.IsEnabled = !locked && !_contextLocked && SingleRadio.IsChecked != true;
         StartPlanningBtn.IsEnabled = !locked && !_contextLocked;
         if (SessionPanel != null) FinishSessionBtn.IsEnabled = !locked && _contextLocked;
         RowsGrid.IsReadOnly = locked;
@@ -1481,10 +1545,10 @@ public partial class PlanningView : UserControl
                 .Select(x => int.TryParse(x, out var value) ? value : 0).Where(x => x > 0).ToHashSet();
             if (savedShiftIds.Count == 0 && plan.ShiftId is int legacyShift) savedShiftIds.Add(legacyShift);
             for (int si = 0; si < _shiftIds.Count; si++) if (savedShiftIds.Contains(_shiftIds[si])) ShiftBox.SelectedItems.Add(ShiftBox.Items[si]);
-            ScopeCustomersList.UnselectAll();
-            var savedCustomers = plan.CustomerScopes.Where(x => x.IsEnabled).Select(x => x.CustomerId).ToHashSet();
-            for (int ci = 0; ci < ScopeCustomersList.Items.Count; ci++)
-                if (ScopeCustomersList.Items[ci] is Customer c && savedCustomers.Contains(c.Id)) ScopeCustomersList.SelectedItems.Add(c);
+            var savedCustomers = plan.CustomerScopes.Where(x => x.IsEnabled).Select(x => x.CustomerId).Distinct().ToList();
+            _scopeCustomerIds.Clear();
+            _scopeCustomerIds.AddRange(savedCustomers);
+            UpdateScopeCustomersSummary();
             // §B75: استعادة نطاق التخطيط والعميل المحدد من الرأس
             // §B106.2 — الحارس _programmaticScope كان يُفعَّل لاحقاً في هذه الدالة فقط،
             // بينما إسنادُ SingleCustBox.SelectedIndex هنا يُطلق SelectionChanged فوراً،
@@ -1500,6 +1564,7 @@ public partial class PlanningView : UserControl
                         if ((SingleCustBox.Items[ci] as DatesErp.Core.Domain.Entities.Customer)?.Id == plan.SingleCustomerId) { SingleCustBox.SelectedIndex = ci; break; }
             }
             finally { _programmaticScope = false; }
+            UpdateScopeCustomersSummary();
             FillPlanMeta();
 
             _rows.Clear();

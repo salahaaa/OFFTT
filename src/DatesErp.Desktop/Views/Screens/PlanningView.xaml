@@ -152,8 +152,14 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="عملاء نطاق الخطة *:" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Top" Margin="0,4,8,0"/>
-                        <ListBox x:Name="ScopeCustomersList" Grid.Column="1" Height="62" SelectionMode="Multiple" DisplayMemberPath="CustomerName" ToolTip="حدد العملاء المسموحين داخل هذه الخطة. التوزيع اقتراح قابل للتعديل وليس قراراً نهائياً."/>
+                        <TextBlock Grid.Column="0" Text="عملاء نطاق الخطة:" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                        <StackPanel Grid.Column="1">
+                            <DockPanel>
+                                <TextBlock x:Name="ScopeCustomersSummary" Text="جميع العملاء النشطين (افتراضي لخطة عدة عملاء)" Foreground="#14532D" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                <Button x:Name="ScopeCustomersBtn" Content="👥 اختيار عميل/عملاء..." Style="{StaticResource ErpButton}" Click="ChooseScopeCustomers_Click" Margin="10,0,0,0"/>
+                            </DockPanel>
+                            <TextBlock Text="لخطة عدة عملاء: لا يلزم اختيار عميل هنا؛ النطاق الافتراضي جميع العملاء النشطين. يمكنك تحديد عميل أو عدة عملاء من النافذة المنبثقة." FontSize="10.5" Foreground="#6B7280" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
                         <Button x:Name="StartPlanningBtn" Grid.Column="2" Content="▶ بدء التخطيط / قفل السياق" Style="{StaticResource ErpPrimaryButton}" Click="StartPlanning_Click" Margin="12,0,0,0" ToolTip="يحفظ نطاق الخطة ويولد جلسات التاريخ والوردية داخل نفس الشاشة"/>
                     </Grid>
                 </StackPanel>

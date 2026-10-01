@@ -129,7 +129,13 @@ public class PlanningService : ServiceBase, IPlanningService
             if (singleCustomerId is not int one || one <= 0) return OpResult.Fail("حدد العميل الوحيد للخطة.");
             customers = new List<int> { one };
         }
-        if (customers.Count == 0) return OpResult.Fail("حدد عميلاً واحداً على الأقل داخل نطاق الخطة.");
+        else if (customers.Count == 0)
+        {
+            // «عدة عملاء» لا تعني إجبار المستخدم على انتقاء عميل من قائمة داخل الشاشة.
+            // النطاق الافتراضي هو كل العملاء النشطين، ويمكن تضييقه اختيارياً من النافذة المنبثقة.
+            customers = Db.Customers.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Id).Select(x => x.Id).ToList();
+        }
+        if (customers.Count == 0) return OpResult.Fail("لا يوجد عميل نشط داخل نطاق الخطة — أضف العملاء أولاً من البيانات الأساسية.");
         var knownCustomers = Db.Customers.AsNoTracking().Where(x => customers.Contains(x.Id) && x.IsActive).Select(x => x.Id).ToList();
         if (knownCustomers.Count != customers.Count) return OpResult.Fail("يوجد عميل غير معرف أو غير نشط ضمن نطاق الخطة.");
 
