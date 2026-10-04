@@ -172,6 +172,8 @@
                     </StackPanel>
                     <Button x:Name="ApproveActionBtn" Content="✅ اعتماد الخطة" Style="{StaticResource ErpApproveButton}" Click="ApproveAction_Click" Margin="0,0,6,0"/>
                     <Button x:Name="SaveActionBtn" Content="💾 حفظ الخطة" Style="{StaticResource ErpPrimaryButton}" Click="Save_Click" Visibility="Collapsed" Margin="0,0,6,0"/>
+                    <Button x:Name="DeleteActionBtn" Content="🗑️ حذف الخطة" Style="{StaticResource ErpDangerButton}" Click="DeleteAction_Click" Visibility="Collapsed" Margin="0,0,6,0"
+                            ToolTip="حذف المسودة المحددة فقط؛ الخطة المعتمدة/المقفلة لا تُحذف"/>
                     <Button x:Name="CustLotsBtn" Content="👤 أصناف العميل (F4)" Style="{StaticResource ErpButton}" Foreground="#14532D" Click="PickLot_Click" Margin="0,0,6,0"/>
                     <Button x:Name="MultiCustomersBtn" Content="👥 أصناف العملاء (F6)" Style="{StaticResource ErpButton}" Foreground="#1F2937" Click="MultiCustomers_Click" Margin="0,0,6,0"/>
                     <Button Content="📥 من استلام مباشر" Style="{StaticResource ErpButton}" Foreground="#B45309" Click="DirectReceipt_Click" Margin="0,0,6,0"/>

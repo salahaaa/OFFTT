@@ -62,10 +62,8 @@ public partial class PlanningView : UserControl
     private bool _contextLocked;
     private bool _programmaticScope; // حارس: تغييرات النطاق البرمجية لا تفتح النوافذ تلقائياً
     private Views.ErpToolbar _toolbar;
-    // §1.50.60 — تحسينات عامة 7-ب/7-ج/7-هـ: حفظ تلقائي + تكرار صف + تنقل لوحة مفاتيح
-    private System.Windows.Threading.DispatcherTimer _autoSaveTimer;
-    private DateTime _lastAutoSave = DateTime.MinValue;
-    private string AutoSavePath => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"PlanningDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId : 0)}.json");
+    // §1.50.60 — تكرار الصف + تنقل لوحة المفاتيح فقط.
+    // لا توجد مسودات محلية ولا حفظ تلقائي للخطط؛ الحفظ يتم فقط عند ضغط المستخدم على «حفظ الخطة».
 
     // §B58: قوائم الخلاياEditable (وردية/خط/عبوة) — تُقرأ من قاعدة البيانات في Load
     public List<OptUi> ShiftOptions { get; } = new();
@@ -88,10 +86,7 @@ public partial class PlanningView : UserControl
             if (e.OldItems != null)
                 foreach (PlanRowUi row in e.OldItems) { row.PropertyChanged -= RowUi_Changed; row.QuantityGuard = null; }
         };
-        // §1.50.67 FIX: إلغاء الحفظ التلقائي — كان يحفظ خطط وهمية (بناءً على طلب المستخدم)
-        // _autoSaveTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
-        // _autoSaveTimer.Tick += (_, _) => AutoSaveDraft();
-        _autoSaveTimer = null;
+        // §1.50.67/طلب المستخدم: لا حفظ تلقائي ولا استعادة مسودات محلية.
         // §1.50.60 7-هـ: تنقل لوحة مفاتيح مثل Excel
         RowsGrid.PreviewKeyDown += RowsGrid_PreviewKeyDown;
         Loaded += (_, _) =>
@@ -103,23 +98,8 @@ public partial class PlanningView : UserControl
             // نطاق عدة عملاء هو الوضع الافتراضي: لا نفتح نافذة عميل تلقائياً؛
             // يبقى زر F6 متاحاً بالطريقة السابقة لاختيار بنود العملاء يدوياً.
             UpdateScopeActionButtons();
-            // §1.50.67 FIX: إلغاء استعادة مسودة تلقائية — يسبب خطط وهمية
-            // §1.50.69 FIX: حذف ملفات الحفظ التلقائي القديمة التي تسبب خطط وهمية + الدفعة برقم السند
-            try
-            {
-                if (System.IO.File.Exists(AutoSavePath)) System.IO.File.Delete(AutoSavePath);
-                var draftsDir = System.IO.Path.GetDirectoryName(AutoSavePath);
-                if (System.IO.Directory.Exists(draftsDir))
-                {
-                    foreach (var f in System.IO.Directory.GetFiles(draftsDir, "PlanningDraft_*.json"))
-                    {
-                        try { System.IO.File.Delete(f); } catch { }
-                    }
-                }
-            }
-            catch { }
-            // TryRestoreAutoSave();
-            // _autoSaveTimer?.Start();
+            // إزالة أي مسودات قديمة أنشأتها نسخ سابقة؛ لا تُقرأ ولا تُستعاد.
+            RemoveLegacyPlanningDrafts();
             // §فتح خطة محددة طُلبت من شاشة أخرى (لوحة التحكم) ثم تصفير الطلب
             if (MainWindow.PendingPlanIdToOpen is int pid)
             {
@@ -127,7 +107,7 @@ public partial class PlanningView : UserControl
                 OpenPlan(pid);
             }
         };
-        Unloaded += (_, _) => { /* §1.50.69 FIX: لا حفظ تلقائي نهائياً + حذف المسودات */ try { if (System.IO.File.Exists(AutoSavePath)) System.IO.File.Delete(AutoSavePath); } catch { } };
+        Unloaded += (_, _) => RemoveLegacyPlanningDrafts();
     }
 
     public void AttachChrome(Views.ErpChrome chrome)
@@ -1350,10 +1330,13 @@ public partial class PlanningView : UserControl
         RefreshPlansList();
     }
 
+    private void DeleteAction_Click(object sender, RoutedEventArgs e) => DeletePlan();
+
     private void DeletePlan()
     {
         if (_currentPlanId == null || _currentPlanId.Value == 0) { AppContainer.Get<DialogService>().Error("لا توجد خطة محددة."); return; }
-        if (!AppContainer.Get<DialogService>().Confirm("حذف الخطة (المسودة)؟")) return;
+        if (_locked) { AppContainer.Get<DialogService>().Error("الخطة معتمدة/مقفلة — لا يمكن حذفها."); return; }
+        if (!AppContainer.Get<DialogService>().Confirm("حذف الخطة والمسودة المحددة؟\nلن تُحذف الخطط المعتمدة أو المرتبطة بأوامر إنتاج.")) return;
         using var scope = AppContainer.NewScope();
         var svc = (IPlanningService)scope.ServiceProvider.GetService(typeof(IPlanningService));
         var r = svc.DeletePlan(_currentPlanId.Value);
@@ -1469,6 +1452,13 @@ public partial class PlanningView : UserControl
 
         if (_toolbar != null && _toolbar.DeleteBtn != null)
             _toolbar.DeleteBtn.Visibility = status == "Approved" ? Visibility.Collapsed : Visibility.Visible;
+        // زر حذف ظاهر داخل شاشة MPS أيضاً؛ لا يعتمد ظهوره على عرض شريط الأدوات أو صلاحية الشريط.
+        if (DeleteActionBtn != null)
+        {
+            DeleteActionBtn.Visibility = _currentPlanId is > 0 && status != "Approved"
+                ? Visibility.Visible : Visibility.Collapsed;
+            DeleteActionBtn.IsEnabled = status != "Approved";
+        }
     }
 
     private static void SetStep(Border step, bool active)
@@ -1540,6 +1530,7 @@ public partial class PlanningView : UserControl
         // §FIX 1.50.73: نفس القاعدة لزر الحفظ الرئيسي في الشاشة.
         if (SaveActionBtn != null) SaveActionBtn.IsEnabled = !locked;
         if (ApproveActionBtn != null) ApproveActionBtn.IsEnabled = !locked;
+        if (DeleteActionBtn != null) DeleteActionBtn.IsEnabled = !locked;
         if (SubmitBtn != null) SubmitBtn.IsEnabled = !locked;
         UpdateScopeActionButtons();
     }
@@ -1966,28 +1957,24 @@ public partial class PlanningView : UserControl
         catch { }
     }
 
-        private void AutoSaveDraft()
+    /// <summary>
+    /// يمسح مسودات الخطط المحلية التي خلّفتها الإصدارات القديمة مرة واحدة.
+    /// الإصدارات الحالية لا تنشئ هذه الملفات ولا تقرؤها أو تستعيدها.
+    /// </summary>
+    private static void RemoveLegacyPlanningDrafts()
+    {
+        try
         {
-            // §1.50.69 FIX: إلغاء الحفظ التلقائي نهائياً — حذف أي مسودات قديمة
-            try { if (System.IO.File.Exists(AutoSavePath)) System.IO.File.Delete(AutoSavePath); } catch { }
-            return;
+            var draftsDir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "DateERP", "drafts");
+            if (!System.IO.Directory.Exists(draftsDir)) return;
+            foreach (var file in System.IO.Directory.GetFiles(draftsDir, "PlanningDraft_*.json"))
+            {
+                try { System.IO.File.Delete(file); } catch { }
+            }
         }
-
-    private void TryRestoreAutoSave()
-    {
-        // §1.50.69 FIX: إلغاء استعادة مسودة تلقائية نهائياً + حذف الملف
-        try { if (System.IO.File.Exists(AutoSavePath)) System.IO.File.Delete(AutoSavePath); } catch { }
-        return;
-    }
-
-    private class AutoSaveRow
-    {
-        public int? CustomerId { get; set; } public string CustomerName { get; set; }
-        public int? LotId { get; set; } public string LotCode { get; set; }
-        public int ProductId { get; set; } public string ProductName { get; set; }
-        public int? PackId { get; set; } public string PackName { get; set; }
-        public double QtyKg { get; set; } public int Cartons { get; set; }
-        public string Date { get; set; } public int? ShiftId { get; set; } public int? LineId { get; set; }
+        catch { }
     }
 
     private void ImportExcel_Click(object sender, RoutedEventArgs e)

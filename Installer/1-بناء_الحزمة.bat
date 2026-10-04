@@ -85,6 +85,8 @@ copy /y "%~dp0README_التنصيب.md"    "%OUT%\" >nul
 copy /y "%~dp0تحديث_مباشر.bat"       "%OUT%\" >nul
 copy /y "%~dp0LiveUpdate.bat"          "%OUT%\" >nul
 copy /y "%~dp0تحديث_مباشر.ps1"       "%OUT%\" >nul
+copy /y "%~dp0OneClick-DateERP-Update.bat" "%OUT%\" >nul
+copy /y "%~dp0OneClick-DateERP-Update.ps1" "%OUT%\" >nul
 copy /y "%~dp0update-manifest.json"  "%OUT%\" >nul
 copy /y "%~dp0README_التحديث_المباشر.md" "%OUT%\" >nul
 
