@@ -19,6 +19,7 @@ public partial class LotPickerWindow : Window
     private int? _customerId;
     private int? _excludePlanId;
     private DateTime? _availabilityDate;
+    private readonly HashSet<int> _allowedCustomerIds;
     private bool _filtersReady;
     public AvailableLotDto SelectedLot { get; private set; }
 
@@ -29,13 +30,15 @@ public partial class LotPickerWindow : Window
     }
 
     public LotPickerWindow(List<int> currentPlanLotIds = null, int? customerId = null,
-        int? excludePlanId = null, DateTime? availabilityDate = null)
+        int? excludePlanId = null, DateTime? availabilityDate = null,
+        IEnumerable<int> allowedCustomerIds = null)
     {
         InitializeComponent();
         _currentPlanLotIds = currentPlanLotIds ?? new List<int>();
         _customerId = customerId;
         _excludePlanId = excludePlanId;
         _availabilityDate = availabilityDate;
+        _allowedCustomerIds = allowedCustomerIds?.Where(id => id > 0).ToHashSet() ?? new HashSet<int>();
         Loaded += (_, _) =>
         {
             LoadLots(_customerId, _excludePlanId, _availabilityDate);
@@ -51,6 +54,8 @@ public partial class LotPickerWindow : Window
             using var scope = AppContainer.NewScope();
             var svc = scope.ServiceProvider.GetRequiredService<IPlanningService>();
             _all = svc.GetAvailableLots(customerId, availabilityDate, excludePlanId);
+            if (customerId == null && _allowedCustomerIds.Count > 0)
+                _all = _all.Where(l => l.CustomerId is int owner && _allowedCustomerIds.Contains(owner)).ToList();
             BuildFilters();
             ApplyFilter();
         }

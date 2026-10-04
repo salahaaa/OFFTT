@@ -100,8 +100,8 @@ public partial class PlanningView : UserControl
             Load();
             // §إصلاح: قائمة الخطط المحفوظة تُحمّل فور فتح الشاشة لتظهر مباشرة في شبكة السجل
             RefreshPlansList();
-            // نطاق عدة عملاء هو الوضع الافتراضي: لا نفتح نافذة عميل ولا نترك
-            // زري أصناف العميل/أصناف العملاء قابلين للنقر في هذا الوضع.
+            // نطاق عدة عملاء هو الوضع الافتراضي: لا نفتح نافذة عميل تلقائياً؛
+            // يبقى زر F6 متاحاً بالطريقة السابقة لاختيار بنود العملاء يدوياً.
             UpdateScopeActionButtons();
             // §1.50.67 FIX: إلغاء استعادة مسودة تلقائية — يسبب خطط وهمية
             // §1.50.69 FIX: حذف ملفات الحفظ التلقائي القديمة التي تسبب خطط وهمية + الدفعة برقم السند
@@ -369,24 +369,27 @@ public partial class PlanningView : UserControl
     }
 
     /// <summary>
-    /// أزرار إدراج أصناف العملاء لا تعمل في نطاق «عدة عملاء»؛ هذا النطاق يبدأ
-    /// بدون عميل محدد، وتتم إضافة البنود يدوياً/من صفوف الجدول مع اختيار العميل
-    /// داخل الصف. بذلك لا يعيد الزر فتح نافذة تجبر المستخدم على تعيين عميل أولاً.
+    /// أزرار الإدراج بالطريقة السابقة: عميل محدد من F4، وعدة عملاء من F6.
+    /// قفل «إعداد النطاق» لا يقفل إدخال البنود؛ بعد حفظ السياق يجب أن تبقى
+    /// نافذة أصناف العملاء متاحة للعمل، بينما يبقى اختيار نطاق العملاء نفسه
+    /// قابلاً للتعديل قبل القفل فقط.
     /// </summary>
     private void UpdateScopeActionButtons()
     {
         if (CustLotsBtn == null || MultiCustomersBtn == null) return;
         bool single = SingleRadio?.IsChecked == true;
         bool multiScope = !single && (MultiRadio?.IsChecked == true || DistributionRadio?.IsChecked == true);
-        bool editable = !_locked && !_contextLocked;
+        bool editable = !_locked;
         CustLotsBtn.IsEnabled = editable && !multiScope;
-        MultiCustomersBtn.IsEnabled = editable && !multiScope;
+        // F6 هو مسار الشكل السابق لاختيار بنود عدة العملاء، ويظل فعالاً
+        // بعد StartPlanning_Click لأن ذلك القفل يحمي الرأس لا إدخال بنود الجلسة.
+        MultiCustomersBtn.IsEnabled = editable;
         CustLotsBtn.ToolTip = multiScope
-            ? "غير متاح في نطاق عدة عملاء — أضف البنود من الجدول وحدد العميل داخل كل صف."
-            : "فتح أصناف ودفعات العميل المحدد.";
+            ? "في نطاق عدة عملاء استخدم (أصناف العملاء F6)، أو اختر العميل داخل صف الجدول."
+            : "فتح أصناف ودفعات العميل المحدد (F4).";
         MultiCustomersBtn.ToolTip = multiScope
-            ? "غير متاح في نطاق عدة عملاء — لا يلزم اختيار عميل قبل بدء التخطيط."
-            : "يتاح فقط عند التخطيط بنطاق غير متعدد العملاء.";
+            ? "فتح أصناف ودفعات العملاء بالطريقة السابقة — الاختيار اليدوي مع فحص الرصيد والطاقة."
+            : "فتح أصناف ودفعات العميل المحدد بالطريقة السابقة.";
     }
 
     /// <summary>نوع الخطة — يومية = تاريخ واحد فقط، الباقي فترة من-إلى. أزرار المدد السريعة أزيلت (1.50.57) بناءً على طلب المستخدم: الاكتفاء بتحديد التاريخ.</summary>
@@ -556,6 +559,10 @@ public partial class PlanningView : UserControl
         // بعد جاهزيتها؛ قرار السماح النهائي يبقى حسب تاريخ كل بند في المحرك.
         var availabilityDate = EndBox.SelectedDate ?? StartBox.SelectedDate;
         var lotDtos = svc.GetAvailableLots(custId, availabilityDate, _currentPlanId);
+        // عند اختيار نطاق فرعي بالطريقة الجديدة، يبقى عرض الأصناف بالطريقة
+        // السابقة (F6/نافذة الدفعات) لكن لا نُظهر دفعات خارج العملاء المعتمدين.
+        if (custId == null && _scopeCustomerIds.Count > 0)
+            lotDtos = lotDtos.Where(l => l.CustomerId is int owner && _scopeCustomerIds.Contains(owner)).ToList();
         var today = DateTime.Today;
         var rawByLot = db.Lots.AsNoTracking().ToDictionary(l => l.Id, l => l.ProductId);
         var editorRows = lotDtos.Select(l =>
@@ -811,6 +818,8 @@ public partial class PlanningView : UserControl
             var fixedCustomer = SingleRadio.IsChecked == true ? SingleCustBox.SelectedItem as DatesErp.Core.Domain.Entities.Customer : null;
             if (SingleRadio.IsChecked == true && fixedCustomer == null) { AppContainer.Get<DialogService>().Error("اختر العميل أولاً."); return; }
             if (fixedCustomer != null) customers = new() { fixedCustomer };
+            else if (_scopeCustomerIds.Count > 0)
+                customers = customers.Where(c => _scopeCustomerIds.Contains(c.Id)).ToList();
             string Label(DatesErp.Core.Domain.Entities.Customer c) => $"{c.CustomerName} ({c.CustomerCode})";
             var customerDialog = new Views.EntityFormDialog("عميل البند اليدوي", new List<Views.FieldDef>
             { new() { Key = "customer", LabelAr = "العميل", Kind = "combo", Options = customers.Select(Label).ToArray() } }) { Owner = Window.GetWindow(this) };
@@ -957,8 +966,9 @@ public partial class PlanningView : UserControl
         try
         {
             var currentIds = _rows.Where(r => r.LotId != null).Select(r => r.LotId.Value).ToList();
+            var allowedCustomers = SingleRadio.IsChecked == true ? null : _scopeCustomerIds;
             var dlg = new Views.LotPickerWindow(currentIds, null, _currentPlanId,
-                EndBox.SelectedDate ?? StartBox.SelectedDate) { Owner = Window.GetWindow(this) };
+                EndBox.SelectedDate ?? StartBox.SelectedDate, allowedCustomers) { Owner = Window.GetWindow(this) };
             if (dlg.ShowDialog() == true && dlg.SelectedLot != null)
             {
                 var lot = dlg.SelectedLot;

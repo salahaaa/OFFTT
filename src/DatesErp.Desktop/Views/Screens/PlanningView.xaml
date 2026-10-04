@@ -123,17 +123,31 @@
                         </StackPanel>
                     </Grid>
                     <!-- صف 2: نطاق التخطيط + العميل + البيان -->
+                    <!-- صف النطاق — الشكل السابق: اختيار النطاق والعميل في سطر واحد.
+                         الإصلاحات الجديدة تعمل خلف هذا الشكل: يمكن تضييق نطاق عدة عملاء
+                         من الزر، ثم يُحفظ النطاق ويُقفل قبل إدخال البنود والجلسات. -->
                     <Grid Margin="0,10,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
-                            <TextBlock Text="نطاق التخطيط:" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <RadioButton x:Name="MultiRadio" Content="👥 عدة عملاء (مجمع)" IsChecked="True" FontWeight="Bold" GroupName="scope" Margin="0,0,10,0" Checked="Scope_Changed"/>
-                            <RadioButton x:Name="SingleRadio" Content="👤 عميل محدد" FontWeight="Bold" GroupName="scope" Checked="Scope_Changed"/>
-                            <RadioButton x:Name="DistributionRadio" Content="⚖ توزيع حسب العملاء" FontWeight="Bold" GroupName="scope" Checked="Scope_Changed" Margin="10,0,0,0"/>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Top" Margin="0,0,14,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="نطاق التخطيط:" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <RadioButton x:Name="MultiRadio" Content="👥 عدة عملاء (مجمع)" IsChecked="True" FontWeight="Bold" GroupName="scope" Margin="0,0,10,0" Checked="Scope_Changed"/>
+                                <RadioButton x:Name="SingleRadio" Content="👤 عميل محدد" FontWeight="Bold" GroupName="scope" Checked="Scope_Changed"/>
+                                <!-- يبقى مسار التوزيع مدعوماً للتوافق مع الخطط المحفوظة،
+                                     لكن لا يغيّر شكل محدد العميل السابق. -->
+                                <RadioButton x:Name="DistributionRadio" Content="⚖ توزيع حسب العملاء" FontWeight="Bold" GroupName="scope" Margin="10,0,0,0" Checked="Scope_Changed"/>
+                            </StackPanel>
+                            <WrapPanel Margin="0,6,0,0" VerticalAlignment="Center">
+                                <Button x:Name="ScopeCustomersBtn" Content="👥 اختيار عملاء النطاق..." Style="{StaticResource ErpButton}" Click="ChooseScopeCustomers_Click" Margin="0,0,8,0"
+                                        ToolTip="اختيار عميل أو عدة عملاء كما في الأسلوب السابق؛ إن لم تحدد شيئاً فالنطاق كل العملاء النشطين"/>
+                                <TextBlock x:Name="ScopeCustomersSummary" Text="جميع العملاء النشطين (افتراضي لخطة عدة عملاء)" Foreground="#14532D" FontWeight="Bold" VerticalAlignment="Center" MaxWidth="430" TextTrimming="CharacterEllipsis" ToolTip="النطاق المحفوظ للخطة"/>
+                                <Button x:Name="StartPlanningBtn" Content="▶ حفظ الإعداد وبدء التخطيط" Style="{StaticResource ErpPrimaryButton}" Click="StartPlanning_Click" Margin="12,0,0,0"
+                                        ToolTip="يحفظ نطاق الخطة ويولد جلسات التاريخ والوردية، ثم يقفل إعدادها قبل إدخال البنود"/>
+                            </WrapPanel>
                         </StackPanel>
                         <Border x:Name="SingleCustPanel" Grid.Column="1" Background="#FEF9C3" BorderBrush="#FACC15" BorderThickness="1" Padding="6,3" Visibility="Collapsed" Margin="0,0,14,0">
                             <StackPanel Orientation="Horizontal">
@@ -145,22 +159,6 @@
                             <TextBlock Text="البيان:" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <TextBox x:Name="NotesBox" Width="360"/>
                         </StackPanel>
-                    </Grid>
-                    <Grid Margin="0,10,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="عملاء نطاق الخطة:" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Top" Margin="0,4,8,0"/>
-                        <StackPanel Grid.Column="1">
-                            <DockPanel>
-                                <TextBlock x:Name="ScopeCustomersSummary" Text="جميع العملاء النشطين (افتراضي لخطة عدة عملاء)" Foreground="#14532D" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                <Button x:Name="ScopeCustomersBtn" Content="👥 اختيار عميل/عملاء..." Style="{StaticResource ErpButton}" Click="ChooseScopeCustomers_Click" Margin="10,0,0,0"/>
-                            </DockPanel>
-                            <TextBlock Text="لخطة عدة عملاء: لا يلزم اختيار عميل هنا؛ النطاق الافتراضي جميع العملاء النشطين. يمكنك تحديد عميل أو عدة عملاء من النافذة المنبثقة." FontSize="10.5" Foreground="#6B7280" Margin="0,3,0,0" TextWrapping="Wrap"/>
-                        </StackPanel>
-                        <Button x:Name="StartPlanningBtn" Grid.Column="2" Content="▶ بدء التخطيط / قفل السياق" Style="{StaticResource ErpPrimaryButton}" Click="StartPlanning_Click" Margin="12,0,0,0" ToolTip="يحفظ نطاق الخطة ويولد جلسات التاريخ والوردية داخل نفس الشاشة"/>
                     </Grid>
                 </StackPanel>
             </Border>
