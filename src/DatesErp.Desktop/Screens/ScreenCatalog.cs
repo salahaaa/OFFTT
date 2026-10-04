@@ -51,7 +51,7 @@ public static class ScreenCatalog
         new("fgreceive", "المخازن والاستلام", "أوامر استلام الإنتاج", "finishedgoods", "📥", "MRPINV1006"),
 
         // 🏭 الإنتاج — ترتيب دورة العمل: خطة ← أمر ← بدء/إقفال فعلي ← أمر تسليم ← إقفال الخطة
-        new("planning", "الإنتاج", "التخطيط والإنتاج — احتياجات الخامات", "planning", "📋", "MRPMPS1001"),
+        new("planning", "الإنتاج", "خطط الإنتاج (MPS)", "planning", "📋", "MRPMPS1001"),
         new("orders", "الإنتاج", "أوامر الإنتاج", "production", "📝", "MRPMPS1007"),
         new("actualclose", "الإنتاج", "إقفال الإنتاج وتسجيل الفعلي", "production", "✅", "MRPMPS1022"),
         new("aux-setup", "الإنتاج", "تهيئة الأصناف المساعدة", "auxiliary", "🧩", "MRPAUX1001"),

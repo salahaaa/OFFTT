@@ -164,10 +164,11 @@ public static class ScreenFactory
         "receiving" => ReceivingScreen(),
         "lots" => Wrap(GenericListView.ForLots(), "الدفعات وأرصدة الخام", "المخازن والأرصدة", "MRPINV1002"),
 
-        // الإنتاج — شاشة التخطيط الرئيسية تعرض احتياجات الخامات؛ محرر MPS منفصل
-        // حتى لا تختلط مراجعة الرصيد مع إدخال البنود.
-        "planning" => PlanningRequirementsScreen(),
+        // الإنتاج — الشاشة الرئيسية هي محرر خطة MPS السابق (البنود/العملاء/الدفعات).
+        // شاشة احتياجات الخامات تبقى مساراً مستقلاً حتى لا نكسر تدفق التخطيط المعتمد.
+        "planning" => PlanningScreen(),
         "planning-editor" => PlanningScreen(),
+        "planning-requirements" => PlanningRequirementsScreen(),
         "orders" => OrdersScreen(),
         "materials" => WrapPlain(new MaterialsView(), "صرف المواد المساعدة لأوامر الإنتاج", "أوامر الإنتاج والاحتساب التلقائي للمواد", "MRPMPS1008"),
         "aux-setup" => WrapPlain(new AuxiliarySetupView(), "تهيئة الأصناف المساعدة", "الإنتاج - الأصناف المساعدة", "MRPAUX1001"),
