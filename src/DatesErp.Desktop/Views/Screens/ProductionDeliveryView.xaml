@@ -197,7 +197,10 @@
        <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
       <TextBlock Text="المخلفات / المخرجات الثانوية" FontSize="12.5" FontWeight="Bold" Foreground="{StaticResource NavyBrush}" VerticalAlignment="Center"/>
-      <TextBlock Grid.Column="1" Text="اختر المخرج من التعريفات — السطر الفارغ للإضافة، وDelete للحذف" FontSize="10.5" Foreground="{StaticResource GrayTextBrush}" VerticalAlignment="Center"/>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+       <Button x:Name="AddSecondaryButton" Content="إضافة مخرج" Style="{StaticResource ErpButton}" Click="AddSecondary_Click" MinWidth="105" Margin="0,0,6,0" IsEnabled="False"/>
+       <Button x:Name="RemoveSecondaryButton" Content="حذف السطر" Style="{StaticResource ErpDangerButton}" Click="RemoveSecondary_Click" MinWidth="95" IsEnabled="False"/>
+      </StackPanel>
      </Grid>
      <DataGrid x:Name="SecondaryGrid" Margin="0,6,0,0" IsReadOnly="False"
                AutoGenerateColumns="False" CanUserAddRows="True" CanUserDeleteRows="True"

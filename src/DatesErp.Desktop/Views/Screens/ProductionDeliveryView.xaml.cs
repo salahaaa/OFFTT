@@ -47,6 +47,9 @@ public partial class ProductionDeliveryView : UserControl
     {
         chrome.SetModule("أوامر تسليم الإنتاج"); chrome.SetScreenCode("MRPMPS1021");
         chrome.SetToolbar(new Views.ErpToolbar()
+            .WithNew((_, _) => CreateDelivery_Click(this, new RoutedEventArgs()), "إنشاء أمر تسليم")
+            .WithSave((_, _) => ToolbarSave_Click(this, new RoutedEventArgs()), "حفظ الكميات")
+            .WithApprove((_, _) => IssueDelivery_Click(this, new RoutedEventArgs()), "تحرير للمخزن")
             .WithPrint((_, _) => Print(), "طباعة التنفيذ المحفوظ من قاعدة البيانات")
             .WithList((_, _) => LoadOrders((OrderBox.SelectedItem as ActualDeliveryOrderDto)?.OrderId, false), "تحديث أوامر اليوم")
             .WithExit((_, _) => (Window.GetWindow(this) as MainWindow)?.OpenPreviousScreen()));
@@ -102,26 +105,36 @@ public partial class ProductionDeliveryView : UserControl
         ByProductDefinitions.Clear(); foreach (var b in _activeDefinitions) ByProductDefinitions.Add(b);
         _items.Clear(); _secondary.Clear(); RawBox.Text = ""; DowntimeBox.Text = "0"; ReasonBox.Text = ""; NotesBox.Text = "";
         var order = OrderBox.SelectedItem as ActualDeliveryOrderDto;
-        // تسجيل الفعلي انتقل إلى شاشة «إقفال الإنتاج وتسجيل الفعلي»؛ هذه الشاشة للتسليم فقط.
-        bool canRecord = false;
+        // إبقاء دورة الإدخال داخل الشاشة: الأمر القابل للتسجيل يعرض الكميات
+        // وأزرار الحفظ/إضافة المخرج فوراً. أما الأمر المسجل فعلياً فينتقل إلى
+        // لوحة أمر التسليم، حيث تُعدّل كمية التسليم ثم يُحرر للمخزن.
+        bool canRecord = order?.CanRecord == true
+            && CanProduction("Create")
+            && CanExecution("Edit");
         bool canCreateDelivery = CanProduction("Create");
-        SaveButton.IsEnabled = false;
+        SaveButton.Visibility = order?.CanRecord == true ? Visibility.Visible : Visibility.Collapsed;
+        SaveButton.IsEnabled = canRecord;
         CreateDeliveryButton.IsEnabled = order?.CanCreateDelivery == true && canCreateDelivery;
         DeliveryOrderPanel.Visibility = order?.ProductionDeliveryId > 0 ? Visibility.Visible : Visibility.Collapsed;
         _deliveryItems.Clear();
         if (order?.ProductionDeliveryId > 0) LoadDelivery(order.ProductionDeliveryId);
-        // §v1.50.24: شاشة التسليم لا تحتوي حقول الفعلي؛ التسجيل يتم في شاشة الإقفال المستقلة.
-        ActualFieldsOuter.Visibility = Visibility.Collapsed;
-        EmptyGuide.Visibility = order?.Recorded == true ? Visibility.Collapsed : Visibility.Visible;
-        ItemsGrid.IsReadOnly = true;
+        ActualFieldsOuter.Visibility = order?.CanRecord == true ? Visibility.Visible : Visibility.Collapsed;
+        EmptyGuide.Visibility = order != null && !order.Recorded && !order.CanRecord
+            ? Visibility.Visible : Visibility.Collapsed;
+        ItemsGrid.IsReadOnly = !canRecord;
+        SecondaryGrid.IsReadOnly = !canRecord;
+        AddSecondaryButton.IsEnabled = canRecord;
+        RemoveSecondaryButton.IsEnabled = canRecord;
         // §v1.50.38: شرائح السياق بلا رموز تعبيرية — الهوية البصرية من الثيم لا من النص
         CustChip.Text = $"العميل: {order?.Customer ?? "—"}";
         PlanChip.Text = $"الخطة: {order?.PlanNumber ?? "—"}";
         ShiftChip.Text = $"الوردية: {order?.Shift ?? "—"}";
         StatusLabel.Text = string.IsNullOrWhiteSpace(order?.Status) ? "اختر أمراً من الأعلى لتظهر بنوده." : order.Status;
         if (order == null) return;
-        if (order.CanRecord && !canRecord)
-            StatusLabel.Text += "\n↗ هذا الأمر بانتظار الإقفال الفعلي — افتح شاشة «إقفال الإنتاج وتسجيل الفعلي» أولاً.";
+        if (order.CanRecord && !CanProduction("Create"))
+            StatusLabel.Text += "\n⛔ إدخال الكميات غير متاح: لا توجد صلاحية إنشاء مستندات الإنتاج.";
+        else if (order.CanRecord && !CanExecution("Edit"))
+            StatusLabel.Text += "\n⛔ إدخال الكميات غير متاح: لا توجد صلاحية تعديل التنفيذ.";
         if (order.CanCreateDelivery && !canCreateDelivery)
             StatusLabel.Text += "\n⛔ إنشاء أمر التسليم غير متاح: يلزم صلاحية إنشاء مستندات الإنتاج.";
         foreach (var line in order.Items) _items.Add(new ActualProductionRow(line, order.Recorded));
@@ -151,6 +164,40 @@ public partial class ProductionDeliveryView : UserControl
         StatActual.Text = actual.ToString("N0", CultureInfo.CurrentCulture);
         StatItems.Text = _items.Count.ToString(CultureInfo.CurrentCulture);
     }
+    private void ToolbarSave_Click(object sender, RoutedEventArgs e)
+    {
+        if (OrderBox.SelectedItem is ActualDeliveryOrderDto { ProductionDeliveryId: > 0 } order
+            && !order.CanRecord)
+            SaveDelivery_Click(sender, e);
+        else
+            Save_Click(sender, e);
+    }
+
+    private void AddSecondary_Click(object sender, RoutedEventArgs e)
+    {
+        if (OrderBox.SelectedItem is not ActualDeliveryOrderDto { CanRecord: true } || !CanProduction("Create") || !CanExecution("Edit"))
+        {
+            StatusLabel.Text = "⛔ لا يمكن إضافة مخرج: اختر أمراً قابلاً للتسجيل وتحقق من الصلاحيات.";
+            return;
+        }
+        _secondary.Add(new ActualSecondaryRow());
+        SecondaryGrid.SelectedItem = _secondary.LastOrDefault();
+        RemoveSecondaryButton.IsEnabled = true;
+    }
+
+    private void RemoveSecondary_Click(object sender, RoutedEventArgs e)
+    {
+        if (SecondaryGrid.SelectedItem is ActualSecondaryRow row)
+        {
+            _secondary.Remove(row);
+            RemoveSecondaryButton.IsEnabled = _secondary.Count > 0
+                && OrderBox.SelectedItem is ActualDeliveryOrderDto { CanRecord: true }
+                && CanProduction("Create") && CanExecution("Edit");
+        }
+        else
+            StatusLabel.Text = "اختر سطر المخرج المراد حذفه أولاً.";
+    }
+
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -256,9 +303,13 @@ public partial class ProductionDeliveryView : UserControl
         finally
         {
             _saving = false;
-            SaveButton.IsEnabled = false;
-            CreateDeliveryButton.IsEnabled = (OrderBox.SelectedItem as ActualDeliveryOrderDto)?.CanCreateDelivery == true
-                && CanProduction("Create");
+            var current = OrderBox.SelectedItem as ActualDeliveryOrderDto;
+            bool canRecordNow = current?.CanRecord == true && CanProduction("Create") && CanExecution("Edit");
+            SaveButton.Visibility = current?.CanRecord == true ? Visibility.Visible : Visibility.Collapsed;
+            SaveButton.IsEnabled = canRecordNow;
+            CreateDeliveryButton.IsEnabled = current?.CanCreateDelivery == true && CanProduction("Create");
+            AddSecondaryButton.IsEnabled = canRecordNow;
+            RemoveSecondaryButton.IsEnabled = canRecordNow && _secondary.Count > 0;
         }
     }
 
