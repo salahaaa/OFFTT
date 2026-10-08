@@ -102,6 +102,7 @@ public partial class QualityView : UserControl
     private readonly ObservableCollection<StandardUi> _standards = new();
     private List<AllowedResultType> _gradeColumns = new();
     private bool _loading;
+    private int _loadGeneration;
     private static bool QualityCan(string action)
         => DatesErp.Desktop.Views.PermissionGate.Can("quality", action);
 
@@ -124,12 +125,23 @@ public partial class QualityView : UserControl
     }
 
     /// <summary>تحميل المصادر: تسليمات الإنتاج المكتملة — القابلة للفحص أولاً.</summary>
-    private void Load(int? keepOrderId = null)
+    private async void Load(int? keepOrderId = null)
     {
+        // GetDeliverySources يقرأ عدة جداول وقد يضطر إلى تحديث مصفوفة الصلاحيات.
+        // لا ننفذه على خيط الواجهة: تعطل الاتصال/بطء الخادم يجب ألا يمنع إنشاء الشاشة
+        // أو يجعل Windows يعتبر البرنامج «لا يستجيب» عند فتح الجودة.
+        int generation = System.Threading.Interlocked.Increment(ref _loadGeneration);
+        _loading = true;
         try
         {
             ErrorLog.WriteInfo($"Quality.Load STEP=ENTER KeepOrderId={keepOrderId?.ToString() ?? "<null>"}");
-            _sources = WithInsp(s => s.GetDeliverySources());
+            var sources = await Task.Run(() => WithInsp(s => s.GetDeliverySources()));
+
+            // قد يضغط المستخدم «تحديث» مرة أخرى قبل عودة الطلب السابق؛ لا تسمح
+            // للنتيجة القديمة بأن تستبدل المصدر الأحدث في الشاشة.
+            if (generation != _loadGeneration) return;
+
+            _sources = sources ?? new List<QualitySourceDto>();
             ErrorLog.WriteInfo($"Quality.Load STEP=RETURN_SOURCES Count={_sources.Count}");
             SourceBox.ItemsSource = _sources;
             SourceBox.DisplayMemberPath = nameof(QualitySourceDto.Label);
@@ -138,7 +150,6 @@ public partial class QualityView : UserControl
             // مؤقتة تضعها MainWindow عند OpenDocument("quality", id).
             int? pendingCheckId = DatesErp.Desktop.Views.MainWindow.PendingCheckIdToOpen;
             DatesErp.Desktop.Views.MainWindow.PendingCheckIdToOpen = null;
-            _loading = true;
             SourceBox.SelectedItem = _sources.FirstOrDefault(s2 => pendingCheckId.HasValue
                     && s2.CheckId == pendingCheckId.Value)
                 ?? _sources.FirstOrDefault(s2 => s2.OrderId == keepOrderId && !s2.CheckApproved)
@@ -152,11 +163,20 @@ public partial class QualityView : UserControl
         }
         catch (Exception ex)
         {
+            // Load is async-void because it is called by WPF events. Keep the catch
+            // here so a database/schema/permission problem never becomes an
+            // unhandled dispatcher exception that closes the desktop application.
+            if (generation != _loadGeneration) return;
+            _loading = false;
             WriteQualityExceptionTrace("Quality.Load", ex);
             DisableQualityActions();
             // لا نعرض نص استثناء قاعدة البيانات للمستخدم (قد يحتوي اسم جدول/مسار اتصال).
             // التفاصيل محفوظة في ErrorLog، بينما تبقى الشاشة قابلة للفتح والتحديث.
             StatusLabel.Text = "تعذر تحميل مصادر الفحص حالياً. تم تسجيل السبب في سجل النظام؛ اضغط «تحديث» بعد التحقق من الاتصال والصلاحيات.";
+        }
+        finally
+        {
+            if (generation == _loadGeneration) _loading = false;
         }
     }
 
