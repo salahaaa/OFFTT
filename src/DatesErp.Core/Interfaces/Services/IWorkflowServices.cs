@@ -228,6 +228,159 @@ public class FinishedGoodsItemDto
     public int? CustomerId { get; set; }
     /// <summary>§B96 — بند أمر التسليم المربوط (إجباري عند الربط بأمر تسليم).</summary>
     public int? DeliveryItemId { get; set; }
+    /// <summary>§تسليم الإنتاج للمخازن: مخزن الإدخال لهذا البند (فارغ = مخزن رأس السند).</summary>
+    public int? WarehouseId { get; set; }
+}
+
+// ══════════ §تسليم الإنتاج للمخازن — عقود الشاشة التشغيلية ══════════
+
+/// <summary>صف نتيجة البحث عن أمر إنتاج قابل للتسليم (أرقام محسوبة من الحركات المعتمدة لا من قيم مخزنة).</summary>
+public class FgOrderSearchRow
+{
+    public int OrderId { get; set; }
+    public string OrderNumber { get; set; }
+    public string OrderDate { get; set; }
+    public string Customers { get; set; }
+    public string Products { get; set; }
+    public double PlannedKg { get; set; }
+    public double ProducedKg { get; set; }
+    public double DeliveredKg { get; set; }
+    public double RemainingKg { get; set; }
+    public string StatusAr { get; set; }
+}
+
+/// <summary>سطر إنتاج تام قابل للتسليم: بند أمر الإنتاج (صنف + عبوة + عميل + دفعة) بأرقامه الفعلية.</summary>
+public class FgDeliveryLineDto
+{
+    public int OrderItemId { get; set; }
+    public int ProductId { get; set; }
+    public string ProductName { get; set; }
+    public int? PackagingTypeId { get; set; }
+    public string PackSpec { get; set; }
+    public double CartonWeightKg { get; set; }
+    public int? CustomerId { get; set; }
+    public string CustomerName { get; set; }
+    public int? LotId { get; set; }
+    public string LotCode { get; set; }
+    public double PlannedKg { get; set; }
+    public int PlannedCartons { get; set; }
+    public double ProducedKg { get; set; }
+    public int ProducedCartons { get; set; }
+    public double DeliveredKg { get; set; }
+    public double RemainingKg { get; set; }
+}
+
+/// <summary>مخرج ثانوي/مخلفات مسجَّل فعلياً على الأمر وما سُلِّم منه.</summary>
+public class FgByProductLineDto
+{
+    public int ByProductId { get; set; }
+    public string Name { get; set; }
+    public string KindAr { get; set; }
+    public string Unit { get; set; }
+    public int? ProductId { get; set; }
+    public double ProducedQty { get; set; }
+    public double DeliveredQty { get; set; }
+    public double RemainingQty { get; set; }
+}
+
+/// <summary>سياق أمر الإنتاج الكامل لشاشة التسليم: الرأس + سطور التام + المخرجات الثانوية + المخازن.</summary>
+public class FgOrderDeliveryContext
+{
+    public int OrderId { get; set; }
+    public string OrderNumber { get; set; }
+    public string OrderDate { get; set; }
+    public string Customers { get; set; }
+    public string PlanNumber { get; set; }
+    public string Shift { get; set; }
+    public string Line { get; set; }
+    public string StatusAr { get; set; }
+    public bool HasActual { get; set; }
+    public double ProducedKg { get; set; }
+    public double DeliveredKg { get; set; }
+    public double RemainingKg { get; set; }
+    public List<FgDeliveryLineDto> Lines { get; set; } = new();
+    public List<FgByProductLineDto> ByProducts { get; set; } = new();
+    public List<FgWarehouseOption> Warehouses { get; set; } = new();
+    public List<FgByProductOption> ByProductOptions { get; set; } = new();
+}
+
+public class FgWarehouseOption { public int Id { get; set; } public string Name { get; set; } public bool IsDefault { get; set; } }
+public class FgByProductOption { public int Id { get; set; } public string Name { get; set; } public string Unit { get; set; } public string KindAr { get; set; } }
+
+/// <summary>مدخلات مخرج ثانوي في سند التسليم.</summary>
+public class FgByProductInputDto
+{
+    public int ByProductId { get; set; }
+    public double Qty { get; set; }
+    public int? WarehouseId { get; set; }
+    public string Notes { get; set; }
+}
+
+/// <summary>مسودة سند تسليم إنتاج للمخازن (إنشاء أو تعديل).</summary>
+public class FgDeliveryDraftDto
+{
+    public int OrderId { get; set; }
+    public string DeliveryDate { get; set; }
+    public string Notes { get; set; }
+    public List<FinishedGoodsItemDto> Items { get; set; } = new();
+    public List<FgByProductInputDto> ByProducts { get; set; } = new();
+}
+
+public class FgReceiptLineRow
+{
+    public int ItemId { get; set; }
+    public int ProductId { get; set; }
+    public string ProductName { get; set; }
+    public int? PackagingTypeId { get; set; }
+    public string PackSpec { get; set; }
+    public int? LotId { get; set; }
+    public string LotCode { get; set; }
+    public int? CustomerId { get; set; }
+    public string CustomerName { get; set; }
+    public int PackageCount { get; set; }
+    public double NetWeightKg { get; set; }
+    public double ReceivedQtyKg { get; set; }
+    public int? WarehouseId { get; set; }
+    public string WarehouseName { get; set; }
+    /// <summary>الرصيد في المخزن بعد الحركة (من دفتر الحركات) — فارغ قبل الاعتماد.</summary>
+    public double? BalanceAfter { get; set; }
+}
+
+public class FgReceiptByProductRow
+{
+    public int Id { get; set; }
+    public int ByProductId { get; set; }
+    public string Name { get; set; }
+    public string KindAr { get; set; }
+    public string Unit { get; set; }
+    public double Qty { get; set; }
+    public double ReceivedQty { get; set; }
+    public int? WarehouseId { get; set; }
+    public string WarehouseName { get; set; }
+    public string Notes { get; set; }
+    public bool PostsStock { get; set; }
+}
+
+/// <summary>بطاقة سند تسليم إنتاج محفوظ (لإعادة الفتح والطباعة والتعديل).</summary>
+public class FgReceiptCard
+{
+    public int Id { get; set; }
+    public string DocumentNumber { get; set; }
+    public string ReceiptNumber { get; set; }
+    public int OrderId { get; set; }
+    public string OrderNumber { get; set; }
+    public string DeliveryDate { get; set; }
+    public string Status { get; set; }
+    public string StatusAr { get; set; }
+    public string ReceiptStatus { get; set; }
+    public string Notes { get; set; }
+    public bool IsApproved { get; set; }
+    public string ApprovedBy { get; set; }
+    public string ApprovedDate { get; set; }
+    public string CreatedBy { get; set; }
+    public string CreatedDate { get; set; }
+    public List<FgReceiptLineRow> Lines { get; set; } = new();
+    public List<FgReceiptByProductRow> ByProducts { get; set; } = new();
 }
 
 /// <summary>§B96 — بند أمر تسليم إنتاج: أمر + صنف + دفعة + عميل + كمية.</summary>
@@ -1072,12 +1225,28 @@ public interface IInspectionService
 
 public interface IFinishedGoodsService
 {
-    OpResult SaveReceipt(int orderId, int? qualityCheckId, string deliveryDate, List<FinishedGoodsItemDto> items, int? deliveryId = null);
+    OpResult SaveReceipt(int orderId, int? qualityCheckId, string deliveryDate, List<FinishedGoodsItemDto> items, int? deliveryId = null, int? warehouseId = null);
     /// <summary>الإصدار للمخزن — لا يمس الأرصدة.</summary>
     OpResult Issue(int receiptId);
     /// <summary>§7 — سند الاستلام المخزني هو وحده ما يؤثر على الأرصدة (كلي/جزئي لكل صنف).</summary>
     OpResult Receive(int receiptId, Dictionary<int, double> receivedByItemId);
     OpResult Unapprove(int receiptId);
+
+    // ── §تسليم الإنتاج للمخازن (الشاشة التشغيلية) ──
+    /// <summary>بحث أوامر الإنتاج التي لها إنتاج فعلي (رقم/عميل/صنف) مع المخطط/المنتَج/المسلَّم/المتبقي.</summary>
+    List<FgOrderSearchRow> SearchDeliverableOrders(string term, bool onlyWithRemaining);
+    /// <summary>سياق أمر الإنتاج الكامل: سطور التام والمخرجات الثانوية بأرقام محسوبة من الحركات المعتمدة.</summary>
+    FgOrderDeliveryContext GetOrderDeliveryContext(int orderId);
+    /// <summary>حفظ مسودة (إنشاء أو تعديل مسودة قائمة) — لا أثر على الأرصدة.</summary>
+    OpResult SaveDraft(FgDeliveryDraftDto draft, int? receiptId);
+    /// <summary>اعتماد التسليم: إصدار + استلام كامل كميات السند + قيد الحركات في عملية واحدة متسقة.</summary>
+    OpResult Approve(int receiptId);
+    /// <summary>إلغاء مسودة/مُصدَر لم يُستلم (لا حركات) — بصلاحية الإلغاء.</summary>
+    OpResult CancelDraft(int receiptId);
+    /// <summary>بطاقة سند محفوظ لإعادة الفتح/الطباعة/التعديل.</summary>
+    FgReceiptCard GetReceipt(int receiptId);
+    /// <summary>سندات التسليم (الأحدث أولاً) مع بحث حر.</summary>
+    List<FgReceiptCard> SearchReceipts(string term);
 }
 
 /// <summary>§B96 — أوامر تسليم الإنتاج (إدارة الإنتاج — يحررها مدير الإنتاج).</summary>

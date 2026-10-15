@@ -100,6 +100,7 @@ public class DatesErpDbContext : DbContext
     // ── التسليم ──
     public DbSet<FinishedGoodsReceipt> FinishedGoodsReceipts => Set<FinishedGoodsReceipt>();
     public DbSet<FinishedGoodsReceiptItem> FinishedGoodsReceiptItems => Set<FinishedGoodsReceiptItem>();
+    public DbSet<FinishedGoodsReceiptByProduct> FinishedGoodsReceiptByProducts => Set<FinishedGoodsReceiptByProduct>();
     public DbSet<CustomerDelivery> CustomerDeliveries => Set<CustomerDelivery>();
     public DbSet<CustomerDeliveryItem> CustomerDeliveryItems => Set<CustomerDeliveryItem>();
 
@@ -248,6 +249,8 @@ public class DatesErpDbContext : DbContext
         b.Entity<ProductionDelivery>().HasIndex(d => d.DocumentNumber).IsUnique();
         b.Entity<ProductionDeliveryItem>().HasIndex(i => i.DeliveryId);
         b.Entity<FinishedGoodsReceipt>().HasMany(r => r.Items).WithOne().HasForeignKey(i => i.ReceiptId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<FinishedGoodsReceipt>().HasMany(r => r.ByProducts).WithOne().HasForeignKey(i => i.ReceiptId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<FinishedGoodsReceiptByProduct>().HasIndex(i => i.ReceiptId);
         b.Entity<FinishedGoodsReceipt>().HasIndex(r => r.DocumentNumber).IsUnique();
         b.Entity<CustomerDelivery>().HasMany(d => d.Items).WithOne().HasForeignKey(i => i.DeliveryId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<CustomerDelivery>().HasIndex(d => d.DocumentNumber).IsUnique();

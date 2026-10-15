@@ -13,12 +13,12 @@ namespace DatesErp.Application.Services;
 /// أمر التسليم (متعدد الأصناف) ← الإصدار للمخزن (بلا أثر على الأرصدة)
 /// ← سند الاستلام المخزني هو وحده ما يحرّك أرصدة مخزن التام (كلي/جزئي لكل صنف).
 /// </summary>
-public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
+public partial class FinishedGoodsService : ServiceBase, IFinishedGoodsService
 {
     public FinishedGoodsService(DatesErpDbContext db, ICurrentSession session, INumberingService numbering)
         : base(db, session, numbering) { }
 
-    public OpResult SaveReceipt(int orderId, int? qualityCheckId, string deliveryDate, List<FinishedGoodsItemDto> items, int? deliveryId = null)
+    public OpResult SaveReceipt(int orderId, int? qualityCheckId, string deliveryDate, List<FinishedGoodsItemDto> items, int? deliveryId = null, int? warehouseId = null)
     {
         Require("finishedgoods", "Create");
         if (items == null || items.Count == 0) return OpResult.Fail("أدخل بنداً واحداً على الأقل.");
@@ -59,7 +59,8 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
                 QualityCheckId = qualityCheckId ?? (delivery?.SourceType == DeliverySources.FromCheck ? delivery.SourceId : null),
                 DeliveryId = deliveryId,
                 DeliveryDate = UiFormat.TryParseDate(deliveryDate, out var d) ? d : DateTime.Now,
-                WarehouseId = WarehouseId("WFG"),
+                // §لا مخزن ثابت إلزامي: مخزن الرأس = المحدد صراحةً ← مخزن أول بند ← الافتراضي للتام
+                WarehouseId = ResolveHeaderWarehouse(warehouseId ?? items.FirstOrDefault(i => i.WarehouseId != null)?.WarehouseId),
                 Status = DocStatuses.Draft,
                 ReceiptStatus = "None"
             };
@@ -171,7 +172,9 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
                     NetWeightKg = it.NetWeightKg,
                     ReceivedQtyKg = 0,
                     // §القاعدة 7: وزن الكرتون وقت الاستلام — لا يتغير بتعريف العبوة لاحقاً
-                    CartonWeightKg = UnitsPolicy.CartonWeight(Db, it.ProductId, it.PackagingTypeId)
+                    CartonWeightKg = UnitsPolicy.CartonWeight(Db, it.ProductId, it.PackagingTypeId),
+                    // §تعدد المخازن: مخزن البند (يُتحقق من نشاطه) — فارغ = مخزن الرأس
+                    WarehouseId = ValidateWarehouse(it.WarehouseId)
                 });
             }
             Db.FinishedGoodsReceipts.Add(rcpt);
@@ -208,7 +211,7 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
     public OpResult Receive(int receiptId, Dictionary<int, double> receivedByItemId)
     {
         Require("finishedgoods", "Approve");
-        var rcpt = Db.FinishedGoodsReceipts.Include(r => r.Items).FirstOrDefault(r => r.Id == receiptId);
+        var rcpt = Db.FinishedGoodsReceipts.Include(r => r.Items).Include(r => r.ByProducts).FirstOrDefault(r => r.Id == receiptId);
         if (rcpt == null) return OpResult.Fail("أمر التسليم غير موجود.");
         if (rcpt.ReceiptStatus == "Full") return OpResult.Fail("السند منفذ بالكامل مسبقاً.");
         if (rcpt.Status != DocStatuses.Issued && rcpt.Status != DocStatuses.Completed)
@@ -295,12 +298,15 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
                 // التام يُورد بالكرتون: قيد العبوات المستلمة تناسبياً مع الوزن
                 int pkgRecv = item.PackageCount > 0 && item.NetWeightKg > 0
                     ? (int)Math.Round(recv / item.NetWeightKg * item.PackageCount) : 0;
-                PostStockMovement(whFg, MovementType.Inbound, recv, pkgRecv,
+                PostStockMovement(item.WarehouseId ?? whFg, MovementType.Inbound, recv, pkgRecv,
                     ReferenceDocType.FinishedGoodsReceipt, voucher,
                     productId: item.ProductId, lotId: item.LotId, orderId: rcpt.OrderId,
                     customerId: item.CustomerId ?? orderCust, packagingTypeId: item.PackagingTypeId,
                     notes: $"استلام إنتاج تام — سند {rcpt.ReceiptNumber}");
             }
+
+            // §المخرجات الثانوية والمخلفات: تُستلم كاملة مع أول استلام (بصنف 003 المطابق إن وُجد)
+            totalReceived += PostByProducts(rcpt, voucher);
 
             if (totalReceived <= 0.001) return OpResult.Fail("لم تُدخل أي كمية مستلمة.");
 
@@ -347,7 +353,7 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
     public OpResult Unapprove(int receiptId)
     {
         Require("finishedgoods", "Cancel");
-        var rcpt = Db.FinishedGoodsReceipts.Include(r => r.Items).FirstOrDefault(r => r.Id == receiptId);
+        var rcpt = Db.FinishedGoodsReceipts.Include(r => r.Items).Include(r => r.ByProducts).FirstOrDefault(r => r.Id == receiptId);
         if (rcpt == null) return OpResult.Fail("السند غير موجود.");
         if (!rcpt.IsApproved) return OpResult.Fail("السند غير معتمد.");
 
@@ -371,7 +377,7 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
                 int pkgBack = item.PackageCount > 0 && item.NetWeightKg > 0
                     ? (int)Math.Round(item.ReceivedQtyKg / item.NetWeightKg * item.PackageCount) : 0;
                 seq++;
-                PostStockMovement(whFg, MovementType.Outbound, item.ReceivedQtyKg, pkgBack,
+                PostStockMovement(item.WarehouseId ?? whFg, MovementType.Outbound, item.ReceivedQtyKg, pkgBack,
                     ReferenceDocType.FinishedGoodsReceipt, $"{prefix}#REV{seq}",
                     productId: item.ProductId, lotId: item.LotId, orderId: rcpt.OrderId,
                     customerId: item.CustomerId ?? orderCust, packagingTypeId: item.PackagingTypeId,
@@ -383,6 +389,7 @@ public class FinishedGoodsService : ServiceBase, IFinishedGoodsService
                 }
                 item.ReceivedQtyKg = 0;
             }
+            ReverseByProducts(rcpt, $"{prefix}#REV");
             rcpt.IsApproved = false;
             rcpt.ReceiptStatus = "None";
             rcpt.Status = DocStatuses.Issued;

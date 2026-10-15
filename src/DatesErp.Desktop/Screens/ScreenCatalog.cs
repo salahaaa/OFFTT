@@ -59,14 +59,14 @@ public static class ScreenCatalog
         new("aux-issue", "الإنتاج", "صرف الأصناف المساعدة", "auxiliary", "🧪", "MRPAUX1003"),
         new("customer-cartons", "الإنتاج", "كراتين العملاء (ماركات)", "auxiliary", "🏷️", "MRPAUX1004"),
         new("materials", "الإنتاج", "صرف المواد للأوامر (قديم)", "materials", "🧪", "MRPMPS1008"),
-        new("proddelivery", "الإنتاج", "أوامر تسليم الإنتاج", "production", "📤", "MRPMPS1021"),
+        new("proddelivery", "الإنتاج", "تسجيل الإنتاج الفعلي (إقفال اليوم)", "production", "📤", "MRPMPS1021"),
 
         // ✅ الجودة
         new("quality", "الجودة", "فحوصات الجودة", "quality", "🔍", "MRPQC1002"),
         new("wastage", "الجودة", "الهالك والأصناف الثانوية", "quality", "🗑", "MRPQC1003"),
 
         // 🚚 التسليم والشحن
-        new("finishedgoods", "التسليم والشحن", "تسليم الإنتاج (مخزن التام)", "finishedgoods", "📦", "MRPMPS1015"),
+        new("finishedgoods", "التسليم والشحن", "تسليم الإنتاج للمخازن", "finishedgoods", "📦", "MRPMPS1015"),
         new("delivery", "التسليم والشحن", "تسليم العملاء", "delivery", "🚛", "MRPINV1005"),
         new("avail", "التسليم والشحن", "متاح العملاء", "delivery", "📦", "MRPDLV1002"),   // §B102.1 (إصلاح فحص): نقطة دخول ميزة B100
 

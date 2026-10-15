@@ -149,6 +149,12 @@ public partial class ProductionDeliveryView : UserControl
             var r = _saveActual?.Invoke(input) ?? WithService(s => s.SaveActualProduction(input));
             if (!r.Ok) { StatusLabel.Text = r.Message; return; }
             LoadOrders(order.OrderId); StatusLabel.Text = r.Message;
+            // §تسليم الإنتاج للمخازن: التسجيل لا يحرّك المخزون — الانتقال للتسليم قرار صريح
+            if (AppContainer.Get<DialogService>().Confirm(r.Message + "\n\nالانتقال الآن إلى شاشة «تسليم الإنتاج للمخازن» لهذا الأمر؟", "تسليم الإنتاج"))
+            {
+                FinishedGoodsView.PendingOrderIdToDeliver = order.OrderId;
+                (Window.GetWindow(this) as MainWindow)?.OpenScreen("finishedgoods");
+            }
         }
         catch (ArgumentException ex) { StatusLabel.Text = ex.Message; }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "ActualDelivery.Save"); }

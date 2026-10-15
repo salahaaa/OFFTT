@@ -187,6 +187,8 @@ public class Warehouse : BaseEntity
     public string WarehouseNameAr { get; set; }
     public string WarehouseType { get; set; } = "Raw";
     public bool IsActive { get; set; } = true;
+    /// <summary>§تعدد المخازن: المخزن الافتراضي لنوعه (يُقترح أولاً في الشاشات — قابل للتغيير دائماً، لا إلزامي).</summary>
+    public bool IsDefault { get; set; }
 }
 
 public class Shift : BaseEntity

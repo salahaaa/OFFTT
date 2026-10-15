@@ -75,16 +75,19 @@ public static class StoredPrintModels
     {
         return Snapshot(db, () =>
         {
-        var d=db.FinishedGoodsReceipts.AsNoTracking().Include(x=>x.Items).Single(x=>x.Id==id);
+        var d=db.FinishedGoodsReceipts.AsNoTracking().Include(x=>x.Items).Include(x=>x.ByProducts).Single(x=>x.Id==id);
         var order=db.ProductionOrders.AsNoTracking().FirstOrDefault(o=>o.Id==d.OrderId);
-        var m=Model(db,d,"سند تسليم واستلام إنتاج تام (WFG)");m.MainTitle="بنود الإنتاج التام والمخرجات الثانوية المسلمة للمستودعات";
+        string Wh(int? w){int wid=w??d.WarehouseId;return db.Warehouses.AsNoTracking().Where(x=>x.Id==wid).Select(x=>x.WarehouseNameAr).FirstOrDefault()??"—";}
+        var m=Model(db,d,"سند تسليم الإنتاج للمخازن");m.MainTitle="بنود الإنتاج التام المسلَّمة للمخازن (مخزن لكل بند)";
         m.StatusAr=PrintStatus.Of(d)+" — "+ReceiptState(d.ReceiptStatus);
         m.Info.AddRange(new[]{("أمر الإنتاج",order?.DocumentNumber??"—"),("تاريخ السند",UiFormat.D(d.DeliveryDate)),("حالة الاستلام",ReceiptState(d.ReceiptStatus)),("رقم الاستلام",d.ReceiptNumber??"—"),
-            ("المستودع",db.Warehouses.AsNoTracking().Where(w=>w.Id==d.WarehouseId).Select(w=>w.WarehouseNameAr).FirstOrDefault()??"—")});
-        m.Columns=new[]{"م","العميل","الصنف","الدفعة","العبوة","عدد العبوات","المسلم (كجم)","المستلم فعليًا (كجم)","المتبقي (كجم)"};
-        int n=1;foreach(var i in d.Items.OrderBy(i=>i.Id))m.Rows.Add(new object[]{n++,Customer(db,i.CustomerId??order?.CustomerId),Product(db,i.ProductId),Lot(db,i.LotId),Pack(db,i.PackagingTypeId),i.PackageCount,i.NetWeightKg,i.ReceivedQtyKg,Math.Max(0,i.NetWeightKg-i.ReceivedQtyKg)});
+            ("المخزن الرئيسي",Wh(null))});
+        m.Columns=new[]{"م","العميل","الصنف","الدفعة","العبوة","عدد العبوات","المسلم (كجم)","المستلم فعليًا (كجم)","المتبقي (كجم)","مخزن الإدخال"};
+        int n=1;foreach(var i in d.Items.OrderBy(i=>i.Id))m.Rows.Add(new object[]{n++,Customer(db,i.CustomerId??order?.CustomerId),Product(db,i.ProductId),Lot(db,i.LotId),Pack(db,i.PackagingTypeId),i.PackageCount,i.NetWeightKg,i.ReceivedQtyKg,Math.Max(0,i.NetWeightKg-i.ReceivedQtyKg),Wh(i.WarehouseId)});
         m.Totals.AddRange(new[]{("عدد العبوات",N(d.Items.Sum(i=>i.PackageCount))),("المسلم (كجم)",N(d.Items.Sum(i=>i.NetWeightKg))),("المستلم فعليًا (كجم)",N(d.Items.Sum(i=>i.ReceivedQtyKg))),("المتبقي (كجم)",N(d.Items.Sum(i=>Math.Max(0,i.NetWeightKg-i.ReceivedQtyKg))))});
-        m.Signatures.AddRange(new[]{"مسؤول التعبئة والتغليف","ضابط فحص الجودة","أمين مستودع الإنتاج التام WFG","مدير إدارة الإنتاج / الاعتماد"});return m;
+        if(d.ByProducts.Count>0){m.SecondTitle="المخرجات الثانوية والمخلفات المسلَّمة";m.SecondColumns=new[]{"م","المخرج","الوحدة","الكمية","المستلم","المخزن","قيد مخزني","ملاحظات"};int k=1;
+            foreach(var b in d.ByProducts.OrderBy(b=>b.Id)){var def=db.ByProducts.AsNoTracking().FirstOrDefault(x=>x.Id==b.ByProductId);m.SecondRows.Add(new object[]{k++,def?.ByProductNameAr??("#"+b.ByProductId),def?.UnitOfMeasure??"كجم",b.Qty,b.ReceivedQty,Wh(b.WarehouseId),b.ProductId!=null?"نعم":"توثيق فقط",b.Notes??""});}}
+        m.Signatures.AddRange(new[]{"مسؤول التعبئة والتغليف","ضابط فحص الجودة","أمين المخزن المستلم","مدير إدارة الإنتاج / الاعتماد"});return m;
 
         });
     }

@@ -18,6 +18,8 @@ public class FinishedGoodsReceipt : WorkflowDocument
     public int ReceiveCount { get; set; } // عدد سندات الاستلام المنفذة على هذا الأمر (سندات المتابعة)
 
     public List<FinishedGoodsReceiptItem> Items { get; set; } = new();
+    /// <summary>§تسليم الإنتاج للمخازن: المخرجات الثانوية والمخلفات المسلَّمة مع السند.</summary>
+    public List<FinishedGoodsReceiptByProduct> ByProducts { get; set; } = new();
 }
 
 public class FinishedGoodsReceiptItem : BaseEntity
@@ -35,6 +37,25 @@ public class FinishedGoodsReceiptItem : BaseEntity
     public int? DeliveryItemId { get; set; }
     /// <summary>§نظام الوحدات: وزن الكرتون وقت الاستلام — لا يتغير بتعريف العبوة لاحقاً.</summary>
     public double CartonWeightKg { get; set; }
+    /// <summary>§تسليم الإنتاج للمخازن: مخزن الإدخال لهذا البند (فارغ = مخزن رأس السند — توافق مع السندات القديمة).</summary>
+    public int? WarehouseId { get; set; }
+}
+
+/// <summary>
+/// §تسليم الإنتاج للمخازن — مخرج ثانوي/مخلفات مسلَّم ضمن سند تسليم الإنتاج:
+/// الصنف من جدول ByProducts (التعريف)، والكمية بوحدته، ومخزن الاستلام يختاره المستخدم.
+/// ProductId = صنف المجموعة 003 المطابق إن وُجد (به تُقيَّد حركة المخزون)؛ فارغ = توثيق في السند فقط.
+/// </summary>
+public class FinishedGoodsReceiptByProduct : BaseEntity
+{
+    public int ReceiptId { get; set; }
+    public int ByProductId { get; set; }
+    public int? ProductId { get; set; }
+    /// <summary>decimal لا double — قاعدة CI: لا حقول double جديدة في الكيانات.</summary>
+    public decimal Qty { get; set; }
+    public decimal ReceivedQty { get; set; }
+    public int? WarehouseId { get; set; }
+    public string Notes { get; set; }
 }
 
 /// <summary>§7 — تسليم الإنتاج للعميل.</summary>

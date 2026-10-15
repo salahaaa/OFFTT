@@ -43,7 +43,7 @@ public static class ScreenFactory
     private static UIElement FinishedGoodsScreen()
     {
         var v = new FinishedGoodsView();
-        var c = new ErpChrome { TitleText = "[MAIN] - [نظام إدارة وتصنيع التمور - أمر تسليم الإنتاج التام] - (" + Company + ")" };
+        var c = new ErpChrome { TitleText = "[MAIN] - [نظام إدارة وتصنيع التمور - تسليم الإنتاج للمخازن] - (" + Company + ")" };
         v.AttachChrome(c);
         return c;
     }

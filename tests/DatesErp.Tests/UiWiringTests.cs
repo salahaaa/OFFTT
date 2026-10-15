@@ -100,7 +100,9 @@ public class UiWiringTests
     /// </summary>
     [Theory]
     [InlineData("StartOrder")]            // بدء الإنتاج من شاشة الأوامر
-    [InlineData("SaveActualProduction")]  // التسجيل الذري يجمع التنفيذ والاستلام والإحالة
+    [InlineData("SaveActualProduction")]  // التسجيل الذري يجمع التنفيذ والإحالة للجودة (التسليم للمخازن من شاشته)
+    [InlineData("SaveDraft")]             // مسودة سند تسليم الإنتاج للمخازن
+    [InlineData("SearchDeliverableOrders")] // بحث أوامر الإنتاج القابلة للتسليم
     [InlineData("IssueTodayOrders")]             // إنشاء أمر من الخطة
     [InlineData("ApproveOrder")]          // اعتماد الأمر
             // إقفال خطة الإنتاج
@@ -137,9 +139,14 @@ public class UiWiringTests
         Assert.Matches(@"\.SaveActualProduction\s*\(", ui);
         Assert.DoesNotMatch(@"\.CloseProductionDay\s*\(", ui); // no second actual-entry form
         var coordinator = StripComments(File.ReadAllText(Path.Combine(RepoRoot(), "src", "DatesErp.Application", "Services", "ProductionDeliveryService.Actual.cs")));
-        foreach (var operation in new[] { "CloseProductionDay", "SaveReceipt", "Issue", "Receive" })
-            Assert.Matches(@"\." + operation + @"\s*\(", coordinator);
+        Assert.Matches(@"\.CloseProductionDay\s*\(", coordinator);
         Assert.Contains("JoinParentTransaction = true", coordinator);
+        // §تسليم الإنتاج للمخازن: تسجيل الفعلي لا ينشئ سند تسليم ولا يستلم مخزنياً — التسليم من شاشته باعتماد صريح
+        foreach (var operation in new[] { "SaveReceipt", "Issue", "Receive" })
+            Assert.DoesNotMatch(@"\." + operation + @"\s*\(", coordinator);
+        var delivery = StripComments(File.ReadAllText(Path.Combine(RepoRoot(), "src", "DatesErp.Application", "Services", "FinishedGoodsService.Delivery.cs")));
+        Assert.Matches(@"\.Receive\s*\(", delivery);
+        Assert.Contains("JoinParentTransaction = true", delivery);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -253,7 +260,7 @@ public class UiWiringTests
         {
             ("OrdersView", "TodayGrid"),
             ("PlanningView", "RowsGrid"), ("ReceivingView", "ShipGrid"),
-            ("DeliveryView", "DeliveriesGrid"), ("FinishedGoodsView", "ReceiptsGrid"),
+            ("DeliveryView", "DeliveriesGrid"), ("FinishedGoodsView", "ItemsGrid"),
             ("QualityView", "ResultsGrid"),
             ("ReportsView", "ReportGrid"),
         };

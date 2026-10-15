@@ -15,12 +15,12 @@ public static class ActualAcceptanceSnapshot
         var items = db.ProductionOrderItems.AsNoTracking().Where(i => i.OrderId == order.Id).ToList();
         var plan = db.ProductionPlans.AsNoTracking().Include(p => p.Items).Single(p => p.Id == order.SourcePlanId);
         var quality = db.QualityChecks.AsNoTracking().Include(q => q.Items).Single(q => q.ExecutionId == execution.Id);
-        var receipt = db.FinishedGoodsReceipts.AsNoTracking().Include(r => r.Items).Single(r => r.OrderId == order.Id);
+        var receipts = db.FinishedGoodsReceipts.AsNoTracking().Include(r => r.Items).Include(r => r.ByProducts).Where(r => r.OrderId == order.Id).OrderBy(r => r.Id).ToList();
         var report = sp.GetRequiredService<IReportService>().Run("daily_production", new());
         var result = new
         {
             provider = db.Database.ProviderName, database = db.Database.GetDbConnection().Database,
-            checkpoint = "After actual save/stock posting; BEFORE actual QC results or approval", windowsWpfExecuted = false,
+            checkpoint = "After actual save + explicit warehouse delivery (FG delivery screen service); BEFORE actual QC results or approval", windowsWpfExecuted = false,
             plan = new { plan.DocumentNumber, plan.Status, items = plan.Items.Select(i => new { i.Id, i.ProductId, i.CustomerId, i.PlannedCartons, i.PlannedQtyKg, i.ProducedQtyKg }) },
             order = new { order.Id, order.DocumentNumber, order.CustomerId, order.Status, order.ProductionDate },
             items = items.Select(i => new { i.Id, i.ProductId, i.LotId, i.CustomerId, i.PlannedCartons, i.ProducedCartons, difference = i.PlannedCartons - i.ProducedCartons, i.PlannedQtyKg, i.ProducedQtyKg }),
@@ -28,7 +28,7 @@ public static class ActualAcceptanceSnapshot
             downtime = db.ExecutionDowntimes.AsNoTracking().Where(d => d.ExecutionId == execution.Id).Select(d => new { d.Hours, d.ReasonAr }).ToList(),
             secondary = db.ExecutionByProducts.AsNoTracking().Where(b => b.ExecutionId == execution.Id).ToList().Select(b => new { b.ByProductId, b.Qty, definition = db.ByProducts.AsNoTracking().Where(d => d.Id == b.ByProductId).Select(d => new { d.ByProductNameAr, d.UnitOfMeasure }).Single() }),
             quality = new { quality.Id, quality.DocumentNumber, quality.Status, quality.IsApproved, quality.TotalCheckedCartons, quality.TotalCheckedKg, quality.AcceptedKg, quality.ExpectedCheckDate, items = quality.Items.Select(i => new { i.ProductId, i.LotId, i.CheckedCartons, i.CheckedQtyKg, i.AcceptedQtyKg, i.Notes }) },
-            receipt = new { receipt.Id, receipt.DocumentNumber, receipt.ReceiptNumber, receipt.Status, receipt.ReceiptStatus, receipt.QualityCheckId, receipt.IsApproved, items = receipt.Items.Select(i => new { i.ProductId, i.LotId, i.CustomerId, i.PackageCount, i.NetWeightKg, i.ReceivedQtyKg }) },
+            receipts = receipts.Select(receipt => new { receipt.Id, receipt.DocumentNumber, receipt.ReceiptNumber, receipt.Status, receipt.ReceiptStatus, receipt.QualityCheckId, receipt.IsApproved, receipt.WarehouseId, items = receipt.Items.Select(i => new { i.ProductId, i.LotId, i.CustomerId, i.PackageCount, i.NetWeightKg, i.ReceivedQtyKg, i.WarehouseId }), byProducts = receipt.ByProducts.Select(b => new { b.ByProductId, b.ProductId, b.Qty, b.ReceivedQty, b.WarehouseId }) }),
             stock = db.StockBalances.AsNoTracking().Where(b => b.CustomerId == order.CustomerId).Select(b => new { b.WarehouseId, b.ProductId, b.LotId, b.CustomerId, b.QtyKg, b.PackageCount }).ToList(),
             movements = db.InventoryTransactions.AsNoTracking().Where(t => t.OrderId == order.Id).Select(t => new { t.TxnNumber, t.ReferenceDocType, t.ReferenceDocNumber, t.ProductId, t.LotId, t.CustomerId, t.QtyKg, t.PackageCount }).ToList(),
             report = new { report.TitleAr, report.Columns, report.Rows, report.Summary }
