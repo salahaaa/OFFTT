@@ -11,9 +11,7 @@
                 <Border Style="{StaticResource SecHeader}" Margin="-12,-12,-12,8">
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Right" Text="📦 سند تسليم الإنتاج للمخازن" Style="{StaticResource SectionTitle}"/>
-                        <Border x:Name="StatusBadge" DockPanel.Dock="Left" Style="{StaticResource StatusBadge}" Margin="8,0,0,0">
-                            <TextBlock x:Name="StatusText" Text="جديد" Style="{StaticResource StatusText}"/>
-                        </Border>
+                        <TextBlock x:Name="StatusText" DockPanel.Dock="Left" Text="جديد" Style="{StaticResource StatusBadge}" Margin="8,0,0,0"/>
                     </DockPanel>
                 </Border>
                 <WrapPanel>
