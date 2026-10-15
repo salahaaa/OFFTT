@@ -11,3 +11,4 @@ publish/
 *.bak
 install_*.log
 install_log.txt
+__pycache__/
