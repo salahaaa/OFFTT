@@ -133,6 +133,8 @@ public partial class QualityView : UserControl
         if (ResultsGrid == null || _loading) return;
         _current = SourceBox.SelectedItem as QualitySourceDto;
         _rows.Clear(); _standards.Clear();
+        // §إصلاح: شرائح الأصناف كانت تتراكم عند كل تغيير مصدر — تُمسح (يبقى العنوان الأول فقط)
+        while (ItemsPanel.Children.Count > 1) ItemsPanel.Children.RemoveAt(ItemsPanel.Children.Count - 1);
         CheckNoChip.Text = _current?.CheckId != null
             ? $"🧾 فحص {_current.CheckNumber} — {QualityCheckStatuses.ToArabic(_current.CheckStatus)}{(_current.CheckApproved ? " (معتمد — للقراءة)" : "")}"
             : "— لا فحص محفوظ بعد";
@@ -182,6 +184,12 @@ public partial class QualityView : UserControl
                     Value = savedStd.TryGetValue(st.Id, out var v) ? v : st.DefaultValue });
             BuildGradeColumns();
             Recalc();
+            if (_current != null && _rows.Count == 0)
+                StatusLabel.Text = $"⚠ تسليم الإنتاج {_current.OrderNumber} بلا أصناف منتَجة (الفعلي صفر) — لا شيء يُفحص.";
+            else if (_rows.Count > 0 && _gradeColumns.Count == 0)
+                StatusLabel.Text = "⛔ لا توجد صفات جودة (مقبول/مرفوض) معرَّفة لمجموعة المنتج التام 002 — عرّفها من «إعدادات الأصناف → أنواع نتائج الفحص» ثم حدّث الشاشة.";
+            else if (_rows.Count > 0 && !_current.CheckApproved)
+                StatusLabel.Text += $"  ✎ أعمدة الإدخال: {string.Join("، ", _gradeColumns.Select(g => g.NameAr))} — انقر الخلية واكتب عدد الكراتين.";
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Quality.Source"); }
     }
@@ -202,12 +210,24 @@ public partial class QualityView : UserControl
         foreach (var g in _gradeColumns)
             ResultsGrid.Columns.Add(new DataGridTextColumn
             {
-                Header = g.NameAr,
+                Header = "✎ " + g.NameAr,
                 Binding = new Binding($"GradeQtys[{g.ResultTypeId}]") { UpdateSourceTrigger = PropertyChangedTrigger, Mode = BindingModeTwoWay },
-                Width = 110,
+                Width = 120,
+                IsReadOnly = _current?.CheckApproved == true,
+                CellStyle = EditableCellStyle(),
             });
         AddCol("الدفعة", nameof(ItemRowUi.LotCode), 110);
         AddCol("الإجمالي", nameof(ItemRowUi.Total) + StringFormatN0, 100);
+    }
+    /// <summary>خلايا الإدخال مميزة بصرياً (خلفية فاتحة + إطار) حتى لا تلتبس بالأعمدة المقروءة.</summary>
+    private Style EditableCellStyle()
+    {
+        var st = new Style(typeof(DataGridCell));
+        if (TryFindResource("InfoLightBrush") is Brush bg) st.Setters.Add(new Setter(Control.BackgroundProperty, bg));
+        if (TryFindResource("PrimaryBrush") is Brush bd) st.Setters.Add(new Setter(Control.BorderBrushProperty, bd));
+        st.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(1)));
+        st.Setters.Add(new Setter(Control.FontWeightProperty, FontWeights.Bold));
+        return st;
     }
     private const string StringFormatN0 = ";{0:N0}";
     private const System.Windows.Data.UpdateSourceTrigger PropertyChangedTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged;

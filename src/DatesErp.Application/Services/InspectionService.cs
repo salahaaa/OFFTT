@@ -570,6 +570,41 @@ public class InspectionService : ServiceBase, IInspectionService
     /// <summary>اسم وحدة من القاموس — للرسائل.</summary>
     // ═══ §v1.50.28: التدفق المعتمد — الفحص ينزل مباشرة من تسليم الإنتاج ═══
 
+    /// <summary>
+    /// §إصلاح شاشة الجودة (لا حقول إدخال): صفات الصنف التي تُدخل بالكرتون.
+    /// كان الفلتر يشترط UnitLabel == "كرتون" حرفياً — فإن كانت أنواع النتائج في قاعدة قديمة بلا وحدة
+    /// أو بتسمية مختلفة («كراتين»/«كرتونة») أو الجدول فارغاً، لم يظهر أي عمود إدخال إطلاقاً.
+    /// الآن: مقبول/مرفوض بوحدة كرتونية (بالاسم أو بالمعرّف) ← وإلا كل مقبول/مرفوض ← وإلا الأنواع الأساسية تُنشأ.
+    /// </summary>
+    private List<AllowedResultType> CartonGradesFor(int productId)
+    {
+        static bool CartonLike(string u) => !string.IsNullOrWhiteSpace(u) && (u.Contains("كرتون") || u.Contains("كراتين") || u.Contains("CTN", StringComparison.OrdinalIgnoreCase));
+        var ctnUnitIds = Db.UnitsOfMeasure.AsNoTracking().Where(u => u.UnitNameAr.Contains("كرتون") || u.UnitNameAr.Contains("كراتين")).Select(u => u.Id).ToList();
+        var all = GetAllowedResultTypesForItem(productId, "002")
+            .Where(t => t.ResultKind is InspectionResultType.KindAccepted or InspectionResultType.KindRejected).ToList();
+        var carton = all.Where(t => CartonLike(t.UnitLabel) || (t.UnitId != null && ctnUnitIds.Contains(t.UnitId.Value))).ToList();
+        if (carton.Count > 0) return carton;
+        if (all.Count > 0) return all;
+        EnsureBaselineResultTypes();
+        return GetAllowedResultTypesForItem(productId, "002")
+            .Where(t => t.ResultKind is InspectionResultType.KindAccepted or InspectionResultType.KindRejected).ToList();
+    }
+
+    /// <summary>أنواع النتائج الأساسية (مطابق/غير مطابق بالكرتون) إن لم يوجد أي نوع مقبول/مرفوض نشط — تُنشأ مرة واحدة وتُدار لاحقاً من إعدادات الأصناف.</summary>
+    private void EnsureBaselineResultTypes()
+    {
+        bool any = Db.InspectionResultTypes.Any(t => t.IsActive && (t.ResultKind == InspectionResultType.KindAccepted || t.ResultKind == InspectionResultType.KindRejected));
+        if (any) return;
+        int? uCtn = Db.UnitsOfMeasure.Where(u => u.UnitNameAr == "كرتون").Select(u => (int?)u.Id).FirstOrDefault();
+        var ok = Db.InspectionResultTypes.FirstOrDefault(t => t.Code == "RT-OK");
+        var rej = Db.InspectionResultTypes.FirstOrDefault(t => t.Code == "RT-REJ");
+        if (ok != null) { ok.IsActive = true; ok.ResultKind = InspectionResultType.KindAccepted; ok.UnitLabel ??= "كرتون"; }
+        else Db.InspectionResultTypes.Add(new InspectionResultType { Code = "RT-OK", NameAr = "خرج تام مطابق", ResultKind = InspectionResultType.KindAccepted, UnitId = uCtn, UnitLabel = "كرتون", IsFinishedGood = true, EntersInventory = true, SortNo = 1 });
+        if (rej != null) { rej.IsActive = true; rej.ResultKind = InspectionResultType.KindRejected; rej.UnitLabel ??= "كرتون"; }
+        else Db.InspectionResultTypes.Add(new InspectionResultType { Code = "RT-REJ", NameAr = "غير مطابق", ResultKind = InspectionResultType.KindRejected, UnitId = uCtn, UnitLabel = "كرتون", EntersInventory = false, SortNo = 2 });
+        Db.SaveChanges();
+    }
+
     public List<QualitySourceDto> GetDeliverySources()
     {
         Require("quality", "View");
@@ -607,9 +642,7 @@ public class InspectionService : ServiceBase, IInspectionService
                     CustomerName = custId != null ? Db.Customers.AsNoTracking().Where(c => c.Id == custId).Select(c => c.CustomerName).FirstOrDefault() : null,
                     CartonWeightKg = UnitsPolicy.CartonWeight(Db, it.ProductId, it.PackagingTypeId),
                     PackageName = it.PackagingTypeId != null ? Db.PackagingTypes.AsNoTracking().Where(pk => pk.Id == it.PackagingTypeId).Select(pk => pk.PackageNameAr).FirstOrDefault() : null,
-                    AllowedGrades = GetAllowedResultTypesForItem(it.ProductId, "002")
-                        .Where(t => t.ResultKind is InspectionResultType.KindAccepted or InspectionResultType.KindRejected
-                                    && t.UnitLabel == "كرتون").ToList(),
+                    AllowedGrades = CartonGradesFor(it.ProductId),
                 });
             }
             // تسمية مصدر مقروءة بأسماء الأصناف لا أرقامها
