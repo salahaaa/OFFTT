@@ -165,8 +165,6 @@ public partial class PlanningView : UserControl
         }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Planning.Load.ShiftsLines"); }
 
-        RefreshCustomerList();
-
         try
         {
             using var _numScope = AppContainer.NewScope();
@@ -179,42 +177,26 @@ public partial class PlanningView : UserControl
         UpdateCapacityBar();
     }
 
-    /// <summary>تحميل/إعادة تحميل قائمة العملاء لخطة العميل المحدد — مع إظهار سبب الفشل الحقيقي إن فشل.</summary>
-    private void RefreshCustomerList()
-    {
-        try
-        {
-            if (SingleCustBox == null) return;
-            using var scope = AppContainer.NewScope();
-            var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
-            var customers = db.Customers.AsNoTracking().Where(c => c.IsActive).OrderBy(c => c.CustomerName).ToList();
-            SingleCustBox.ItemsSource = customers;
-            if (customers.Count == 0)
-                AppContainer.Get<DialogService>().Error("لا يوجد عملاء نشطون في البيانات الأساسية — أضف العملاء أولاً من شاشة بيانات العملاء.");
-            else if (SingleCustBox.SelectedIndex < 0)
-                SingleCustBox.Text = "-- اختر العميل --";
-        }
-        catch (Exception ex)
-        {
-            AppContainer.Get<DialogService>().HandleException(ex, "Planning.Load.Customers");
-        }
-    }
-
     // ══════════ نطاق التخطيط ونوع الخطة ══════════
 
-    private void Scope_Changed(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// §اختيار العميل من النافذة المنبثقة فقط: النطاق لا يُختار يدوياً بل يُستنتج من عملاء البنود.
+    /// عميل واحد ← Single + يُخزَّن في رأس الخطة؛ أكثر من عميل ← Multi.
+    /// </summary>
+    private (string ScopeMode, int? SingleCustomerId) DeriveScope()
     {
-        if (SingleCustPanel == null) return;
-        bool single = SingleRadio.IsChecked == true;
-        SingleCustPanel.Visibility = single ? Visibility.Visible : Visibility.Collapsed;
-        // الخطة لعميل واحد: العميل يُحفظ في رأس النموذج فلا يظهر عموده بجوار البنود
-        // §عميل واحد: لا يُعرض عمود العميل — كل البنود له، فالعمود تكرار بلا معلومة.
-        if (CustomerColumn != null)
-            CustomerColumn.Visibility = single ? Visibility.Collapsed : Visibility.Visible;
-        if (ScopeChip != null)
-            ScopeChip.Text = single ? "النطاق: 👤 عميل محدد" : "النطاق: 👥 عدة عملاء (مجمع)";
-        // في كل مرة يختار المستخدم «خطة لعميل محدد» تُعاد قراءة قائمة العملاء لضمان ألا تكون فارغة
-        if (single) RefreshCustomerList();
+        var custIds = _rows.Where(r => r.CustomerId != null && r.CustomerId > 0).Select(r => r.CustomerId!.Value).Distinct().ToList();
+        return custIds.Count == 1 ? ("Single", custIds[0]) : ("Multi", null);
+    }
+
+    private void UpdateScopeChip()
+    {
+        if (ScopeChip == null) return;
+        var names = _rows.Where(r => !string.IsNullOrWhiteSpace(r.CustomerName) && r.CustomerName != "—")
+            .Select(r => r.CustomerName).Distinct().ToList();
+        ScopeChip.Text = names.Count == 0 ? "العملاء: —"
+            : names.Count == 1 ? $"العميل: 👤 {names[0]}"
+            : $"العملاء: 👥 {names.Count} عملاء (مجمع)";
     }
 
     /// <summary>نوع الخطة — يومية = تاريخ واحد فقط، الباقي فترة من-إلى. أزرار المدد السريعة أزيلت (1.50.57) بناءً على طلب المستخدم: الاكتفاء بتحديد التاريخ.</summary>
@@ -291,68 +273,13 @@ public partial class PlanningView : UserControl
         catch (Exception ex) { ErrorLog.Write(ex, "Planning.DateChips"); }
     }
 
-    /// <summary>مطابق لـ v1.59 onSinglePlanCustomerChanged: اختيار العميل في الخطة الفردية يفتح نافذة دفعاته فوراً.</summary>
-    private void SingleCust_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (_programmaticScope || SingleCustBox == null || SingleCustBox.SelectedItem == null) return;
-        if (SingleRadio.IsChecked != true) return;
-        try
-        {
-            var cust = SingleCustBox.SelectedItem;
-            var id = (int)cust.GetType().GetProperty("Id")!.GetValue(cust)!;
-            var name = (string)cust.GetType().GetProperty("CustomerName")!.GetValue(cust)!;
-            OpenLotsEditor(id, name);
-        }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Planning.SingleCustomer"); }
-    }
-
     // ══════════ الإدراج: أصناف العميل / العملاء ══════════
 
-    /// <summary>👤 أصناف العميل (F4): عميل محدد ← نافذة شحناته ودفعاته ← اختيار الدفعة ← تفاصيل البند.</summary>
+    /// <summary>📦 اختيار الأصناف والعملاء (F4): نافذة واحدة لكل الدفعات — فلتر العميل والصنف داخلها، ثم إنزال.</summary>
     private void PickLot_Click(object sender, RoutedEventArgs e)
     {
-        try
-        {
-            int? custId = null; string custName = null;
-            if (SingleRadio.IsChecked == true)
-            {
-                if (SingleCustBox.SelectedItem == null)
-                { AppContainer.Get<DialogService>().Error("اختر العميل المحدد أولاً."); return; }
-                custId = (int)SingleCustBox.SelectedItem.GetType().GetProperty("Id").GetValue(SingleCustBox.SelectedItem);
-                custName = (string)SingleCustBox.SelectedItem.GetType().GetProperty("CustomerName").GetValue(SingleCustBox.SelectedItem);
-                AddRowForCustomer(custId.Value, custName);
-            }
-            else
-            {
-                OpenLotsEditor(null, null);
-            }
-        }
+        try { OpenLotsEditor(null, null); }
         catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Planning.PickLot"); }
-    }
-
-    /// <summary>👥 أصناف العملاء (F6): النافذة المجمعة لشحنات ودفعات كافة العملاء (مطابقة لـ v1.59).</summary>
-    private void MultiCustomers_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            // §B76: في وضع «عميل محدد» لا تُفتح قائمة كل العملاء — دفعات عميله فقط
-            if (SingleRadio.IsChecked == true)
-            {
-                if (SingleCustBox.SelectedItem == null)
-                { AppContainer.Get<DialogService>().Error("اختر العميل المحدد أولاً."); return; }
-                var cust = SingleCustBox.SelectedItem as DatesErp.Core.Domain.Entities.Customer;
-                OpenLotsEditor(cust.Id, cust.CustomerName);
-                return;
-            }
-            OpenLotsEditor(null, null);
-        }
-        catch (Exception ex) { AppContainer.Get<DialogService>().HandleException(ex, "Planning.MultiCustomers"); }
-    }
-
-    /// <summary>👤 أصناف العميل (F4): فتح النافذة المنبثقة لدفعات العميل المحدد فقط.</summary>
-    private void AddRowForCustomer(int custId, string custName)
-    {
-        OpenLotsEditor(custId, custName);
     }
 
     /// <summary>
@@ -617,9 +544,6 @@ public partial class PlanningView : UserControl
             var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
             var svc = scope.ServiceProvider.GetRequiredService<IPlanningService>();
             var customers = db.Customers.Where(c => c.IsActive).ToList();
-            var fixedCustomer = SingleRadio.IsChecked == true ? SingleCustBox.SelectedItem as DatesErp.Core.Domain.Entities.Customer : null;
-            if (SingleRadio.IsChecked == true && fixedCustomer == null) { AppContainer.Get<DialogService>().Error("اختر العميل أولاً."); return; }
-            if (fixedCustomer != null) customers = new() { fixedCustomer };
             string Label(DatesErp.Core.Domain.Entities.Customer c) => $"{c.CustomerName} ({c.CustomerCode})";
             var customerDialog = new Views.EntityFormDialog("عميل البند اليدوي", new List<Views.FieldDef>
             { new() { Key = "customer", LabelAr = "العميل", Kind = "combo", Options = customers.Select(Label).ToArray() } }) { Owner = Window.GetWindow(this) };
@@ -793,6 +717,7 @@ public partial class PlanningView : UserControl
     {
         int n = 1;
         foreach (var r in _rows) { r.No = n; r.Priority = n; n++; }
+        UpdateScopeChip(); // شريحة العملاء تتبع البنود بعد كل إضافة/حذف
     }
 
     // §1.50.57 — أزرار المدد السريعة أزيلت بناءً على طلب المستخدم (الاكتفاء بتحديد التاريخ). تبقى الدالة للتوافق لكن لا تُستدعى.
@@ -947,10 +872,7 @@ public partial class PlanningView : UserControl
 
             string ptype = TypeBox.SelectedIndex switch { 0 => "Daily", 1 => "Weekly", 2 => "Monthly", _ => "Period" };
             // §B75: النطاق والعميل المحدد يُحفظان في رأس الخطة
-            string scopeMode = SingleRadio.IsChecked == true ? "Single" : "Multi";
-            int? singleCustId = scopeMode == "Single"
-                ? (SingleCustBox.SelectedItem as DatesErp.Core.Domain.Entities.Customer)?.Id
-                : null;
+            var (scopeMode, singleCustId) = DeriveScope();
             using var scope = AppContainer.NewScope();
             var svc = (IPlanningService)scope.ServiceProvider.GetService(typeof(IPlanningService));
             var itemsDto = validRows.Select(row => new PlanItemDto
@@ -1126,7 +1048,7 @@ public partial class PlanningView : UserControl
             TitleBox.Text = "";
             NotesBox.Text = "";
             StartBox.SelectedDate = EndBox.SelectedDate = null;
-            MultiRadio.IsChecked = true;
+            UpdateScopeChip();
             SetLocked(false);
             SetStatusUI("Draft");
             TypeBox_Changed(null, null); // إعادة تطبيق قاعدة «اليومية = تاريخ واحد»
@@ -1235,9 +1157,6 @@ public partial class PlanningView : UserControl
         NotesBox.IsEnabled = !locked;
         ShiftBox.IsEnabled = !locked;
         LineBox.IsEnabled = !locked;
-        MultiRadio.IsEnabled = !locked;
-        SingleRadio.IsEnabled = !locked;
-        SingleCustBox.IsEnabled = !locked;
         RowsGrid.IsReadOnly = locked;
         if (InsertActionsPanel != null) InsertActionsPanel.IsEnabled = !locked;
         if (EditRowBtn != null) EditRowBtn.IsEnabled = !locked;
@@ -1285,21 +1204,7 @@ public partial class PlanningView : UserControl
             TypeBox.SelectedIndex = plan.PlanType switch { "Daily" => 0, "Weekly" => 1, "Monthly" => 2, _ => 3 };
             if (plan.ShiftId != null) { int si = _shiftIds.IndexOf(plan.ShiftId.Value); if (si >= 0) ShiftBox.SelectedIndex = si; }
             if (plan.LineId != null) { int li = _lineIds.IndexOf(plan.LineId.Value); if (li >= 0) LineBox.SelectedIndex = li; }
-            // §B75: استعادة نطاق التخطيط والعميل المحدد من الرأس
-            // §B106.2 — الحارس _programmaticScope كان يُفعَّل لاحقاً في هذه الدالة فقط،
-            // بينما إسنادُ SingleCustBox.SelectedIndex هنا يُطلق SelectionChanged فوراً،
-            // فيستدعي SingleCust_Changed -> OpenLotsEditor: تُفتح نافذة «أصناف وشحنات
-            // العميل» فوق الخطة بمجرد النقر المزدوج عليها لعرضها. الفتح استعراضٌ لا
-            // إدخال، فالحارس يلزم حول الإسناد نفسه.
-            _programmaticScope = true;
-            try
-            {
-                if (plan.ScopeMode == "Single") SingleRadio.IsChecked = true; else MultiRadio.IsChecked = true;
-                if (plan.SingleCustomerId != null)
-                    for (int ci = 0; ci < SingleCustBox.Items.Count; ci++)
-                        if ((SingleCustBox.Items[ci] as DatesErp.Core.Domain.Entities.Customer)?.Id == plan.SingleCustomerId) { SingleCustBox.SelectedIndex = ci; break; }
-            }
-            finally { _programmaticScope = false; }
+            // §النطاق يُستنتج من عملاء البنود بعد تحميلها (UpdateScopeChip أدناه) — لا اختيار يدوي للعميل في الرأس
             FillPlanMeta();
 
             _rows.Clear();
@@ -1338,24 +1243,7 @@ public partial class PlanningView : UserControl
                     SourceMode = it.SourceUnit ?? "كجم"
                 });
             }
-            // نطاق الخطة: عميل واحد ← يُخفى عمود العميل (محفوظ في رأس النموذج) | عدة عملاء ← يظهر العمود
-            // (الحارس يمنع الفتح التلقائي للنافذة أثناء الاسترجاع البرمجي)
-            _programmaticScope = true;
-            try
-            {
-                var custIds = plan.Items.Where(i => i.CustomerId != null).Select(i => i.CustomerId).Distinct().ToList();
-                if (custIds.Count <= 1)
-                {
-                    SingleRadio.IsChecked = true;
-                    if (custIds.Count == 1)
-                    {
-                        RefreshCustomerList(); // نضمن وجود القائمة قبل ضبط القيمة
-                        SingleCustBox.SelectedValue = custIds[0];
-                    }
-                }
-                else MultiRadio.IsChecked = true;
-            }
-            finally { _programmaticScope = false; }
+            UpdateScopeChip();
 
             Renumber();
             RowsGrid.Items.Refresh();

@@ -23,6 +23,9 @@ public class LotsEditorWindow : Window
     private bool _refreshing;
     private readonly TextBox _filterBox = new() { Width = 220 };
     private readonly ComboBox _productFilter = new() { Width = 190, MinHeight = 24 };
+    /// <summary>§اختيار العميل من النافذة المنبثقة (لا من الواجهة الرئيسية): فلتر العميل.</summary>
+    private readonly ComboBox _customerFilter = new() { Width = 200, MinHeight = 24 };
+    private sealed class CustomerOption { public int? Id; public string Name; public override string ToString() => Name; }
     private readonly CheckBox _checkAll = new() { VerticalAlignment = VerticalAlignment.Center };
     private readonly List<LotEditorRow> _rows;
     private readonly List<LotEditorRow> _all;
@@ -86,6 +89,16 @@ public class LotsEditorWindow : Window
         foreach (var p in prodOpts) _productFilter.Items.Add(p);
         _productFilter.SelectedIndex = 0;
         _productFilter.SelectionChanged += (_, _) => ApplyFilter();
+        // §فلتر العميل — قائمة فريدة من عملاء الدفعات المعروضة؛ «كل العملاء» افتراضياً.
+        var custOpts = rows.Where(r => r.CustomerId != null && r.CustomerId > 0)
+            .GroupBy(r => r.CustomerId).Select(g => new CustomerOption { Id = g.Key, Name = g.First().CustomerName ?? "—" })
+            .OrderBy(c => c.Name).ToList();
+        _customerFilter.Items.Add(new CustomerOption { Id = null, Name = "👥 كل العملاء" });
+        foreach (var c in custOpts) _customerFilter.Items.Add(c);
+        if (rows.Any(r => r.CustomerId == null || r.CustomerId == 0))
+            _customerFilter.Items.Add(new CustomerOption { Id = 0, Name = "بدون عميل" });
+        _customerFilter.SelectedIndex = 0;
+        _customerFilter.SelectionChanged += (_, _) => ApplyFilter();
 
         // §B110: الزرّان المكرران (رأس/تذييل) نفس الفعل — لفظ واحد موجز + إجراء رئيسي كحلي
         var insertAllBtn = new Button
@@ -102,7 +115,9 @@ public class LotsEditorWindow : Window
 
         var headerBar = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
         var rightStack = new StackPanel { Orientation = Orientation.Horizontal };
-        rightStack.Children.Add(new TextBlock { Text = "🔎 فلترة الأصناف:", FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+        rightStack.Children.Add(new TextBlock { Text = "👤 العميل:", FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+        rightStack.Children.Add(_customerFilter);
+        rightStack.Children.Add(new TextBlock { Text = "🔎 الصنف:", FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 6, 0) });
         rightStack.Children.Add(_productFilter);
         rightStack.Children.Add(new TextBlock { Text = "بحث حر:", FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 6, 0) });
         rightStack.Children.Add(_filterBox);
@@ -434,6 +449,10 @@ public class LotsEditorWindow : Window
         var term = (_filterBox.Text ?? "").Trim().ToLower();
         int? filterProduct = _productFilter.SelectedItem is ProductOption pf && pf.Id > 0 ? pf.Id : (int?)null;
         IEnumerable<LotEditorRow> rows = _all;
+        // §فلتر العميل المحدد (null = الكل، 0 = بدون عميل).
+        if (_customerFilter.SelectedItem is CustomerOption cf && cf.Id != null)
+            rows = cf.Id == 0 ? rows.Where(r => r.CustomerId == null || r.CustomerId == 0)
+                              : rows.Where(r => r.CustomerId == cf.Id);
         // §فلتر الصنف التام المحدد.
         if (filterProduct != null)
             rows = rows.Where(r => r.AllProducts != null && r.AllProducts.Any(p => p.Id == filterProduct.Value));

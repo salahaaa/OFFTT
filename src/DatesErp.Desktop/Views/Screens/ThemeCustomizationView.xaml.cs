@@ -33,7 +33,7 @@ namespace DatesErp.Desktop.Views.Screens
                 .WithNew((_, _) => NewTheme_Click(null, null), "ثيم جديد")
                 .WithSave((_, _) => Save_Click(null, null), "حفظ الثيم (F10)")
                 .WithUndo((_, _) => Cancel_Click(null, null), "إلغاء")
-                .WithSearch((_, _) => { }, "بحث")
+                .WithSearch((_, _) => SavedThemesList?.Focus(), "بحث في الثيمات المحفوظة")
                 .WithPrint((_, _) => Export_Click(null, null))
                 .WithExit((_, _) => (Window.GetWindow(this) as MainWindow)?.OpenScreen("dashboard"));
             chrome.SetToolbar(_toolbar);

@@ -14,8 +14,8 @@
   "OrdersView.xaml": 32,
   "PermissionsView.xaml": 24,
   "PlanClosureView.xaml": 26,
-  "PlanningView.xaml": 55,
-  "ProductionDeliveryView.xaml": 17,
+  "PlanningView.xaml": 51,
+  "ProductionDeliveryView.xaml": 20,
   "QualityView.xaml": 19,
   "ReceivingView.xaml": 16,
   "ReportsView.xaml": 0,
@@ -28,5 +28,7 @@
   "AuxiliarySetupView.xaml": 0,
   "ProductBOMView.xaml": 0,
   "ProductionAuxiliaryView.xaml": 0,
-  "CustomerCartonMappingView.xaml": 0
+  "CustomerCartonMappingView.xaml": 0,
+  "ThemeCustomizationView.xaml": 8,
+  "WarehouseTransferView.xaml": 7
 }

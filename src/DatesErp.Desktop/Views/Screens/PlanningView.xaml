@@ -61,7 +61,7 @@
                             <TextBlock x:Name="PeriodChip" Text="الفترة: —" FontSize="11.5" FontWeight="Bold" Foreground="#14532D"/>
                         </Border>
                         <Border Background="#F3EEFB" BorderBrush="#D6C8EF" BorderThickness="1" CornerRadius="11" Padding="9,3">
-                            <TextBlock x:Name="ScopeChip" Text="النطاق: 👥 عدة عملاء (مجمع)" FontSize="11.5" FontWeight="Bold" Foreground="#6D28D9"/>
+                            <TextBlock x:Name="ScopeChip" Text="العملاء: —" FontSize="11.5" FontWeight="Bold" Foreground="#6D28D9"/>
                         </Border>
                     </WrapPanel>
                     <StackPanel VerticalAlignment="Center">
@@ -121,25 +121,9 @@
                             <ComboBox x:Name="LineBox" Width="140" SelectionChanged="CapacityInputs_Changed"/>
                         </StackPanel>
                     </Grid>
-                    <!-- صف 2: نطاق التخطيط + العميل + البيان -->
+                    <!-- صف 2: البيان — اختيار العميل/الصنف يتم حصراً من النافذة المنبثقة «اختيار الأصناف والعملاء» -->
                     <Grid Margin="0,10,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
-                            <TextBlock Text="نطاق التخطيط:" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <RadioButton x:Name="MultiRadio" Content="👥 عدة عملاء (مجمع)" IsChecked="True" FontWeight="Bold" GroupName="scope" Margin="0,0,10,0" Checked="Scope_Changed"/>
-                            <RadioButton x:Name="SingleRadio" Content="👤 عميل محدد" FontWeight="Bold" GroupName="scope" Checked="Scope_Changed"/>
-                        </StackPanel>
-                        <Border x:Name="SingleCustPanel" Grid.Column="1" Background="#FEF9C3" BorderBrush="#FACC15" BorderThickness="1" Padding="6,3" Visibility="Collapsed" Margin="0,0,14,0">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="العميل:" FontWeight="Bold" Foreground="#854D0E" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="SingleCustBox" Width="220" DisplayMemberPath="CustomerName" SelectedValuePath="Id" SelectionChanged="SingleCust_Changed"/>
-                            </StackPanel>
-                        </Border>
-                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <StackPanel Orientation="Horizontal">
                             <TextBlock Text="البيان:" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <TextBox x:Name="NotesBox" Width="360"/>
                         </StackPanel>
@@ -156,8 +140,8 @@
                     </StackPanel>
                     <Button x:Name="ApproveActionBtn" Content="✅ اعتماد الخطة (F10)" Style="{StaticResource ErpApproveButton}" Click="ApproveAction_Click" Margin="0,0,6,0"/>
                     <Button x:Name="SaveActionBtn" Content="💾 حفظ الخطة" Style="{StaticResource ErpPrimaryButton}" Click="Save_Click" Margin="0,0,6,0"/>
-                    <Button x:Name="CustLotsBtn" Content="👤 أصناف العميل (F4)" Style="{StaticResource ErpButton}" Foreground="#14532D" Click="PickLot_Click" Margin="0,0,6,0"/>
-                    <Button Content="👥 أصناف العملاء (F6)" Style="{StaticResource ErpButton}" Foreground="#1F2937" Click="MultiCustomers_Click" Margin="0,0,6,0"/>
+                    <Button x:Name="CustLotsBtn" Content="📦 اختيار الأصناف والعملاء (F4)" Style="{StaticResource ErpButton}" Foreground="#14532D" Click="PickLot_Click" Margin="0,0,6,0"
+                            ToolTip="نافذة واحدة: اختر العميل من الفلتر ثم الصنف التام والعبوة والكمية لكل دفعة — ثم إنزال للخطة"/>
                     <Button Content="📥 من استلام مباشر" Style="{StaticResource ErpButton}" Foreground="#B45309" Click="DirectReceipt_Click" Margin="0,0,6,0"/>
                     <Button Content="⚖ اقتراح توزيع عادل" Style="{StaticResource ErpButton}" Foreground="#7C3AED" Click="Fair_Click" Margin="0,0,6,0"/>
                     <Button Content="🔍 فحص الخطة" Style="{StaticResource ErpButton}" Foreground="#0A246A" Click="CheckPlan_Click" Margin="0,0,6,0"

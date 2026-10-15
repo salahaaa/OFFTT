@@ -139,25 +139,10 @@ namespace DatesErp.Desktop.Theming
         {
             try
             {
-                using var scope = AppContainer.NewScope();
-                var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
-                var setting = db.SystemSettings.FirstOrDefault(s => s.SettingKey == "UITheme_Current");
+                // §44 حارس الكتابة الطبقية: إعدادات النظام تُكتب عبر ISystemSettingsService فقط
                 var json = JsonSerializer.Serialize(theme);
-                if (setting == null)
-                {
-                    db.SystemSettings.Add(new DatesErp.Core.Domain.Entities.SystemSetting
-                    {
-                        SettingKey = "UITheme_Current",
-                        SettingValue = json,
-                        Category = "UI",
-                        Description = "الثيم الحالي للنظام"
-                    });
-                }
-                else
-                {
-                    setting.SettingValue = json;
-                }
-                db.SaveChanges();
+                using var scope = AppContainer.NewScope();
+                scope.ServiceProvider.GetRequiredService<DatesErp.Core.Interfaces.Services.ISystemSettingsService>().Set("UITheme_Current", json);
             }
             catch (Exception ex)
             {
@@ -182,25 +167,9 @@ namespace DatesErp.Desktop.Theming
                 var json = JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(LocalThemesListPath, json);
 
-                // حفظ في قاعدة البيانات أيضاً
+                // حفظ في قاعدة البيانات أيضاً — عبر طبقة الخدمات (§44)
                 using var scope = AppContainer.NewScope();
-                var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
-                var setting = db.SystemSettings.FirstOrDefault(s => s.SettingKey == "UITheme_List");
-                if (setting == null)
-                {
-                    db.SystemSettings.Add(new DatesErp.Core.Domain.Entities.SystemSetting
-                    {
-                        SettingKey = "UITheme_List",
-                        SettingValue = json,
-                        Category = "UI",
-                        Description = "قائمة الثيمات المحفوظة"
-                    });
-                }
-                else
-                {
-                    setting.SettingValue = json;
-                }
-                db.SaveChanges();
+                scope.ServiceProvider.GetRequiredService<DatesErp.Core.Interfaces.Services.ISystemSettingsService>().Set("UITheme_List", json);
             }
             catch (Exception ex)
             {
@@ -264,13 +233,7 @@ namespace DatesErp.Desktop.Theming
                 File.WriteAllText(LocalThemesListPath, json);
 
                 using var scope = AppContainer.NewScope();
-                var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
-                var setting = db.SystemSettings.FirstOrDefault(s => s.SettingKey == "UITheme_List");
-                if (setting != null)
-                {
-                    setting.SettingValue = json;
-                    db.SaveChanges();
-                }
+                scope.ServiceProvider.GetRequiredService<DatesErp.Core.Interfaces.Services.ISystemSettingsService>().Set("UITheme_List", json);
             }
             catch (Exception ex)
             {
