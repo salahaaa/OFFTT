@@ -1,0 +1,21 @@
+نسخة حفظ قبل إعادة تصميم منطق إنشاء خطة الإنتاج
+
+الملف الرئيسي:
+OFFTT_pre_plan_redesign_20260928.tar.gz
+التحقق:
+OFFTT_pre_plan_redesign_20260928.tar.gz.sha256
+
+محتوى النسخة هو شجرة المشروع الحالية وقت الحفظ، مع استثناء .git وملفات zip/مخرجات البناء.
+لاستعادة ملفات المشروع فوق checkout موجود:
+
+  tar -xzf backups/OFFTT_pre_plan_redesign_20260928.tar.gz -C /home/user/OFFTT
+
+تم حفظ حالة Git والفرع والتغييرات غير الملتزم بها في الملفات ذات الامتداد:
+.status.txt
+.branch.txt
+.head.txt
+.working-tree.patch
+.staged.patch
+
+الفرع المقصود:
+arena/01a0ac34-offtt
