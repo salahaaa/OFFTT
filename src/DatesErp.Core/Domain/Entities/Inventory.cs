@@ -39,6 +39,39 @@ public class InventoryTransaction : AuditableEntity
     public string MachineName { get; set; }
 }
 
+// ═══════════════ §تحويل مخزني — سند نقل كميات بين مخزنين ═══════════════
+
+/// <summary>
+/// سند تحويل مخزني بين مخزن مصدر ومخزن مستلم. دورة الحياة: مسودة (بلا أثر على المخزون)
+/// ← معتمد (حركتان لكل بند: صادر من المصدر + وارد للمستلم عبر PostStockMovement في معاملة واحدة)
+/// ← ملغي (عكس الحركتين بمرجع «رقم السند#REV»). الرصيد لا يُخزَّن هنا — يُحسب من الحركات.
+/// </summary>
+public class WarehouseTransfer : WorkflowDocument
+{
+    public DateTime TransferDate { get; set; } = DateTime.Now;
+    public int SourceWarehouseId { get; set; }
+    public int DestinationWarehouseId { get; set; }
+    /// <summary>سبب الإلغاء/العكس إن حدث.</summary>
+    public string CancelReason { get; set; }
+    public DateTime? CancelledDate { get; set; }
+    public List<WarehouseTransferItem> Items { get; set; } = new();
+}
+
+/// <summary>بند تحويل: مفتاح الرصيد الكامل (صنف/مادة + دفعة + عميل + عبوة) كما في StockBalance.</summary>
+public class WarehouseTransferItem : BaseEntity
+{
+    public int TransferId { get; set; }
+    public int? ProductId { get; set; }
+    public int? MaterialId { get; set; }
+    public int? LotId { get; set; }
+    public int? CustomerId { get; set; }
+    public int? PackagingTypeId { get; set; }
+    /// <summary>decimal لا double — قاعدة CI للكيانات الجديدة؛ يُحوَّل إلى double عند قيد الحركة (StockBalance القائم double).</summary>
+    public decimal QtyKg { get; set; }
+    public int PackageCount { get; set; }
+    public string Notes { get; set; }
+}
+
 // ═══════════════ §B10 — دورة الكرتون الفارغ: عدّ وبيع ═══════════════
 
 /// <summary>سند عدّ فعلي للكرتون الفارغ — الفرق يُقيّد تسوية آلياً.</summary>

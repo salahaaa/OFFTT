@@ -47,13 +47,13 @@
                         </StackPanel>
                     </DockPanel>
                 </Border>
-                <DataGrid x:Name="BalanceGrid" Height="140" RowHeight="28" MouseDoubleClick="Balance_DoubleClick">
+                <DataGrid x:Name="BalanceGrid" Height="140" RowHeight="28" AutoGenerateColumns="False" IsReadOnly="True" MouseDoubleClick="Balance_DoubleClick">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="المخزن" Binding="{Binding WarehouseName}" Width="120"/>
                         <DataGridTextColumn Header="الصنف/المادة" Binding="{Binding ProductName}" Width="*"/>
                         <DataGridTextColumn Header="الدفعة" Binding="{Binding LotCode}" Width="110"/>
                         <DataGridTextColumn Header="العميل" Binding="{Binding CustomerName}" Width="120"/>
-                        <DataGridTextColumn Header="الرصيد (كجم)" Binding="{Binding QtyKg}" Width="100"/>
+                        <DataGridTextColumn Header="الرصيد (كجم)" Binding="{Binding QtyKg, StringFormat=N1}" Width="100"/>
                         <DataGridTextColumn Header="العبوات" Binding="{Binding PackageCount}" Width="80"/>
                         <DataGridTextColumn Header="العبوة" Binding="{Binding PackagingName}" Width="100"/>
                     </DataGrid.Columns>
@@ -83,11 +83,14 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="الدفعة" Binding="{Binding LotCode}" Width="110" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="المتاح (كجم)" Binding="{Binding AvailableQty}" Width="90" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="الكمية (كجم) *" Binding="{Binding QtyKg, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
-                        <DataGridTextColumn Header="العبوات" Binding="{Binding PackageCount, UpdateSourceTrigger=PropertyChanged}" Width="80"/>
-                        <DataGridTextColumn Header="ملاحظات" Binding="{Binding Notes}" Width="150"/>
+                        <DataGridTextColumn Header="الدفعة" Binding="{Binding LotCode}" Width="100" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="العميل" Binding="{Binding CustomerName}" Width="110" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="العبوة" Binding="{Binding PackagingName}" Width="90" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="المتاح (كجم)" Binding="{Binding AvailableQty, StringFormat=N1}" Width="90" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="المتاح (عبوة)" Binding="{Binding AvailablePackages}" Width="85" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="✎ الكمية (كجم) *" Binding="{Binding QtyKg, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
+                        <DataGridTextColumn Header="✎ العبوات" Binding="{Binding PackageCount, UpdateSourceTrigger=PropertyChanged}" Width="80"/>
+                        <DataGridTextColumn Header="✎ ملاحظات" Binding="{Binding Notes, UpdateSourceTrigger=PropertyChanged}" Width="150"/>
                         <DataGridTemplateColumn Header="حذف" Width="50">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -108,13 +111,13 @@
                     <TextBlock Text="🔍 بحث:" FontWeight="Bold" FontSize="11.5" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <TextBox x:Name="SearchBox" Width="340" TextChanged="Search_Changed" VerticalAlignment="Center"/>
                 </StackPanel>
-                <DataGrid x:Name="TransfersGrid" RowHeight="30" FontSize="13.5" ColumnHeaderHeight="38" MouseDoubleClick="TransfersGrid_DoubleClick">
+                <DataGrid x:Name="TransfersGrid" RowHeight="30" FontSize="13.5" ColumnHeaderHeight="38" AutoGenerateColumns="False" IsReadOnly="True" MouseDoubleClick="TransfersGrid_DoubleClick">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="الرقم" Binding="{Binding DocNo}" Width="130"/>
                         <DataGridTextColumn Header="من مخزن" Binding="{Binding SourceWh}" Width="140"/>
                         <DataGridTextColumn Header="إلى مخزن" Binding="{Binding DestWh}" Width="140"/>
                         <DataGridTextColumn Header="التاريخ" Binding="{Binding Date}" Width="110"/>
-                        <DataGridTextColumn Header="الإجمالي (كجم)" Binding="{Binding Qty}" Width="110"/>
+                        <DataGridTextColumn Header="الإجمالي (كجم)" Binding="{Binding Qty, StringFormat=N1}" Width="110"/>
                         <DataGridTextColumn Header="الحالة" Binding="{Binding StatusAr}" Width="*"/>
                     </DataGrid.Columns>
                 </DataGrid>

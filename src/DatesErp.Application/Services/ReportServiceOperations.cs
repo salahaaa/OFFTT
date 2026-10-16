@@ -1265,6 +1265,7 @@ public partial class ReportService
                 ReferenceDocType.ProductionExecution => "تنفيذ/إقفال إنتاج",
                 ReferenceDocType.Adjustment => "تسوية جرد",
                 ReferenceDocType.Return => "مردود",
+                ReferenceDocType.WarehouseTransfer => "تحويل مخزني بين مخزنين",
                 _ => "حركة مخزنية"
             };
             bool inbound = t.QtyKg >= 0;

@@ -52,6 +52,7 @@ public class TestHost : IDisposable
             .AddScoped<ICustomerDeliveryService, CustomerDeliveryService>()
             .AddScoped<DatesErp.Application.Services.CartonService>()
             .AddScoped<IInventoryService, InventoryService>()
+            .AddScoped<IWarehouseTransferService, DatesErp.Application.Services.WarehouseTransferService>()
             .AddScoped<IAdminService, AdminService>()
             .AddScoped<IReportService, ReportService>()
                 .AddScoped<SupplierMovementService>()

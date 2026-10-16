@@ -1,5 +1,6 @@
 using DatesErp.Core.Common;
 using DatesErp.Core.Domain.Entities;
+using DatesErp.Core.Domain.Enums;
 using DatesErp.Desktop.Views;
 using DatesErp.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -48,6 +49,29 @@ public static class StoredPrintModels
         foreach(var x in d.Materials.OrderBy(x=>x.Id))m.SecondRows.Add(new object[]{db.AuxiliaryMaterials.AsNoTracking().Where(a=>a.Id==x.MaterialId).Select(a=>a.MaterialNameAr).FirstOrDefault()??"—",x.UnitOfMeasure,x.CalculatedQty,x.ActualIssuedQty,x.ConsumedQty});
         m.Totals.AddRange(new[]{("المستهدف (كجم)",N(d.Items.Sum(x=>x.PlannedQtyKg))),("الكراتين المستهدفة",N(d.Items.Sum(x=>x.PlannedCartons))),("المنفذ (كجم)",N(d.Items.Sum(x=>x.ProducedQtyKg)))});
         m.Signatures.AddRange(new[]{"مشرف صالة الإنتاج","أمين مخزن المواد المساعدة","مدير إدارة الإنتاج / الاعتماد"});return m;
+
+        });
+    }
+
+    /// <summary>§تحويل مخزني (WHT): رأس السند + بنود النقل + حركات المخزون المنفذة فعلياً (إن اعتُمد).</summary>
+    public static PhaseDocModel WarehouseTransfer(DatesErpDbContext db,int id)
+    {
+        return Snapshot(db, () =>
+        {
+        var d=db.WarehouseTransfers.AsNoTracking().Include(x=>x.Items).Single(x=>x.Id==id);
+        string Wh(int w)=>db.Warehouses.AsNoTracking().Where(x=>x.Id==w).Select(x=>x.WarehouseNameAr).FirstOrDefault()??$"#{w}";
+        string Item(WarehouseTransferItem i)=>i.ProductId!=null?Product(db,i.ProductId):db.AuxiliaryMaterials.AsNoTracking().Where(a=>a.Id==i.MaterialId).Select(a=>a.MaterialNameAr).FirstOrDefault()??"—";
+        var m=Model(db,d,"سند تحويل مخزني بين المخازن (Stock Transfer)");m.MainTitle="بنود النقل من المخزن المصدر إلى المخزن المستلم";
+        m.Info.AddRange(new[]{("تاريخ التحويل",UiFormat.D(d.TransferDate)),("من مخزن",Wh(d.SourceWarehouseId)),("إلى مخزن",Wh(d.DestinationWarehouseId)),("الحالة",DocStatuses.ToArabic(d.Status))});
+        if(d.Status==DocStatuses.Cancelled)m.Info.Add(("سبب الإلغاء",d.CancelReason??"—"));
+        m.Columns=new[]{"م","الصنف/المادة","الدفعة","العميل","العبوة","الكمية (كجم)","العبوات","ملاحظات"};
+        int n=1;foreach(var i in d.Items.OrderBy(x=>x.Id))m.Rows.Add(new object[]{n++,Item(i),Lot(db,i.LotId),Customer(db,i.CustomerId),Pack(db,i.PackagingTypeId),i.QtyKg,i.PackageCount,i.Notes??""});
+        m.Totals.AddRange(new[]{("إجمالي الكمية (كجم)",N(d.Items.Sum(x=>x.QtyKg))),("إجمالي العبوات",N(d.Items.Sum(x=>x.PackageCount)))});
+        var txns=db.InventoryTransactions.AsNoTracking().Where(t=>t.ReferenceDocType==ReferenceDocType.WarehouseTransfer&&(t.ReferenceDocNumber==d.DocumentNumber||t.ReferenceDocNumber==d.DocumentNumber+"#REV")).OrderBy(t=>t.Id).ToList();
+        m.SecondTitle=txns.Count==0?"حركات المخزون — لم تُنفَّذ بعد (السند غير معتمد)":"حركات المخزون المنفذة فعلياً لهذا السند";
+        m.SecondColumns=new[]{"رقم الحركة","التاريخ","المخزن","النوع","الكمية (كجم)","العبوات","المرجع"};
+        foreach(var t in txns)m.SecondRows.Add(new object[]{t.TxnNumber,UiFormat.DT(t.TxnDate),Wh(t.WarehouseId),t.QtyKg>=0?"وارد":"صادر",t.QtyKg,t.PackageCount,t.ReferenceDocNumber});
+        m.Signatures.AddRange(new[]{"أمين المخزن المصدر","أمين المخزن المستلم","مدير المخازن / الاعتماد"});return m;
 
         });
     }

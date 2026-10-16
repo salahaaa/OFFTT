@@ -41,6 +41,7 @@ public static class AppContainer
         services.AddScoped<IProductionDeliveryService, ProductionDeliveryService>();
         services.AddScoped<ICustomerDeliveryService, CustomerDeliveryService>();
         services.AddScoped<IInventoryService, InventoryService>();
+        services.AddScoped<IWarehouseTransferService, WarehouseTransferService>(); // §تحويل مخزني بين المخازن (WHT)
         services.AddScoped<IAdminService, AdminService>();
         services.AddScoped<IReportService, ReportService>();
         services.AddScoped<SupplierMovementService>();

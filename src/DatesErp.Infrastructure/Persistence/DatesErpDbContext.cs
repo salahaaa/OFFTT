@@ -87,6 +87,8 @@ public class DatesErpDbContext : DbContext
     public DbSet<CartonCountItem> CartonCountItems => Set<CartonCountItem>();
     public DbSet<CartonSaleDoc> CartonSaleDocs => Set<CartonSaleDoc>();
     public DbSet<CartonSaleItem> CartonSaleItems => Set<CartonSaleItem>();
+    public DbSet<WarehouseTransfer> WarehouseTransfers => Set<WarehouseTransfer>();
+    public DbSet<WarehouseTransferItem> WarehouseTransferItems => Set<WarehouseTransferItem>();
     public DbSet<AuxGroup> AuxGroups => Set<AuxGroup>();
     public DbSet<AuxCustomerSpec> AuxCustomerSpecs => Set<AuxCustomerSpec>();
     // §1.50.63 — الأصناف المساعدة الجديد
@@ -229,6 +231,13 @@ public class DatesErpDbContext : DbContext
         // «بند الإقفال» — أُبقي الاسم حتى لا ينكسر عمود في قواعد المستخدمين القائمة.
         b.Entity<PlanClosingItem>().HasMany(i => i.ByProducts).WithOne().HasForeignKey(x => x.ClosingId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<PlanClosing>().HasIndex(c => c.DocumentNumber).IsUnique();
+
+        // ── التحويل المخزني ──
+        b.Entity<WarehouseTransfer>().HasMany(t => t.Items).WithOne().HasForeignKey(i => i.TransferId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<WarehouseTransfer>().HasIndex(t => t.DocumentNumber).IsUnique();
+        b.Entity<WarehouseTransfer>().HasIndex(t => new { t.SourceWarehouseId, t.Status });
+        b.Entity<WarehouseTransferItem>().HasIndex(i => i.TransferId);
+        b.Entity<WarehouseTransferItem>().Property(i => i.QtyKg).HasPrecision(18, 3);
 
         // ── الجودة ──
         b.Entity<QualityCheck>().HasMany(q => q.Items).WithOne().HasForeignKey(i => i.CheckId).OnDelete(DeleteBehavior.Cascade);

@@ -8,6 +8,15 @@ public static class ScreenFactory
 {
     private const string Company = "الشركة اليمنية لتعبئة وتصنيع التمور";
 
+    /// <summary>§تحويل مخزني: الشاشة تملك شريطها الكامل (جديد/حفظ/اعتماد/إلغاء/بحث/طباعة) — WrapPlain كان يعطيها تحديث/خروج فقط.</summary>
+    private static UIElement WarehouseTransferScreen()
+    {
+        var v = new WarehouseTransferView();
+        var c = new ErpChrome { TitleText = "[MAIN] - [نظام إدارة وتصنيع التمور - تحويل مخزني بين المخازن] - (" + Company + ")" };
+        v.AttachChrome(c);
+        return c;
+    }
+
     private static UIElement MyTasksScreen()
     {
         var v = new MyTasksView();
@@ -160,7 +169,7 @@ public static class ScreenFactory
         // المخازن والتام
         "finishedgoods" => FinishedGoodsScreen(),
         "fgreceive" => FGReceiveScreen(),
-        "whtransfer" => WrapPlain(new WarehouseTransferView(), "تحويل مخزني — بين المخازن", "المخازن والأرصدة", "MRPWH1001"),
+        "whtransfer" => WarehouseTransferScreen(),
         "balances" => Wrap(GenericListView.ForBalances(), "أرصدة المخزون", "المخازن والأرصدة", "MRPINV1001"),
         "movements" => Wrap(GenericListView.ForMovements(), "حركات المخزون", "المخازن والأرصدة", "MRPINV1003"),
 

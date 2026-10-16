@@ -370,6 +370,7 @@ public static class DbSeeder
             ("RCV", "سند استلام", "RCV"), ("CD", "تسليم عميل", "CD"), ("TXN", "حركة مخزون", "INV"),
             ("PCL", "إقفال خطة", "PCL"), ("LOT", "دفعة خام", "LOT"),
             ("TASK", "مهمة سير عمل", "TSK"), ("TRT", "معالجة وتعقيم", "TRT"),
+            ("WHT", "تحويل مخزني", "WHT"),
         })
         {
             if (!db.NumberingSchemes.Any(x => x.SchemeCode == sch.Item1))
