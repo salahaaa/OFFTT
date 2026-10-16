@@ -91,7 +91,16 @@ if %errorlevel%==0 (
 echo [OK] Step 3: no running instance.
 
 REM ---------- Step 4: backup current project files ----------
-for /f "tokens=1-3 delims=/.- " %%a in ("%DATE%") do set "STAMP=%%c%%b%%a"
+if /I "%HERE%"=="%ROOT%" (
+    echo [OK] Step 4: update was extracted directly into the target - backup not needed.
+    echo [OK] Step 5: update files already in place [COPY SUCCESS].
+    call :log "Source == Target: steps 4-5 skipped"
+    set "BK=%ROOT% [files were extracted in place - no backup]"
+    goto :after_copy
+)
+set "STAMP="
+for /f "delims=" %%S in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmm"') do set "STAMP=%%S"
+if "%STAMP%"=="" set "STAMP=%RANDOM%"
 set "BK=%ROOT%\_backup_before_%VER%_%STAMP%"
 if exist "%ROOT%\src" (
     robocopy "%ROOT%\src" "%BK%\src" /E /XD bin obj /NFL /NDL /NJH /NJS /NP >nul
@@ -124,6 +133,7 @@ if "%COPYFAIL%"=="1" (
 )
 echo [OK] Step 5: update files copied [COPY SUCCESS].
 call :log "Copy OK"
+:after_copy
 
 REM ---------- Step 6: .NET 8 SDK ----------
 dotnet --list-sdks 2>nul | findstr /R /C:"^8\." >nul 2>&1
