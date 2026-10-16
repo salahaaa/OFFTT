@@ -58,6 +58,12 @@ public class AuditSaveChangesInterceptor : SaveChangesInterceptor
 
         foreach (var entry in ctx.ChangeTracker.Entries().ToList())
         {
+            // SQL Server يملأ RowVersion بنفسه. على SQLite، رمز التزامن قيمة تطبيقية
+            // لكل BaseEntity (بما فيها AuditLog وPermissionAuditLog)، ويجب تغييره عند كل حفظ.
+            if (!isSqlServer && entry.Entity is BaseEntity rowVersioned
+                && (entry.State == EntityState.Added || entry.State == EntityState.Modified))
+                rowVersioned.RowVersion = NewSqliteRowVersion();
+
             if (entry.Entity is AuditLog) continue; // لا ندقق على التدقيق نفسه
 
             if (entry.Entity is AuditableEntity aud)
@@ -67,12 +73,10 @@ public class AuditSaveChangesInterceptor : SaveChangesInterceptor
                     case EntityState.Added:
                         aud.CreatedDate = now;
                         aud.CreatedBy ??= _session?.UserId;
-                        if (!isSqlServer) aud.RowVersion = Guid.NewGuid().ToByteArray();
                         break;
                     case EntityState.Modified:
                         aud.ModifiedDate = now;
                         aud.ModifiedBy = _session?.UserId;
-                        if (!isSqlServer) aud.RowVersion = Guid.NewGuid().ToByteArray();
                         break;
                 }
             }
@@ -100,7 +104,7 @@ public class AuditSaveChangesInterceptor : SaveChangesInterceptor
                     else if (statusProp != null && Equals(statusProp.CurrentValue, DocStatuses.Issued) && !Equals(statusProp.OriginalValue, DocStatuses.Issued)) action = "Issue";
                 }
 
-                auditEntries.Add(new AuditLog
+                var audit = new AuditLog
                 {
                     UserId = _session?.UserId,
                     UserName = _session?.UserName ?? "system",
@@ -114,13 +118,19 @@ public class AuditSaveChangesInterceptor : SaveChangesInterceptor
                     RecordId = recordId,
                     OldValue = entry.State == EntityState.Deleted || entry.State == EntityState.Modified ? SafeSnapshot(entry, original: true) : null,
                     NewValue = entry.State == EntityState.Deleted ? null : SafeSnapshot(entry, original: false)
-                });
+                };
+                // AuditLog أُنشئ بعد جولة ChangeTracker أعلاه، لذا نُسند رمز SQLite هنا؛
+                // SQL Server يستمر في توليده من عمود rowversion الخاص به.
+                if (!isSqlServer) audit.RowVersion = NewSqliteRowVersion();
+                auditEntries.Add(audit);
             }
         }
 
         if (auditEntries.Count > 0)
             ctx.Set<AuditLog>().AddRange(auditEntries);
     }
+
+    private static byte[] NewSqliteRowVersion() => Guid.NewGuid().ToByteArray();
 
     /// <summary>
     /// §B110 — لقطة القيم (قبل/بعد) مع حجب حقول الاعتماد نهائياً.

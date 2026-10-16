@@ -6,9 +6,9 @@ public abstract class BaseEntity
     public int Id { get; set; }
 
     /// <summary>
-    /// §5/§45 — Optimistic Concurrency لكل الكيانات: يُربط في SQL Server بعمود rowversion.
-    /// أي تعديل متزامن على نفس السجل يُطلق DbUpdateConcurrencyException
-    /// وتُعرض رسالة «تم تعديل هذا السجل بواسطة مستخدم آخر».
+    /// §5/§45 — رمز التزامن التفاؤلي لكل الكيانات: SQL Server يولّده كعمود rowversion،
+    /// بينما SQLite لا يملك هذا النوع ويُنشئ التطبيق رمزاً جديداً قبل كل إدخال/تعديل.
+    /// أي تعديل متزامن على السجل نفسه يُطلق DbUpdateConcurrencyException.
     /// </summary>
     public byte[] RowVersion { get; set; }
 }

@@ -165,10 +165,13 @@ public class DatesErpDbContext : DbContext
                 var rv = et.FindProperty(nameof(Core.Common.BaseEntity.RowVersion));
                 if (rv != null)
                 {
-                    // rowversion أصلي في SQL Server: رمز التزامن + توليد تلقائي عند الإضافة والتحديث
+                    // SQL Server يولّد rowversion من المخزن عند الإضافة والتحديث.
+                    // SQLite لا يملك نوع rowversion مولّداً؛ يولّد التطبيق البايتات قبل الحفظ،
+                    // لذا يجب ألا يعامل EF الخاصية كقيمة مولّدة من القاعدة أو يحذفها من INSERT/UPDATE.
                     rv.IsConcurrencyToken = true;
-                    if (Database.IsSqlServer())
-                        rv.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAddOrUpdate;
+                    rv.ValueGenerated = Database.IsSqlServer()
+                        ? Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAddOrUpdate
+                        : Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.Never;
                 }
             }
         }
