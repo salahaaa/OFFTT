@@ -47,7 +47,50 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
         UnitsPolicy.RequireItemType(Db, it.ProductId, "Finished", "تسليم العميل");
     }
 
-    public OpResult Save(int customerId, string deliveryDate, int? orderId, List<CustomerDeliveryItemDto> items)
+    /// <summary>
+    /// §تعدد المخازن — حل مخزن الصرف والتحقق منه: موجود، نشط، ومن مخازن الإنتاج التام
+    /// (WarehouseType = Finished أو General، أو الكود WFG) — نفس سياسة DeliveryPickService.
+    /// null ⇒ المخزن الافتراضي للتام (IsDefault ضمن المؤهلين) وإلا WFG.
+    /// </summary>
+    private Warehouse ResolveFinishedWarehouse(int? warehouseId)
+    {
+        if (warehouseId is int id)
+        {
+            var w = Db.Warehouses.AsNoTracking().FirstOrDefault(x => x.Id == id)
+                    ?? throw new DomainException($"المخزن المختار (#{id}) غير موجود.", "WAREHOUSE_NOT_FOUND");
+            if (!w.IsActive) throw new DomainException($"المخزن «{w.WarehouseNameAr}» غير فعّال — اختر مخزناً فعّالاً.", "WAREHOUSE_INACTIVE");
+            if (!IsFinishedWarehouse(w))
+                throw new DomainException($"المخزن «{w.WarehouseNameAr}» ليس مخزن إنتاج تام — تسليم العملاء يُصرف من مخازن التام فقط.", "WAREHOUSE_TYPE");
+            return w;
+        }
+        var def = Db.Warehouses.AsNoTracking().Where(x => x.IsActive).AsEnumerable()
+            .Where(IsFinishedWarehouse).OrderBy(x => x.IsDefault ? 0 : 1).ThenBy(x => x.WarehouseCode == "WFG" ? 0 : 1).ThenBy(x => x.Id)
+            .FirstOrDefault();
+        return def ?? throw new DomainException("لا يوجد مخزن إنتاج تام فعّال — عرّف المخزن WFG أو مخزناً من نوع Finished.", "WAREHOUSE_NOT_FOUND");
+    }
+
+    private static bool IsFinishedWarehouse(Warehouse w)
+        => w.WarehouseType == "Finished" || w.WarehouseType == "General" || w.WarehouseCode == "WFG";
+
+    /// <summary>
+    /// §توافق السندات القديمة (WarehouseId = null): المخزن الذي صُرف منه فعلاً = مخزن حركات الصرف
+    /// المسجلة لهذا السند (الدليل من دفتر الحركات)، لا المخزن الافتراضي. إن لم توجد حركات ⇒ WFG
+    /// (المسار الثابت الوحيد قبل هذا الإصدار).
+    /// </summary>
+    private int ResolveIssuedWarehouse(CustomerDelivery dlv)
+    {
+        if (dlv.WarehouseId is int saved) return saved;
+        var fromTxns = Db.InventoryTransactions.AsNoTracking()
+            .Where(t => t.ReferenceDocType == ReferenceDocType.CustomerDelivery
+                        && t.MovementType == MovementType.Outbound
+                        && (t.ReferenceDocNumber == dlv.DocumentNumber || t.ReferenceDocNumber.StartsWith(dlv.DocumentNumber + "#R")))
+            .Select(t => t.WarehouseId).Distinct().ToList();
+        if (fromTxns.Count > 1)
+            throw new DomainException($"السند {dlv.DocumentNumber} له حركات صرف في أكثر من مخزن — يحتاج مراجعة يدوية قبل الإلغاء.", "WAREHOUSE_AMBIGUOUS");
+        return fromTxns.Count == 1 ? fromTxns[0] : WarehouseId("WFG");
+    }
+
+    public OpResult Save(int customerId, string deliveryDate, int? orderId, List<CustomerDeliveryItemDto> items, int? warehouseId = null)
     {
         Require("delivery", "Create");
         if (items == null || items.Count == 0) return OpResult.Fail("أدخل بنداً واحداً على الأقل.");
@@ -61,13 +104,15 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
 
         return RunOp(() =>
         {
+            var wh = ResolveFinishedWarehouse(warehouseId);
             var dlv = new CustomerDelivery
             {
                 DocumentNumber = Numbering.Next("CD"),
                 CustomerId = customerId,
                 OrderId = orderId,
                 DeliveryDate = UiFormat.TryParseDate(deliveryDate, out var d) ? d : DateTime.Now,
-                Status = DocStatuses.Draft
+                Status = DocStatuses.Draft,
+                WarehouseId = wh.Id
             };
             foreach (var it in items)
             {
@@ -90,12 +135,12 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
             dlv.TotalCartons = dlv.Items.Sum(i => i.PackageCount);
             Db.CustomerDeliveries.Add(dlv);
             Db.SaveChanges();
-            return OpResult.Success($"تم حفظ سند تسليم العميل {dlv.DocumentNumber}.", dlv.Id, dlv.DocumentNumber);
+            return OpResult.Success($"تم حفظ سند تسليم العميل {dlv.DocumentNumber} — مخزن الصرف: {wh.WarehouseNameAr}.", dlv.Id, dlv.DocumentNumber);
         });
     }
 
     /// <summary>§B105/P2 — تعديل سند مسودة: يستبدل البنود بنفس حراس الحفظ. المعتمد يُرفض.</summary>
-    public OpResult Update(int deliveryId, int customerId, string deliveryDate, int? orderId, List<CustomerDeliveryItemDto> items)
+    public OpResult Update(int deliveryId, int customerId, string deliveryDate, int? orderId, List<CustomerDeliveryItemDto> items, int? warehouseId = null)
     {
         Require("delivery", "Edit");
         if (items == null || items.Count == 0) return OpResult.Fail("أدخل بنداً واحداً على الأقل.");
@@ -117,6 +162,10 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
             dlv.CustomerId = customerId;
             dlv.OrderId = orderId ?? dlv.OrderId;
             dlv.DeliveryDate = UiFormat.TryParseDate(deliveryDate, out var d) ? d : dlv.DeliveryDate;
+            // §تعدد المخازن: تغيير المخزن مسموح للمسودة فقط (المعتمد رُفض أعلاه قبل الوصول هنا)؛
+            // null من مستدعٍ قديم يُبقي مخزن السند المحفوظ ولا يعيده إلى الافتراضي.
+            var wh = ResolveFinishedWarehouse(warehouseId ?? dlv.WarehouseId);
+            dlv.WarehouseId = wh.Id;
 
             Db.CustomerDeliveryItems.RemoveRange(dlv.Items);
             dlv.Items.Clear();
@@ -177,7 +226,11 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
                 if (!ok) throw new DomainException(reason);
             }
 
-            var whFg = WarehouseId("WFG");
+            // §تعدد المخازن: الصرف من مخزن السند المحفوظ — لا من WFG الثابت.
+            // سند قديم بلا مخزن ⇒ WFG (المسار الوحيد قبل العمود) ويُثبَّت في السند لحظة الاعتماد.
+            var whDoc = ResolveFinishedWarehouse(dlv.WarehouseId ?? WarehouseId("WFG"));
+            var whFg = whDoc.Id;
+            dlv.WarehouseId = whFg;
             var usedOutRefs = new HashSet<string>(); // §CD-FIX: تميز المراجع داخل الاعتماد الواحد
             foreach (var item in dlv.Items)
             {
@@ -214,7 +267,7 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
                 var available = balance?.QtyKg ?? 0;
                 if (available < item.QtyKg - 0.001)
                     throw new DomainException(
-                        $"الكمية أكبر من رصيد العميل في مخزن التام.\nالمتاح: {available:N1} كجم — المطلوب: {item.QtyKg:N1} كجم",
+                        $"الكمية أكبر من رصيد العميل في مخزن «{whDoc.WarehouseNameAr}».\nالمتاح: {available:N1} كجم — المطلوب: {item.QtyKg:N1} كجم",
                         "INSUFFICIENT_CUSTOMER_BALANCE");
 
                 // §B95 — سقف المطابق المعتمد: بعد الرصيد (لتبقى رسائله) وقبل الخصم
@@ -237,7 +290,7 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
                     ReferenceDocType.CustomerDelivery, outRef,
                     productId: item.ProductId, lotId: item.LotId, customerId: dlv.CustomerId,
                     orderId: dlv.OrderId, packagingTypeId: item.PackagingTypeId,
-                    notes: $"تسليم عميل — سند {dlv.DocumentNumber}");
+                    notes: $"تسليم عميل — سند {dlv.DocumentNumber} — من مخزن {whDoc.WarehouseNameAr}");
 
                 if (item.LotId is int lotId)
                 {
@@ -271,7 +324,7 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
                 PlanSync.SyncDeliveredForPlan(Db, planId.Value, dlv.CustomerId, sItem.ProductId, sItem.PackagingTypeId, sItem.QtyKg, dlv.DocumentNumber);
             }
             Db.SaveChanges();
-            return OpResult.Success($"تم اعتماد التسليم وخصم {dlv.TotalQtyKg:N1} كجم من رصيد العميل.", dlv.Id, dlv.DocumentNumber);
+            return OpResult.Success($"تم اعتماد التسليم وخصم {dlv.TotalQtyKg:N1} كجم من رصيد العميل في مخزن «{whDoc.WarehouseNameAr}».", dlv.Id, dlv.DocumentNumber);
         });
     }
 
@@ -284,7 +337,10 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
 
         return RunOp(() =>
         {
-            var whFg = WarehouseId("WFG");
+            // §تعدد المخازن: الإرجاع إلى المخزن نفسه الذي صُرف منه (مخزن السند، أو من حركات الصرف للسندات القديمة).
+            var whFg = ResolveIssuedWarehouse(dlv);
+            if (dlv.WarehouseId == null) dlv.WarehouseId = whFg; // توثيق المخزن المستنتج من الدليل
+            string whName = Db.Warehouses.AsNoTracking().Where(w => w.Id == whFg).Select(w => w.WarehouseNameAr).FirstOrDefault() ?? $"#{whFg}";
             // §إصلاح حرج — الإلغاء بقيد عكسي (وارد) لا بحذف حركات دفتر الأستاذ.
             // §CD-FIX: تسلسل العكس تراكمي عبر الإلغاءات المتكررة (#REV1 ثم #REV2…) حتى لا يصطدم حارس DUPLICATE.
             var usedRevRefs = new HashSet<string>();
@@ -325,7 +381,7 @@ public class CustomerDeliveryService : ServiceBase, ICustomerDeliveryService
             dlv.Status = DocStatuses.Draft;
             dlv.InvoicedQtyKg = 0; // §CD-FIX: قرار المستخدم — الإلغاء يصفّر الفوترة (لا فوترة على سند ملغي)
             Db.SaveChanges();
-            return OpResult.Success("تم إلغاء التسليم وإعادة الكميات إلى رصيد العميل.");
+            return OpResult.Success($"تم إلغاء التسليم وإعادة الكميات إلى رصيد العميل في مخزن «{whName}».");
         });
     }
 }

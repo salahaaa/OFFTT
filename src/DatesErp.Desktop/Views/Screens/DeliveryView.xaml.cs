@@ -380,7 +380,8 @@ public partial class DeliveryView : UserControl
                 QtyKg = i.Qty, PackageCount = i.Packages
             }).ToList();
             int? whId = WarehouseBox.SelectedValue as int?;
-            // §تعدد المخازن: مرر مخزن المصدر
+            if (whId == null) { AppContainer.Get<DialogService>().Error("اختر مخزن الصرف (مخزن الإنتاج التام) قبل الحفظ."); return; }
+            // §تعدد المخازن: مرر مخزن المصدر — يُثبَّت في السند ويُستخدم في الاعتماد والإلغاء
             OpResult r = _currentId > 0 && !_locked
                 ? svc.Update(_currentId, _currentCustomerId, (DateBox.SelectedDate ?? DateTime.Now).ToString("dd/MM/yyyy"), orderId, itemsDto, whId)
                 : svc.Save(_currentCustomerId, (DateBox.SelectedDate ?? DateTime.Now).ToString("dd/MM/yyyy"), orderId, itemsDto, whId);
@@ -465,6 +466,7 @@ public partial class DeliveryView : UserControl
         }
         catch { DocNoBox.Text = "(تلقائي عند الحفظ)"; }
         DateBox.SelectedDate = DateTime.Now;
+        WarehouseBox.ToolTip = "§تعدد المخازن: اختر المخزن الذي ستصرف منه — يعرض الرصيد حسب المخزن";
         SetLocked(false);
         AddEmptyRow();
     }
@@ -541,6 +543,8 @@ public partial class DeliveryView : UserControl
     private void SetLocked(bool locked)
     {
         _locked = locked;
+        // §تعدد المخازن: مخزن السند المعتمد لا يتغير قبل إلغاء الاعتماد (الخدمة ترفض أيضاً)
+        WarehouseBox.IsEnabled = !locked;
         if (_toolbar != null)
         {
             if (_toolbar.SaveBtn != null) _toolbar.SaveBtn.IsEnabled = !locked;
@@ -568,7 +572,31 @@ public partial class DeliveryView : UserControl
             _currentId = d.Id;
             _currentCustomerId = d.CustomerId;
             CustomerBox.SelectedValue = d.CustomerId;
-            if (d.WarehouseId != null) WarehouseBox.SelectedValue = d.WarehouseId;
+            // §تعدد المخازن: استعادة مخزن السند. سند قديم بلا مخزن (قبل عمود WarehouseId):
+            // سياسة التوافق الموثقة في الخدمة — الصرف القديم كان ثابتاً على WFG، فيُعرض WFG
+            // (والإلغاء في الخدمة يستنتج المخزن من حركات الصرف الفعلية لا من هذا العرض).
+            if (d.WarehouseId != null)
+            {
+                WarehouseBox.SelectedValue = d.WarehouseId;
+                if (WarehouseBox.SelectedItem == null)
+                {
+                    // المخزن المحفوظ غير ضمن القائمة (مُعطَّل/غير تام) — نضيفه للعرض فقط حتى لا يُستبدل صامتاً
+                    var saved = db.Warehouses.AsNoTracking().FirstOrDefault(w => w.Id == d.WarehouseId);
+                    if (saved != null && WarehouseBox.ItemsSource is List<Core.Domain.Entities.Warehouse> list)
+                    {
+                        list.Add(saved);
+                        WarehouseBox.ItemsSource = null; WarehouseBox.ItemsSource = list;
+                        WarehouseBox.SelectedValue = saved.Id;
+                    }
+                }
+                WarehouseBox.ToolTip = $"مخزن الصرف المحفوظ في السند {d.DocumentNumber}";
+            }
+            else
+            {
+                var legacy = db.Warehouses.AsNoTracking().FirstOrDefault(w => w.WarehouseCode == "WFG");
+                if (legacy != null) WarehouseBox.SelectedValue = legacy.Id;
+                WarehouseBox.ToolTip = "سند قديم بلا مخزن محفوظ — يُعرض مخزن التام الافتراضي (WFG) وفق سياسة التوافق؛ يُثبَّت عند الحفظ/الاعتماد.";
+            }
             DateBox.SelectedDate = d.DeliveryDate;
             DocNoBox.Text = d.DocumentNumber;
             _items.Clear();

@@ -1273,9 +1273,10 @@ public interface IProductionDeliveryService
 
 public interface ICustomerDeliveryService
 {
-    OpResult Save(int customerId, string deliveryDate, int? orderId, List<CustomerDeliveryItemDto> items);
-    /// <summary>§B105/P2 — تعديل سند مسودة (غير معتمد) — يستبدل البنود بنفس حراس الحفظ. المعتمد يُرفض.</summary>
-    OpResult Update(int deliveryId, int customerId, string deliveryDate, int? orderId, List<CustomerDeliveryItemDto> items);
+    /// <summary>§تعدد المخازن: warehouseId = مخزن التام الذي سيُصرف منه (null = الافتراضي WFG — يُثبَّت في السند).</summary>
+    OpResult Save(int customerId, string deliveryDate, int? orderId, List<CustomerDeliveryItemDto> items, int? warehouseId = null);
+    /// <summary>§B105/P2 — تعديل سند مسودة (غير معتمد) — يستبدل البنود بنفس حراس الحفظ. المعتمد يُرفض (بما فيه تغيير مخزنه).</summary>
+    OpResult Update(int deliveryId, int customerId, string deliveryDate, int? orderId, List<CustomerDeliveryItemDto> items, int? warehouseId = null);
     /// <summary>§B105/P2 — حذف سند مسودة فقط (لم يخصم شيئاً) — بصلاحية delivery/Delete.</summary>
     OpResult DeleteDraft(int deliveryId);
     OpResult Approve(int deliveryId);

@@ -65,6 +65,13 @@ public class CustomerDelivery : WorkflowDocument
     public DateTime? DeliveryDate { get; set; }
     public int? OrderId { get; set; }
     public string DeliveryType { get; set; } = "FinishedGoods";
+    /// <summary>
+    /// §تعدد المخازن: مخزن الإنتاج التام الذي يُصرف منه هذا السند (يُثبَّت عند الحفظ ويُقفل بالاعتماد).
+    /// null = سند قديم سابق للعمود؛ سياسة التوافق: الصرف القديم كان ثابتاً على WFG، لذلك يُحل عند
+    /// الاعتماد إلى WFG ويُسجَّل، وعند إلغاء اعتماد قديم يُستخرج المخزن من حركات الصرف الفعلية للسند.
+    /// العمود يضيفه SchemaMigrator تلقائياً (ALTER TABLE ADD NULL) بلا مساس بالبيانات.
+    /// </summary>
+    public int? WarehouseId { get; set; }
     public double TotalQtyKg { get; set; }
     public int TotalCartons { get; set; }
     // §9 — الفوترة على المسلَّم فعلياً فقط، مع منع تكرار الفوترة

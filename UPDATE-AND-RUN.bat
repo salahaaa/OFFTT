@@ -1,13 +1,13 @@
 @echo off
 REM =====================================================================
-REM  MfgSystem (DateERP) 1.50.69 - ONE CLICK UPDATE + DESKTOP SHORTCUT
+REM  MfgSystem (DateERP) 1.50.70 - ONE CLICK UPDATE + DESKTOP SHORTCUT
 REM
 REM  What it does (in order, stops on the first failure):
 REM    1. Finds the installed system folder (default:
 REM       D:\DateERP_1.50.20_Full\DateERP_1.50.20  - or pass a path as
 REM       the first argument, or set TARGET below).
 REM    2. Backs up the current project files of the target to
-REM       <TARGET>\_backup_before_1.50.69_<date>\  (src + sln only).
+REM       <TARGET>\_backup_before_1.50.70_<date>\  (src + sln only).
 REM    3. Copies the updated project files from THIS folder over the
 REM       target (src, tools, tests, Installer, Documentation, docs,
 REM       DateERP.sln). bin/obj are never copied.
@@ -34,7 +34,7 @@ set "HERE=%~dp0."
 for %%I in ("%HERE%") do set "HERE=%%~fI"
 echo [BOOT] script started from: %HERE%
 set "LOG=%HERE%\update_log.txt"
-set "VER=1.50.69"
+set "VER=1.50.70"
 
 set "TARGET=%~1"
 if "%TARGET%"=="" set "TARGET=D:\DateERP_1.50.20_Full\DateERP_1.50.20"
