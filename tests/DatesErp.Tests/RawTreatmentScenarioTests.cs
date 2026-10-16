@@ -109,6 +109,9 @@ public class RawTreatmentScenarioTests
             // 1,000 سلة تدخل المعالجة (500 + 500) — 4,000 تبقى جاهزة
             StartAgo(sc, 500, 168, 0);
             StartAgo(sc, 500, 240, 0);
+            var treatmentNos = sc.Db.RawTreatments.AsNoTracking().Select(t => t.TreatmentNo).ToList();
+            Assert.Equal(2, treatmentNos.Count);
+            Assert.Equal(treatmentNos.Count, treatmentNos.Distinct().Count());
 
             var lot = Reload(sc);
             Assert.Equal(20000, lot.UnderTreatmentQtyKg, 1);   // 1,000 سلة

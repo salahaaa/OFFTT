@@ -61,8 +61,9 @@ public class AuditSaveChangesInterceptor : SaveChangesInterceptor
             // SQL Server يملأ RowVersion بنفسه. على SQLite، رمز التزامن قيمة تطبيقية
             // لكل BaseEntity (بما فيها AuditLog وPermissionAuditLog)، ويجب تغييره عند كل حفظ.
             if (!isSqlServer && entry.Entity is BaseEntity rowVersioned
-                && (entry.State == EntityState.Added || entry.State == EntityState.Modified))
-                rowVersioned.RowVersion = NewSqliteRowVersion();
+                && (entry.State == EntityState.Added || entry.State == EntityState.Modified)
+                && (rowVersioned.RowVersion == null || rowVersioned.RowVersion.Length == 0))
+                rowVersioned.RowVersion = DatesErpDbContext.NewSqliteRowVersion();
 
             if (entry.Entity is AuditLog) continue; // لا ندقق على التدقيق نفسه
 
@@ -121,7 +122,7 @@ public class AuditSaveChangesInterceptor : SaveChangesInterceptor
                 };
                 // AuditLog أُنشئ بعد جولة ChangeTracker أعلاه، لذا نُسند رمز SQLite هنا؛
                 // SQL Server يستمر في توليده من عمود rowversion الخاص به.
-                if (!isSqlServer) audit.RowVersion = NewSqliteRowVersion();
+                if (!isSqlServer) audit.RowVersion = DatesErpDbContext.NewSqliteRowVersion();
                 auditEntries.Add(audit);
             }
         }
@@ -129,8 +130,6 @@ public class AuditSaveChangesInterceptor : SaveChangesInterceptor
         if (auditEntries.Count > 0)
             ctx.Set<AuditLog>().AddRange(auditEntries);
     }
-
-    private static byte[] NewSqliteRowVersion() => Guid.NewGuid().ToByteArray();
 
     /// <summary>
     /// §B110 — لقطة القيم (قبل/بعد) مع حجب حقول الاعتماد نهائياً.

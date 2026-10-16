@@ -20,12 +20,23 @@ public sealed class SqliteRowVersionTests
     {
         using var host = new TestHost();
         var db = host.Get<DatesErpDbContext>();
-        var rowVersion = db.Model.FindEntityType(typeof(AuditLog))!
-            .FindProperty(nameof(BaseEntity.RowVersion))!;
-
-        Assert.False(rowVersion.IsNullable);
-        Assert.True(rowVersion.IsConcurrencyToken);
-        Assert.Equal(ValueGenerated.Never, rowVersion.ValueGenerated);
+        var rowVersionEntities = db.Model.GetEntityTypes()
+            .Where(entityType => typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+            .ToList();
+        Assert.NotEmpty(rowVersionEntities);
+        foreach (var entityType in rowVersionEntities)
+        {
+            var rowVersion = entityType.FindProperty(nameof(BaseEntity.RowVersion))!;
+            Assert.False(rowVersion.IsNullable, $"{entityType.ClrType.Name}.RowVersion must remain required.");
+            Assert.True(rowVersion.IsConcurrencyToken, $"{entityType.ClrType.Name}.RowVersion must remain a concurrency token.");
+            Assert.Equal(ValueGenerated.Never, rowVersion.ValueGenerated);
+        }
+        foreach (var requiredType in new[]
+                 {
+                     typeof(AuditLog), typeof(PermissionAuditLog), typeof(UnitConversion), typeof(ByProduct),
+                     typeof(InspectionResultType), typeof(SystemSetting), typeof(RoleResourcePermission)
+                 })
+            Assert.Contains(rowVersionEntities, entityType => entityType.ClrType == requiredType);
 
         var auditRows = db.AuditLogs.AsNoTracking().ToList();
         Assert.NotEmpty(auditRows);
@@ -73,17 +84,131 @@ public sealed class SqliteRowVersionTests
     }
 
     [Fact]
+    public void Sqlite_DirectContext_AdditionsAndUpdatesGetRowVersionsWithoutInterceptor()
+    {
+        using var host = new TestHost();
+        var options = new DbContextOptionsBuilder<DatesErpDbContext>()
+            .UseSqlite(host.Connection)
+            .Options;
+        using var db = new DatesErpDbContext(options); // deliberately bypasses DI interceptors
+
+        var unitConversion = new UnitConversion { FromUnitId = 1, ToUnitId = 2, Factor = 1.25m };
+        var byProduct = new ByProduct { ByProductCode = "RV-BP", ByProductNameAr = "اختبار رمز الصف" };
+        var resultType = new InspectionResultType
+        {
+            Code = "RV-RESULT", NameAr = "اختبار رمز الصف", ResultKind = InspectionResultType.KindAccepted,
+            UnitLabel = "كجم", SortNo = 999
+        };
+        var setting = new SystemSetting
+        {
+            SettingKey = "Sqlite_RowVersion_Direct_" + Guid.NewGuid().ToString("N"),
+            SettingValue = "before"
+        };
+        var rolePermission = new RoleResourcePermission { RoleId = 1, ResourceId = 1, OperationId = 1, IsAllowed = true };
+        var permissionLog = new PermissionAuditLog
+        {
+            ChangedByName = "test", ResourceCode = "test", OperationCode = "Edit",
+            OldValue = "before", NewValue = "after", ActionType = "grant"
+        };
+        var auditLog = new AuditLog
+        {
+            UserName = "test", ComputerName = "test", MachineName = "test", ScreenName = "test",
+            ActionType = "Create", DocumentType = "Test", DocumentNumber = "1", OldValue = "", NewValue = "{}"
+        };
+        BaseEntity[] entities = { unitConversion, byProduct, resultType, setting, rolePermission, permissionLog, auditLog };
+
+        db.AddRange(entities);
+        db.SaveChanges();
+
+        Assert.All(entities, entity => Assert.NotEmpty(entity.RowVersion));
+        Assert.Equal(entities.Length,
+            entities.Select(entity => Convert.ToHexString(entity.RowVersion)).Distinct().Count());
+        var oldUnitVersion = unitConversion.RowVersion.ToArray();
+        var oldByProductVersion = byProduct.RowVersion.ToArray();
+        var oldResultVersion = resultType.RowVersion.ToArray();
+        var oldSettingVersion = setting.RowVersion.ToArray();
+        var oldRolePermissionVersion = rolePermission.RowVersion.ToArray();
+        var oldPermissionVersion = permissionLog.RowVersion.ToArray();
+        var oldAuditVersion = auditLog.RowVersion.ToArray();
+
+        unitConversion.Factor = 2m;
+        byProduct.IsActive = false;
+        resultType.NameAr = "اختبار رمز الصف — تعديل";
+        setting.SettingValue = "after";
+        rolePermission.IsAllowed = false;
+        permissionLog.ActionType = "revoke";
+        auditLog.ActionType = "Edit";
+        db.SaveChanges();
+
+        Assert.False(oldUnitVersion.SequenceEqual(unitConversion.RowVersion));
+        Assert.False(oldByProductVersion.SequenceEqual(byProduct.RowVersion));
+        Assert.False(oldResultVersion.SequenceEqual(resultType.RowVersion));
+        Assert.False(oldSettingVersion.SequenceEqual(setting.RowVersion));
+        Assert.False(oldRolePermissionVersion.SequenceEqual(rolePermission.RowVersion));
+        Assert.False(oldPermissionVersion.SequenceEqual(permissionLog.RowVersion));
+        Assert.False(oldAuditVersion.SequenceEqual(auditLog.RowVersion));
+    }
+
+    [Fact]
+    public async Task Sqlite_DirectContextAsyncSaveChanges_UpdatesRowVersion()
+    {
+        using var host = new TestHost();
+        var options = new DbContextOptionsBuilder<DatesErpDbContext>()
+            .UseSqlite(host.Connection)
+            .Options;
+        await using var db = new DatesErpDbContext(options);
+        var setting = new SystemSetting
+        {
+            SettingKey = "Sqlite_RowVersion_Async_" + Guid.NewGuid().ToString("N"),
+            SettingValue = "before"
+        };
+
+        db.SystemSettings.Add(setting);
+        await db.SaveChangesAsync();
+        var original = setting.RowVersion.ToArray();
+        setting.SettingValue = "after";
+        await db.SaveChangesAsync();
+
+        Assert.NotEmpty(setting.RowVersion);
+        Assert.False(original.SequenceEqual(setting.RowVersion));
+    }
+
+    [Fact]
+    public void Sqlite_SchemaMigrator_AddsRequiredRowVersionToLegacyTable()
+    {
+        using var host = new TestHost();
+        var db = host.Get<DatesErpDbContext>();
+        db.Database.ExecuteSqlRaw("ALTER TABLE [SystemSettings] DROP COLUMN [RowVersion]");
+
+        var changes = SchemaMigrator.Migrate(db);
+        Assert.Contains(changes, change => change.Contains("SystemSettings.RowVersion", StringComparison.Ordinal));
+
+        using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT [notnull] FROM pragma_table_info('SystemSettings') WHERE name = 'RowVersion'";
+        Assert.Equal(1, Convert.ToInt32(command.ExecuteScalar()));
+
+        db.ChangeTracker.Clear();
+        var seededSetting = db.SystemSettings.AsNoTracking().First();
+        Assert.NotEmpty(seededSetting.RowVersion);
+    }
+
+    [Fact]
     public void SqlServer_RowVersion_Remains_Store_Generated()
     {
         var options = new DbContextOptionsBuilder<DatesErpDbContext>()
             .UseSqlServer("Server=localhost;Database=DateErpRowVersionModel;Integrated Security=True;TrustServerCertificate=True")
             .Options;
         using var db = new DatesErpDbContext(options);
-        var rowVersion = db.Model.FindEntityType(typeof(AuditLog))!
-            .FindProperty(nameof(BaseEntity.RowVersion))!;
-
-        Assert.False(rowVersion.IsNullable);
-        Assert.True(rowVersion.IsConcurrencyToken);
-        Assert.Equal(ValueGenerated.OnAddOrUpdate, rowVersion.ValueGenerated);
+        var rowVersionEntities = db.Model.GetEntityTypes()
+            .Where(entityType => typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+            .ToList();
+        Assert.NotEmpty(rowVersionEntities);
+        foreach (var entityType in rowVersionEntities)
+        {
+            var rowVersion = entityType.FindProperty(nameof(BaseEntity.RowVersion))!;
+            Assert.False(rowVersion.IsNullable, $"{entityType.ClrType.Name}.RowVersion must remain required.");
+            Assert.True(rowVersion.IsConcurrencyToken, $"{entityType.ClrType.Name}.RowVersion must remain a concurrency token.");
+            Assert.Equal(ValueGenerated.OnAddOrUpdate, rowVersion.ValueGenerated);
+        }
     }
 }

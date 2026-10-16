@@ -134,12 +134,13 @@ public abstract class ServiceBase
         {
             if (e is SqlException sql && (sql.Number == 2627 || sql.Number == 2601)) return true;
             var t = e.GetType();
-            // §SQLite: كشف بالاسم (Microsoft.Data.Sqlite غير مرجعة هنا) + كود 19 أو نص القيد
+            // §SQLite: لا يكفي SQLITE_CONSTRAINT (19) — فهو يشمل NOT NULL وFOREIGN KEY
+            // أيضاً. أعد المحاولة فقط لقيد التفرد/المفتاح الأساسي الحقيقي.
             if (t.Name == "SqliteException")
             {
-                var prop = t.GetProperty("SqliteErrorCode");
-                if (prop?.GetValue(e) is int code && code == 19) return true;
-                if ((e.Message ?? "").Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)) return true;
+                var extended = t.GetProperty("SqliteExtendedErrorCode")?.GetValue(e);
+                if (extended is int code && (code == 1555 || code == 2067)) return true;
+                if ((e.Message ?? "").Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase)) return true;
             }
             if ((e.Message ?? "").Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase)) return true;
         }

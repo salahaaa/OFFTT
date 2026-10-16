@@ -1,3 +1,4 @@
+using DatesErp.Core.Common;
 using DatesErp.Core.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -14,6 +15,41 @@ public class DatesErpDbContext : DbContext
     public DatesErpDbContext(DbContextOptions<DatesErpDbContext> options, TimeProvider clock = null) : base(options)
     {
         _clock = clock ?? TimeProvider.System;
+    }
+
+    /// <summary>
+    /// SQLite لا يملك نوع rowversion يولّده المخزن. توليده في السياق نفسه، لا في DI
+    /// وحده، يضمن أن سياقات الاختبار/الترحيل المنشأة مباشرةً تحترم NOT NULL والتزامن.
+    /// SQL Server لا يمر هنا: يبقى العمود store-generated كما هو.
+    /// </summary>
+    private void StampSqliteRowVersions()
+    {
+        if (Database.IsSqlServer()) return;
+
+        foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+                entry.Entity.RowVersion = NewSqliteRowVersion();
+        }
+    }
+
+    internal static byte[] NewSqliteRowVersion() => Guid.NewGuid().ToByteArray();
+
+    public override int SaveChanges() => SaveChanges(acceptAllChangesOnSuccess: true);
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        StampSqliteRowVersions();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        => SaveChangesAsync(true, cancellationToken);
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        StampSqliteRowVersions();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
     // SQL Server هو مرجع الوقت المشترك، وليس ساعة جهاز الموظف. SQLite يستخدم ساعة المضيف.

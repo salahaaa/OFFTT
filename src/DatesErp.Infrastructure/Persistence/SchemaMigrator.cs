@@ -89,7 +89,6 @@ public static class SchemaMigrator
 
         // §تتبع الصنف: الربط الآلي لتعريفات التحويل الرسمية في القواعد القديمة
         LinkProductSources(db, report);
-
         // §نظام الوحدات: توحيد المجموعات (001 خام | 002 تام | 003 مخرجات ثانوية)
         NormalizeGroups(db, report);
 
@@ -323,12 +322,38 @@ public static class SchemaMigrator
         return null;
     }
 
-    /// <summary>تعبئة الفراغات في عمود واحد (بعد إضافته حديثاً).</summary>
-    /// <summary>§45 — عمود rowversion للتزامن التفاؤلي على كل الجداول القائمة (SQL Server فقط).</summary>
+    /// <summary>§45 — يضمن عمود RowVersion غير القابل للفراغ على المزودين.</summary>
     private static void EnsureRowVersion(IDbConnection conn, string table, bool sqlite, List<string> report)
     {
-        if (sqlite) return;
         var cols = GetColumns(conn, table, sqlite);
+        if (sqlite)
+        {
+            // ALTER TABLE في SQLite لا يقبل إضافة BLOB NOT NULL بلا قيمة افتراضية
+            // عند وجود بيانات. قيمة ثابتة صالحة للسجلات القديمة؛ كل INSERT/UPDATE عبر
+            // EF يحصل على رمز جديد من DatesErpDbContext، ولا تُخفّف قيمة العمود أو قيده.
+            const string legacyToken = "X'00000000000000000000000000000000'";
+            if (!cols.Contains("RowVersion", StringComparer.OrdinalIgnoreCase))
+            {
+                Exec(conn, $"ALTER TABLE [{table}] ADD COLUMN [RowVersion] BLOB NOT NULL DEFAULT {legacyToken}");
+                report.Add($"تمت إضافة عمود تزامن SQLite غير قابل للفراغ: {table}.RowVersion");
+            }
+            else
+            {
+                // لا ننفذ UPDATE فارغاً على كل جدول عند كل إقلاع؛ نصلح فقط الصفوف القديمة
+                // التي تفتقد الرمز فعلاً، وبذلك لا نأخذ قفل كتابة غير لازم.
+                using var probe = conn.CreateCommand();
+                probe.CommandText = $"SELECT 1 FROM [{table}] WHERE [RowVersion] IS NULL OR length([RowVersion]) = 0 LIMIT 1";
+                if (probe.ExecuteScalar() != null)
+                {
+                    int repaired = Exec(conn,
+                        $"UPDATE [{table}] SET [RowVersion] = {legacyToken} WHERE [RowVersion] IS NULL OR length([RowVersion]) = 0");
+                    if (repaired > 0)
+                        report.Add($"تمت تهيئة {repaired} رمز تزامن فارغ في {table}.RowVersion");
+                }
+            }
+            return;
+        }
+
         if (cols.Contains("RowVersion", StringComparer.OrdinalIgnoreCase)) return;
         // rowversion عمود NOT NULL ضمناً ويملأ الصفوف القائمة تلقائياً بقيم فريدة
         try { Exec(conn, $"ALTER TABLE [{table}] ADD [RowVersion] ROWVERSION"); }

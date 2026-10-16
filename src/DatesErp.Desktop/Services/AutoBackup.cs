@@ -1,5 +1,6 @@
 using DatesErp.Core.Interfaces.Services;
 using DatesErp.Infrastructure.Persistence;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace DatesErp.Desktop.Services;
@@ -68,6 +69,14 @@ public static class AutoBackup
         return DefaultFolder;
     }
 
+    /// <summary>اقتباس معرّف SQL Server دون السماح بإغلاق قوس الاسم.</summary>
+    private static string QuoteSqlIdentifier(string identifier)
+    {
+        if (string.IsNullOrWhiteSpace(identifier) || identifier.Contains('\0'))
+            throw new InvalidOperationException("اسم قاعدة البيانات غير صالح.");
+        return "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]";
+    }
+
     /// <summary>يُستدعى مرة واحدة عند تحميل النافذة الرئيسية (بعد الدخول وتوفّر الجلسة).</summary>
     public static void RunDaily()
     {
@@ -114,10 +123,18 @@ public static class AutoBackup
             System.IO.Directory.CreateDirectory(folder);
             string file = System.IO.Path.Combine(folder, $"DateERP_PreMigration_{DateTime.Now:yyyyMMdd_HHmmss}.bak");
             attemptedFile = file;
-            string dbName = db.Database.GetDbConnection().Database;
-            // §1.50.67 FIX: استخدام مسار يمكن لخدمة SQL Server الكتابة فيه + معالجة Access is denied
-            db.Database.ExecuteSqlRaw($"BACKUP DATABASE [{dbName}] TO DISK = N'{file}' WITH INIT, COMPRESSION, CHECKSUM");
-            db.Database.ExecuteSqlRaw($"RESTORE VERIFYONLY FROM DISK = N'{file}'");
+            string dbName = QuoteSqlIdentifier(db.Database.GetDbConnection().Database);
+            // اسم القاعدة معرّف SQL لا يقبل معاملًا، لذا يُقتبس ويُهرب كمعرّف.
+            // مسار الملف قيمة عادية يُمرر كمعامل (BACKUP/VERIFYONLY يقبلان متغير المسار).
+            // EF1002 استثناء موضعي للمعرّف المقتبس فقط؛ لا تُدمج قيمة المسار في نص SQL.
+#pragma warning disable EF1002
+            db.Database.ExecuteSqlRaw(
+                $"BACKUP DATABASE {dbName} TO DISK = @backupPath WITH INIT, COMPRESSION, CHECKSUM",
+                new SqlParameter("@backupPath", file));
+            db.Database.ExecuteSqlRaw(
+                "RESTORE VERIFYONLY FROM DISK = @backupPath",
+                new SqlParameter("@backupPath", file));
+#pragma warning restore EF1002
             ErrorLog.WriteInfo("AutoBackup: نسخة ما قبل الترحيل جاهزة — " + file);
             return true;
         }

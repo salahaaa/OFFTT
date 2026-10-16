@@ -42,12 +42,12 @@ public static class DependencyInjection
 /// ترقيم المستندات المركزي — تسلسل آمن داخل معاملة.
 /// §الحماية من التكرار (طبقتان):
 ///  • يُصلح المخططات المفقودة تلقائياً (ينشئ المخطط إن لم يوجد).
-///  • حلقة ضمان: يتقدّم حتى رقم غير مستخدم — فيُصلح تلقائياً أي قاعدة تسلسلها غير
-///    متزامن (كان الرقم يُكرر قديماً لأن الخدمة كانت Singleton فلا تُحفظ الزيادة أبداً).
-/// §B84/C1 (صدق توثيقي): الحلقة تفحص المحفوظ فقط، فجهازان متزامنان قد يولّدان نفس الرقم.
-///    يُعالَج بإعادة المحاولة التلقائية في ServiceBase.RunInTransaction عند تعارض القيد الفريد.
-/// §B110: على SQL Server أصبح صف المخطط يُقفل بقفل تحديث داخل معاملة المستدعي،
-///    فيتسلسل الطلبان المتزامنان ولا يتصادمان أصلاً (الإعادة تبقى شبكة أمان لبقية المزودين).
+///  • حلقة ضمان: يتقدّم حتى رقم غير مستخدم — ويقرأ كل مخطط من جدول مصدره، بما فيه
+///    TRT من RawTreatments، كي يتعافى من أي عدّاد متأخر.
+/// §B84/C1: قيد التفرد في قاعدة البيانات هو الحكم النهائي؛ إعادة المحاولة في
+///    ServiceBase.RunInTransaction شبكة أمان عند تعارض القيد.
+/// §B110: على SQL Server يُقفل صف المخطط بقفل تحديث داخل معاملة المستدعي،
+///    فيتسلسل الطلبان المتزامنان ولا يتصادمان أصلاً.
 /// </summary>
 public class NumberingService : INumberingService
 {
@@ -149,6 +149,9 @@ public class NumberingService : INumberingService
                 "PCL" => _db.PlanClosings.AsNoTracking().Select(x => x.DocumentNumber).ToList(),
                 "LOT" => _db.Lots.AsNoTracking().Select(x => x.LotCode).ToList(),
                 "TASK" => _db.WorkflowTasks.AsNoTracking().Select(x => x.TaskNumber).ToList(),
+                // §B103 — معالجة الخام مصدرها RawTreatments، لا جدول سندات الاستلام.
+                // إغفالها كان يعيد "1" لكل بدء ويصطدم بقيد TreatmentNo الفريد.
+                "TRT" => _db.RawTreatments.AsNoTracking().Select(x => x.TreatmentNo).ToList(),
                 _ => new List<string>()
             };
             int max = 0;
@@ -182,6 +185,7 @@ public class NumberingService : INumberingService
         "PCL" => _db.PlanClosings.Any(x => x.DocumentNumber == number),
         "LOT" => _db.Lots.Any(x => x.LotCode == number),
         "TASK" => _db.WorkflowTasks.Any(x => x.TaskNumber == number),
+        "TRT" => _db.RawTreatments.Any(x => x.TreatmentNo == number),
         _ => false
     };
 }

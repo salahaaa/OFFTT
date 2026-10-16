@@ -29,10 +29,14 @@ public class TestHost : IDisposable
     public ServiceProvider Services { get; }
     public SqliteConnection? Connection { get; }
 
-    public TestHost(TimeProvider? clock = null, string? sqlConnection = null)
+    public TestHost(TimeProvider? clock = null, string? sqlConnection = null, string? sqliteConnectionString = null)
     {
+        if (sqlConnection != null && sqliteConnectionString != null)
+            throw new ArgumentException("Choose either SQL Server or SQLite for a test host, not both.");
         if (clock == null && sqlConnection == null) clock = _fixtureClock = new FixtureClock();
-        Connection = sqlConnection == null ? new SqliteConnection("Data Source=:memory:") : null!;
+        Connection = sqlConnection == null
+            ? new SqliteConnection(sqliteConnectionString ?? "Data Source=:memory:")
+            : null;
         Connection?.Open();
 
         Services = new ServiceCollection()

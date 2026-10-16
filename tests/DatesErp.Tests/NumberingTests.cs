@@ -2,6 +2,7 @@ using DatesErp.Core.Common;
 using DatesErp.Core.Domain.Entities;
 using DatesErp.Core.Interfaces.Services;
 using DatesErp.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -131,6 +132,135 @@ public class NumberingTests
             ReceiptStatus = "None"
         });
         db.SaveChanges();
+    }
+
+    [Fact]
+    public void TreatmentNumbering_UsesRawTreatments_AndRepairsAStaleSequence()
+    {
+        using var host = new TestHost();
+        host.LoginAsAdmin();
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
+        var numbering = scope.ServiceProvider.GetRequiredService<INumberingService>();
+        int productId = db.Products.OrderBy(p => p.Id).Select(p => p.Id).First();
+        var lot = new Lot
+        {
+            LotCode = "NUM-TEST-LOT",
+            ProductId = productId,
+            InitialQtyKg = 10,
+            InStockQtyKg = 10,
+            TreatmentReadyQtyKg = 10
+        };
+        db.Lots.Add(lot);
+        db.SaveChanges();
+
+        string AddTreatment()
+        {
+            var number = numbering.Next("TRT");
+            db.RawTreatments.Add(NewRawTreatment(number, lot.Id, productId));
+            db.SaveChanges();
+            return number;
+        }
+
+        Assert.Equal("1", AddTreatment());
+        Assert.Equal("2", AddTreatment());
+
+        // حتى لو فُقدت زيادة المخطط، RawTreatments هو مصدر الحقيقة ويمنع إعادة الاستخدام.
+        var scheme = db.NumberingSchemes.Single(s => s.SchemeCode == "TRT");
+        scheme.LastSequence = 0;
+        db.SaveChanges();
+        Assert.Equal("3", AddTreatment());
+
+        var saved = db.RawTreatments.OrderBy(t => t.Id).Select(t => t.TreatmentNo).ToList();
+        Assert.Equal(new[] { "1", "2", "3" }, saved);
+        Assert.Equal(saved.Count, saved.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task TreatmentNumbering_StaysUniqueAcrossConcurrentSqliteContexts()
+    {
+        string databasePath = Path.Combine(Path.GetTempPath(), $"DateERP-TreatmentNumbering-{Guid.NewGuid():N}.db");
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            DefaultTimeout = 15,
+            Pooling = false
+        }.ToString();
+
+        try
+        {
+            using (var firstHost = new TestHost(sqliteConnectionString: connectionString))
+            using (var secondHost = new TestHost(sqliteConnectionString: connectionString))
+            {
+                var setupDb = firstHost.Get<DatesErpDbContext>();
+                int productId = setupDb.Products.OrderBy(p => p.Id).Select(p => p.Id).First();
+                var lot = new Lot
+                {
+                    LotCode = "NUM-CONCURRENT-LOT",
+                    ProductId = productId,
+                    InitialQtyKg = 10,
+                    InStockQtyKg = 10,
+                    TreatmentReadyQtyKg = 10
+                };
+                setupDb.Lots.Add(lot);
+                setupDb.SaveChanges();
+
+                using var startTogether = new Barrier(2);
+                var first = Task.Run(() => ReserveTreatmentNumber(firstHost, startTogether, lot.Id, productId));
+                var second = Task.Run(() => ReserveTreatmentNumber(secondHost, startTogether, lot.Id, productId));
+                var numbers = await Task.WhenAll(first, second);
+
+                Assert.Equal(2, numbers.Distinct().Count());
+                Assert.Equal(new[] { "1", "2" }, numbers.OrderBy(number => int.Parse(number)).ToArray());
+
+                using var checkScope = firstHost.Services.CreateScope();
+                var checkDb = checkScope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
+                var saved = checkDb.RawTreatments.Select(t => t.TreatmentNo).OrderBy(number => int.Parse(number)).ToList();
+                Assert.Equal(new[] { "1", "2" }, saved);
+            }
+        }
+        finally
+        {
+            foreach (var suffix in new[] { "", "-journal", "-wal", "-shm" })
+            {
+                var file = databasePath + suffix;
+                if (File.Exists(file)) File.Delete(file);
+            }
+        }
+    }
+
+    private static string ReserveTreatmentNumber(TestHost host, Barrier barrier, int lotId, int productId)
+    {
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<DatesErpDbContext>();
+        var numbering = scope.ServiceProvider.GetRequiredService<INumberingService>();
+        if (!barrier.SignalAndWait(TimeSpan.FromSeconds(15)))
+            throw new TimeoutException("لم يبدأ سياقا SQLite معاً ضمن المهلة.");
+
+        using var transaction = db.Database.BeginTransaction();
+        var number = numbering.Next("TRT");
+        db.RawTreatments.Add(NewRawTreatment(number, lotId, productId));
+        db.SaveChanges();
+        transaction.Commit();
+        return number;
+    }
+
+    private static RawTreatment NewRawTreatment(string number, int lotId, int productId)
+    {
+        var started = DateTime.Now;
+        return new RawTreatment
+        {
+            TreatmentNo = number,
+            LotId = lotId,
+            ProductId = productId,
+            QtyKg = 1,
+            PackageCount = 1,
+            StartedAt = started,
+            DurationHours = 1,
+            ExpectedReadyAt = started.AddHours(1),
+            Notes = "اختبار ترقيم المعالجة",
+            Status = TreatmentStatuses.InProgress
+        };
     }
 
     [Fact]

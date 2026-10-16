@@ -90,6 +90,22 @@ public class ReferenceDataUpgradeTests
     }
 
     [Fact]
+    public void ReferenceUpgrade_AddsRequiredRowVersionsWithoutTheDiInterceptor()
+    {
+        using var host = new TestHost();
+        RevertToPreB48State(host);
+
+        // Db() deliberately constructs a direct SQLite context, just like older upgrade tests.
+        using (var db = Db(host)) DbSeeder.UpgradeReferenceData(db);
+
+        using var check = Db(host);
+        Assert.NotEmpty(check.InspectionResultTypes.Single(t => t.Code == "RT-SALEEM").RowVersion);
+        Assert.NotEmpty(check.InspectionResultTypes.Single(t => t.Code == "RT-3AJEENAH").RowVersion);
+        Assert.NotEmpty(check.ByProducts.Single(b => b.ByProductCode == "BP-3AJEENAH").RowVersion);
+        Assert.NotEmpty(check.SystemSettings.Single(s => s.SettingKey == "RefDataUpgrade").RowVersion);
+    }
+
+    [Fact]
     public void PreB48Db_AajeenaIsAddedToTheByProductsMaster()
     {
         // شاشة الإقفال والتقارير تبني أعمدة المخرجات الثانوية من بطاقة ByProducts وحدها،
