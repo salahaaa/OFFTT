@@ -23,9 +23,16 @@ REM   - [OK] / [FAILED] per step, full log: update_log.txt next to this file.
 REM   - Needs .NET 8 SDK (dotnet). If missing and an offline installer
 REM     dotnet-sdk-8-win-x64.exe is next to this script it is installed.
 REM =====================================================================
+REM --- keep the window open no matter what happens (errors stay visible) ---
+if not defined DATEERP_KEEPOPEN (
+    set "DATEERP_KEEPOPEN=1"
+    start "MfgSystem UPDATE" cmd /k ""%~f0" %*"
+    exit /b
+)
 setlocal EnableDelayedExpansion
-set "HERE=%~dp0"
-if "%HERE:~-1%"=="\" set "HERE=%HERE:~0,-1%"
+set "HERE=%~dp0."
+for %%I in ("%HERE%") do set "HERE=%%~fI"
+echo [BOOT] script started from: %HERE%
 set "LOG=%HERE%\update_log.txt"
 set "VER=1.50.68"
 
@@ -157,7 +164,10 @@ echo [OK] Step 7: BUILD SUCCESS - %APP%\MfgSystem.exe
 call :log "Build OK"
 
 REM ---------- Step 8: version check ----------
-for /f "delims=" %%V in ('powershell -NoProfile -Command "(Get-Item '%APP%\MfgSystem.exe').VersionInfo.ProductVersion"') do set "BUILTVER=%%V"
+set "BUILTVER="
+powershell -NoProfile -Command "$v=(Get-Item '%APP%\MfgSystem.exe').VersionInfo.ProductVersion; Set-Content -Path '%HERE%\_ver.tmp' -Value $v" >nul 2>&1
+if exist "%HERE%\_ver.tmp" set /p BUILTVER=<"%HERE%\_ver.tmp"
+if exist "%HERE%\_ver.tmp" del "%HERE%\_ver.tmp" >nul 2>&1
 echo [INFO] Built version: %BUILTVER%
 call :log "Built version: %BUILTVER%"
 echo %BUILTVER% | findstr /C:"%VER%" >nul || echo [WARN] Version string differs from %VER% - continuing.
@@ -183,7 +193,8 @@ echo   Log     : %LOG%
 echo ============================================================
 call :log "DONE"
 start "" "%APP%\MfgSystem.exe"
-timeout /t 5 >nul
+echo.
+echo   You can close this window now.
 exit /b 0
 
 :fail_end
