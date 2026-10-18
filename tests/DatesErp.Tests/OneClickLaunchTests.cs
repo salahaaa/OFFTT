@@ -31,45 +31,39 @@ public class OneClickLaunchTests
         return System.Text.Json.JsonDocument.Parse(string.Join('\n', lines)).RootElement;
     }
 
+    /// <summary>§تنظيف المستودع: بقي مسار تحديث واحد — UPDATE-AND-RUN.bat في الجذر — بدل سكربتات التنصيب القديمة المحذوفة.</summary>
     [Fact]
-    public void Installer_Seeds_The_Separate_Identity_With_Valid_Json()
+    public void One_Click_Updater_Is_Ascii_Crlf_Safe_And_Matches_Project_Version()
     {
-        string bat = Read("Installer/2-تنصيب.bat");
-        // ملفات bat بنهايات CRLF
-        Assert.True(bat.Contains("\r\n"), "2-تنصيب.bat يجب أن يكون CRLF");
-        // الهوية المنفصلة: مجلد بيانات وقاعدة بأسماء لا تلتقي مع أي نسخة أخرى
-        Assert.Contains("MfgSystem", bat);
-        Assert.DoesNotContain("config.backup", bat);
-        Assert.DoesNotContain("mfgsystem_local", bat);
-        // JSON الفعلي الذي سيكتبه السكربت
-        var cfg = SeededConfig(bat);
-        Assert.Equal(".\\SQLEXPRESS01", cfg.GetProperty("Server").GetString());
-        Assert.Equal("MfgSystemDB", cfg.GetProperty("Database").GetString());
-        Assert.Equal("Windows", cfg.GetProperty("AuthMode").GetString());
-        Assert.True(cfg.GetProperty("TrustServerCertificate").GetBoolean());
-        Assert.Equal("1.50.66", cfg.GetProperty("AppVersion").GetString());
-        // الاختصار
-        Assert.Contains("GetFolderPath('Desktop')", Read("Installer/إنشاء_اختصار.ps1"));
+        string bat = Read("UPDATE-AND-RUN.bat");
+        Assert.True(bat.Contains("\r\n"), "UPDATE-AND-RUN.bat يجب أن يكون CRLF");
+        Assert.All(bat, ch => Assert.True(ch < 128, "UPDATE-AND-RUN.bat يجب أن يكون ASCII خالصاً (بلا تغيير صفحة ترميز)"));
+        Assert.DoesNotContain("chcp", bat, StringComparison.OrdinalIgnoreCase);
+        // لا مساس بقاعدة البيانات أو بيانات المستخدم
+        Assert.DoesNotContain("DROP DATABASE", bat, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sqlcmd", bat, StringComparison.OrdinalIgnoreCase);
+        // نسخة احتياطية قبل النسخ + تقارير OK/FAILED + توقف عند الفشل + اختصار سطح المكتب
+        Assert.Contains("_backup_before_", bat);
+        Assert.Contains("[FAILED]", bat);
+        Assert.Contains("goto :fail_end", bat);
+        Assert.Contains("GetFolderPath('Desktop')", bat);
+        Assert.Contains("MfgSystem.exe", bat);
+        // رقم الإصدار في البوت = رقم الإصدار في المشروع
+        var csproj = Read("src/DatesErp.Desktop/DatesErp.Desktop.csproj");
+        var m = System.Text.RegularExpressions.Regex.Match(csproj, "<Version>([^<]+)</Version>");
+        Assert.True(m.Success, "csproj بلا <Version>");
+        Assert.Contains($"set \"VER={m.Groups[1].Value}\"", bat);
     }
 
     [Fact]
-    public void OneClick_Upgrader_Copies_Nothing_And_Backs_Up_Nothing()
+    public void From_Zero_Setup_Keeps_Safety_Rules()
     {
-        string bat = Read("Installer/1-حدّث_وشغل.bat");
-        Assert.True(bat.Contains("\r\n"), "1-حدّث_وشغل.bat يجب أن يكون CRLF");
-        // بلا نسخ ملفات وبلا نسخ احتياطية — الملفات في مكانها أصلاً (نقرة = تهيئة + تشغيل)
-        Assert.DoesNotContain("copy /y", bat);
-        Assert.DoesNotContain("xcopy", bat);
-        Assert.DoesNotContain("قبل_التحديث", bat);
-        // حارس الدمج: إن نُقر من الحزمة المصغّرة غير المدموجة تظهر رسالة بدل الفشل
-        Assert.Contains("coreclr.dll", bat);
-        // الهوية المنفصلة في كل السكربت
+        string bat = Read("Installer/SETUP-FROM-ZERO.bat");
+        Assert.True(bat.Contains("\r\n"), "SETUP-FROM-ZERO.bat يجب أن يكون CRLF");
+        Assert.DoesNotContain("chcp", bat, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DROP DATABASE", bat, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("[FAILED]", bat);
         Assert.Contains("MfgSystem", bat);
-        var cfg = SeededConfig(bat);
-        Assert.Equal("MfgSystemDB", cfg.GetProperty("Database").GetString());
-        Assert.Equal("1.50.66", cfg.GetProperty("AppVersion").GetString());
-        // التشغيل المباشر للملف التنفيذي من مجلده (لا BAT ولا PS في التشغيل اليومي)
-        Assert.Contains("start \"\" \"%SRC%MfgSystem.exe\"", bat);
     }
 
     [Fact]
