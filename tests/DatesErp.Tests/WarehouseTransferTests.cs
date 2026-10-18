@@ -306,4 +306,54 @@ public class WarehouseTransferTests
         using var db = Db(host);
         Assert.Empty(db.WarehouseTransfers);
     }
+
+    /// <summary>الطباعة تقرأ من السند المحفوظ فقط، وتعرض المصدر/المستلم/الحالة/البنود، ولا تغيّر المخزون ولا حالة السند.</summary>
+    [Fact]
+    public void Print_Model_Reads_Saved_Document_And_Does_Not_Touch_Stock_Or_Status()
+    {
+        using var host = new TestHost();
+        host.LoginAsAdmin();
+        var c = Seed(host);
+        var r = Svc(host).SaveTransfer("01/10/2026", c.Src, c.Dst, new() { Item(c, 40, 8) }, "ملاحظة اختبار");
+        Assert.True(r.Ok, r.Message);
+
+        string srcName, dstName;
+        using (var db0 = Db(host))
+        {
+            srcName = db0.Warehouses.Single(w => w.Id == c.Src).WarehouseNameAr;
+            dstName = db0.Warehouses.Single(w => w.Id == c.Dst).WarehouseNameAr;
+        }
+
+        // مسودة: بلا حركات — نموذج الطباعة يقول ذلك صراحة
+        using (var db = Db(host))
+        {
+            var m = DatesErp.Desktop.Printing.StoredPrintModels.WarehouseTransfer(db, r.Id);
+            Assert.Contains(m.Info, x => x.Label == "من مخزن" && x.Value == srcName);
+            Assert.Contains(m.Info, x => x.Label == "إلى مخزن" && x.Value == dstName);
+            Assert.Contains(m.Info, x => x.Label == "الحالة" && x.Value == DocStatuses.ToArabic(DocStatuses.Draft));
+            Assert.Single(m.Rows);
+            Assert.Equal(40m, m.Rows[0][5]);
+            Assert.Equal(8, m.Rows[0][6]);
+            Assert.Empty(m.SecondRows);
+            Assert.Contains("لم تُنفَّذ", m.SecondTitle);
+        }
+        Assert.Equal(100, Bal(host, c.Src, c), 3);
+        Assert.Equal(0, TxnCount(host, r.DocumentNumber));
+
+        // معتمد: الحركات الفعلية تظهر في القسم الثاني والطباعة لا تُنشئ حركات إضافية
+        Assert.True(Svc(host).ApproveTransfer(r.Id).Ok);
+        using (var db = Db(host))
+        {
+            var m = DatesErp.Desktop.Printing.StoredPrintModels.WarehouseTransfer(db, r.Id);
+            Assert.Contains(m.Info, x => x.Label == "الحالة" && x.Value == DocStatuses.ToArabic(DocStatuses.Approved));
+            Assert.Equal(2, m.SecondRows.Count);
+            Assert.Contains(m.SecondRows, row => (string)row[2] == srcName && (string)row[3] == "صادر");
+            Assert.Contains(m.SecondRows, row => (string)row[2] == dstName && (string)row[3] == "وارد");
+        }
+        Assert.Equal(60, Bal(host, c.Src, c), 3);
+        Assert.Equal(40, Bal(host, c.Dst, c), 3);
+        Assert.Equal(2, TxnCount(host, r.DocumentNumber));
+        using var db2 = Db(host);
+        Assert.Equal(DocStatuses.Approved, db2.WarehouseTransfers.Single(t => t.Id == r.Id).Status);
+    }
 }

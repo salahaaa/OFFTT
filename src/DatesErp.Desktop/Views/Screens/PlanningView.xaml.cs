@@ -50,7 +50,6 @@ public partial class PlanningView : UserControl
     private Views.ErpToolbar _toolbar;
     // §1.50.60 — تحسينات عامة 7-ب/7-ج/7-هـ: حفظ تلقائي + تكرار صف + تنقل لوحة مفاتيح
     private System.Windows.Threading.DispatcherTimer _autoSaveTimer;
-    private DateTime _lastAutoSave = DateTime.MinValue;
     private string AutoSavePath => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"PlanningDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId : 0)}.json");
 
     // §B58: قوائم الخلاياEditable (وردية/خط/عبوة) — تُقرأ من قاعدة البيانات في Load

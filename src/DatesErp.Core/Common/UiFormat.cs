@@ -47,6 +47,12 @@ public static class UiFormat
     /// <summary>رقم بأرقام إنجليزية وفاصل آلاف (10,025.5).</summary>
     public static string N(double v, int decimals = 1) => v.ToString("N" + decimals, Inv);
     public static string N0(double v) => v.ToString("N0", Inv);
+
+    /// <summary>§44 — سياسة الأرقام المركزية (كانت نسخة مكررة في Desktop.Services وأُدمجت هنا): كجم N2، كراتين N0، نسب N1، أسعار N2.</summary>
+    public static string Kg(double v) => v.ToString("N2", Inv);
+    public static string Cartons(double v) => Math.Round(v).ToString("N0", Inv);
+    public static string Rate(double v) => v.ToString("N1", Inv);
+    public static string Price(double v) => v.ToString("N2", Inv);
     public static string N(long v) => v.ToString("N0", Inv);
 
     /// <summary>نسبة مئوية 85%.</summary>

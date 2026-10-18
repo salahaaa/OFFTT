@@ -116,8 +116,10 @@ public static class AutoBackup
             attemptedFile = file;
             string dbName = db.Database.GetDbConnection().Database;
             // §1.50.67 FIX: استخدام مسار يمكن لخدمة SQL Server الكتابة فيه + معالجة Access is denied
-            db.Database.ExecuteSqlRaw($"BACKUP DATABASE [{dbName}] TO DISK = N'{file}' WITH INIT, COMPRESSION, CHECKSUM");
-            db.Database.ExecuteSqlRaw($"RESTORE VERIFYONLY FROM DISK = N'{file}'");
+            // EF1002: اسم القاعدة معرِّف (لا يُمرَّر كمعامل) فيُحصَّن بمضاعفة ] — أما مسار الملف فيُمرَّر معاملاً @p0 (SQL Server يقبل DISK = @متغير).
+            string quotedDb = "[" + dbName.Replace("]", "]]") + "]";
+            db.Database.ExecuteSqlRaw("BACKUP DATABASE " + quotedDb + " TO DISK = {0} WITH INIT, COMPRESSION, CHECKSUM", file);
+            db.Database.ExecuteSqlRaw("RESTORE VERIFYONLY FROM DISK = {0}", file);
             ErrorLog.WriteInfo("AutoBackup: نسخة ما قبل الترحيل جاهزة — " + file);
             return true;
         }

@@ -2,15 +2,6 @@ using System.Text;
 
 namespace DatesErp.Desktop.Services;
 
-/// <summary>§44 — سياسة الأرقام المركزية: كجم N2، كراتين N0، نسب N1، أسعار N2.</summary>
-public static class UiFormat
-{
-    public static string Kg(double v) => v.ToString("N2");
-    public static string Cartons(double v) => Math.Round(v).ToString("N0");
-    public static string Rate(double v) => v.ToString("N1");
-    public static string Price(double v) => v.ToString("N2");
-}
-
 /// <summary>
 /// §44 — تصدير CSV متوافق مع Excel (BOM عربي) لأي جدول معروض،
 /// يُستخدم كزر موحّد حين لا تملك الشاشة مصدراً خاصاً للتصدير.

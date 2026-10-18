@@ -101,7 +101,7 @@ src/
   DatesErp.Desktop/         واجهة WPF — 25+ شاشة (نقطة الدخول: DateERP.exe)
 tests/DatesErp.Tests/       اختبارات xUnit لمنطق الأعمال والبنية والأمان
 tools/AcceptanceRunner/     مُشغّل اختبارات القبول
-audit/UnitRuleAudit/        أداة تدقيق قاعدة الوحدات (ضمن الحل)
+tests/DatesErp.Tests/UnitRule*  تدقيق قاعدة الوحدات (UnitRuleTests/UnitsGoldenRuleTests/UnitsPolicyTests/QualityUnitsRuleTests)
 Installer/                  حزمة تنصيب عربية (bat / ps1 / sql)
 Documentation/              الأدلة، قوالب الطباعة، وتقارير المشروع
 ```

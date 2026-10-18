@@ -249,9 +249,9 @@ namespace DatesErp.Desktop.Theming
 
             try
             {
-                if (Application.Current == null) return;
+                if (System.Windows.Application.Current == null) return;
 
-                Application.Current.Dispatcher.Invoke(() =>
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
                 {
                     ApplyColors(theme);
                     ApplyFonts(theme);
@@ -276,7 +276,7 @@ namespace DatesErp.Desktop.Theming
 
         private static void ApplyColors(ThemeSettings t)
         {
-            var res = Application.Current.Resources;
+            var res = System.Windows.Application.Current.Resources;
 
             // ألوان أساسية
             SetColor(res, "PrimaryColor", t.PrimaryColor);
@@ -415,7 +415,7 @@ namespace DatesErp.Desktop.Theming
 
         private static void ApplyFonts(ThemeSettings t)
         {
-            var res = Application.Current.Resources;
+            var res = System.Windows.Application.Current.Resources;
 
             try
             {
@@ -447,7 +447,7 @@ namespace DatesErp.Desktop.Theming
 
         private static void ApplySizesAndShapes(ThemeSettings t)
         {
-            var res = Application.Current.Resources;
+            var res = System.Windows.Application.Current.Resources;
 
             res["BorderThicknessValue"] = t.BorderThickness;
             res["TextBoxBorderThicknessValue"] = t.TextBoxBorderThickness;
@@ -498,7 +498,7 @@ namespace DatesErp.Desktop.Theming
 
         private static void ApplyTableStyles(ThemeSettings t)
         {
-            var res = Application.Current.Resources;
+            var res = System.Windows.Application.Current.Resources;
             res["TableRowHeight"] = t.TableRowHeight;
             res["TableHeaderHeight"] = t.TableHeaderHeight;
             res["TableShowGridLines"] = t.TableShowGridLines;
@@ -513,7 +513,7 @@ namespace DatesErp.Desktop.Theming
 
         private static void ApplyButtonStyles(ThemeSettings t)
         {
-            var res = Application.Current.Resources;
+            var res = System.Windows.Application.Current.Resources;
             res["ButtonTextColor"] = ParseColor(t.ButtonTextColor);
             res["ButtonTextBrush"] = new SolidColorBrush(ParseColor(t.ButtonTextColor));
             res["ButtonIconPosition"] = t.ButtonIconPosition;
@@ -521,7 +521,7 @@ namespace DatesErp.Desktop.Theming
 
         private static void ApplyCardAndWindowStyles(ThemeSettings t)
         {
-            var res = Application.Current.Resources;
+            var res = System.Windows.Application.Current.Resources;
             res["OverallOpacity"] = t.OverallOpacity;
         }
 
