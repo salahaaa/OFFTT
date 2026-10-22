@@ -4,12 +4,8 @@ using Xunit;
 namespace DatesErp.Tests;
 
 /// <summary>
-/// §التشغيل بضغطة واحدة + الهوية المنفصلة + الحل التلقائي للاتصال (v1.50.23):
-/// • «1-حدّث_وشغل.bat» يعمل من مجلد النظام نفسه: بلا نسخ ملفات وبلا أي نسخ احتياطية،
-///   مع حارس يمنع النقر من الحزمة المصغّرة غير المدموجة.
-/// • إعداد الاتصال يُكتب تلقائياً في مجلد بيانات خاص «MfgSystem»: ‎.\SQLEXPRESS01
-///   / قاعدة «MfgSystemDB» منفصلة عن أي نسخة أخرى / مصادقة Windows.
-/// • أول تشغيل ينشئ القاعدة والجداول تلقائياً (EnsureCreated + DbSeeder + SchemaMigrator).
+/// اختبارات حزمة 1.50.72: مثبت المصدر، مدخل التوافق، وعزل هوية قاعدة البيانات المحلية.
+/// أول تشغيل يبني/ينشئ قاعدة SQLite المحلية دون استيراد إعدادات DateERP القديمة.
 /// </summary>
 public class OneClickLaunchTests
 {
@@ -46,6 +42,8 @@ public class OneClickLaunchTests
         Assert.Contains("_backup_before_", bat);
         Assert.Contains("[FAILED]", bat);
         Assert.Contains("goto :fail_end", bat);
+        Assert.DoesNotContain("taskkill", bat, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("goto :legacy_target", bat);
         Assert.Contains("GetFolderPath('Desktop')", bat);
         Assert.Contains("MfgSystem.exe", bat);
         // رقم الإصدار في البوت = رقم الإصدار في المشروع
@@ -56,14 +54,68 @@ public class OneClickLaunchTests
     }
 
     [Fact]
-    public void From_Zero_Setup_Keeps_Safety_Rules()
+    public void From_Zero_Compatibility_Entry_Delegates_To_Root_Installer()
     {
         string bat = Read("Installer/SETUP-FROM-ZERO.bat");
         Assert.True(bat.Contains("\r\n"), "SETUP-FROM-ZERO.bat يجب أن يكون CRLF");
         Assert.DoesNotContain("chcp", bat, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("DROP DATABASE", bat, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("[FAILED]", bat);
-        Assert.Contains("MfgSystem", bat);
+        Assert.Contains("INSTALL-AND-RUN.bat", bat);
+        Assert.Contains("call \"%INSTALLER%\"", bat);
+    }
+
+    [Fact]
+    public void Install_And_Run_Builds_The_Current_Version_Without_Overwriting_Old_Folders()
+    {
+        string bat = Read("INSTALL-AND-RUN.bat");
+        Assert.True(bat.Contains("\r\n"), "INSTALL-AND-RUN.bat يجب أن يكون CRLF");
+        Assert.All(bat, ch => Assert.True(ch < 128, "INSTALL-AND-RUN.bat يجب أن يكون ASCII خالصاً"));
+        Assert.DoesNotContain("chcp", bat, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DROP DATABASE", bat, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Verb RunAs", bat);
+        Assert.Contains("--self-contained true", bat);
+        Assert.Contains("Application_%VER%", bat);
+        Assert.Contains("mfgsystem_local.db", bat);
+        Assert.Contains("MfgSystem %VER%.lnk", bat);
+        Assert.Contains("BUILD SUCCESS", bat);
+        Assert.Contains("INSTALL SUCCESS", bat);
+        Assert.Contains("[FAILED]", bat);
+        Assert.Contains("goto :fail", bat);
+        Assert.Contains("goto :legacy_root", bat); // المسارات القديمة المحمية تُرفض
+    }
+
+    [Fact]
+    public void Local_Profile_And_Boot_Logs_Use_MfgSystem_Without_Legacy_Login_Migration()
+    {
+        string cfg = Read("src/DatesErp.Infrastructure/Connection/AppConfig.cs");
+        Assert.Contains("LocalApplicationData", cfg);
+        Assert.Contains("\"MfgSystem\"", cfg);
+        string bootTrace = Read("src/DatesErp.Desktop/Services/BootTrace.cs");
+        Assert.Contains("AppConfig.ConfigDirectory", bootTrace);
+        Assert.Contains("\"logs\"", bootTrace);
+        string login = Read("src/DatesErp.Desktop/Views/LoginWindow.xaml.cs");
+        Assert.Contains("AppConfig.ConfigDirectory", login);
+        Assert.DoesNotContain("LegacyRememberPath", login);
+    }
+
+    [Fact]
+    public void Optional_SQL_Setup_Creates_Only_New_MfgSystem_Database_And_Backup_Job()
+    {
+        string databaseSetup = Read("Installer/server/إعداد_قاعدة_البيانات.sql");
+        Assert.Contains("DB_ID(N'MfgSystemDB') IS NOT NULL", databaseSetup);
+        Assert.Contains("CREATE DATABASE [MfgSystemDB]", databaseSetup);
+        Assert.DoesNotContain("DROP DATABASE", databaseSetup, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DB_ID(N'DateFactory')", databaseSetup);
+        Assert.DoesNotContain("USE [DateFactory]", databaseSetup);
+
+        string backupSetup = Read("Installer/server/إعداد_النسخ_الاحتياطي.sql");
+        Assert.Contains("MfgSystem_DailyBackup", backupSetup);
+        Assert.Contains("IF EXISTS", backupSetup);
+        Assert.Contains("RESTORE VERIFYONLY", backupSetup);
+        Assert.Contains("DATEPART(SECOND", backupSetup);
+        Assert.DoesNotContain("WITH INIT", backupSetup, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sp_delete_job", backupSetup, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -50,15 +50,17 @@ public class V15026UpdateAssuranceTests
     }
 
     [Fact]
-    public void Update_Bat_Installs_Itself_From_A_Nested_Update_Folder()
+    public void Current_One_Click_Installer_Publishes_Isolated_MfgSystem()
     {
-        string bat = Read("Installer/1-حدّث_وشغل.bat");
-        Assert.Contains("goto :inplace", bat);
-        Assert.Contains(":installparent", bat);
-        Assert.Contains("robocopy", bat);                       // تثبيت التحديث في مجلد النسخة الأب تلقائياً
-        Assert.Contains("MessageBox", bat);                     // رسالة واضحة عند المكان الخاطئ تماماً
-        Assert.DoesNotContain("copy /y", bat);
-        Assert.DoesNotContain("xcopy", bat);
+        string bat = Read("INSTALL-AND-RUN.bat");
+        Assert.Contains("Application_%VER%", bat);
+        Assert.Contains("MfgSystem.exe", bat);
+        Assert.Contains("mfgsystem_local.db", bat);
+        Assert.Contains("Start-Process", bat);                  // طلب UAC دون تغيير صفحة الترميز
+        Assert.Contains("[FAILED]", bat);
+        Assert.Contains("goto :fail", bat);
+        Assert.DoesNotContain("DROP DATABASE", bat, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sqlcmd", bat, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -66,7 +68,7 @@ public class V15026UpdateAssuranceTests
     {
         // ختم العنوان كان ثابتاً على 2026-09-09 عبر إصدارات متتالية — صار رقم التسليم نفسه.
         string stamp = Read("src/DatesErp.Desktop/Services/BuildInfo.cs");
-        Assert.Contains("\"1.50.37\"", stamp);
+        Assert.Contains("\"1.50.72\"", stamp);
         Assert.DoesNotContain("ActualDeliveryDraft2", stamp);
     }
 }

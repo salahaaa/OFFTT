@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace DatesErp.Infrastructure.Connection;
 
 /// <summary>
-/// §12/§13 — إعداد الاتصال المركزي يُحفظ على الجهاز في %LocalAppData%\DateERP\config.json
+/// §12/§13 — إعداد الاتصال المركزي يُحفظ على الجهاز في %LocalAppData%\MfgSystem\config.json
 /// ولا تُحفظ أي كلمة مرور بنص صريح: كلمات مرور SQL (إن لزم) تُشفَّر بـ DPAPI على ويندوز.
 /// </summary>
 public class AppConfig
@@ -19,8 +19,8 @@ public class AppConfig
 
     /// <summary>مجلد الإعداد — في مجلد المستخدم المحلي (قابل للكتابة بلا صلاحيات إدارية).
     /// §50 الهوية المنفصلة «نظام التصنيع»: المجلد «MfgSystem» — منفصل تماماً عن أي نسخة سابقة
-    /// (DateERP_15021 وغيره): إعداد وبصمات وسجلات ونسخ احتياطية وقاعدة محلية كلها في مساحة
-    /// خاصة بهذا النظام وحده، فلا يتأثر بأي نسخة قديمة ولا يؤثر فيها.</summary>
+    /// (DateERP_15021 وغيره): الإعداد والسجلات والثيمات والمسودات والقاعدة المحلية في مساحة
+    /// خاصة بهذا النظام؛ ومسارات النسخ الاحتياطي تحمل هوية MfgSystem أيضاً، فلا تُقرأ بيانات نسخة قديمة.</summary>
     public static string ConfigDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MfgSystem");
 

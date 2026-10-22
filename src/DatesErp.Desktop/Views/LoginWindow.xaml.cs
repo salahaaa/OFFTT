@@ -13,12 +13,9 @@ namespace DatesErp.Desktop.Views;
 public partial class LoginWindow : Window
 {
     public bool LoggedIn { get; private set; }
-    // §B84/B3: كان في ProgramData (يتطلب صلاحيات إدارية) فيفشل الحفظ بصمت للمستخدم العادي —
-    // الآن في ملف المستخدم الخاص. المسار القديم يُهاجَر تلقائياً عند أول دخول.
+    // بيانات تذكر اسم المستخدم خاصة بهوية MfgSystem ولا تُقرأ من أي إصدار DateERP سابق.
     private static string RememberPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "remember.txt");
-    private static string LegacyRememberPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "DateERP", "remember.txt");
+        DatesErp.Infrastructure.Connection.AppConfig.ConfigDirectory, "remember.txt");
 
     public LoginWindow()
     {
@@ -27,16 +24,6 @@ public partial class LoginWindow : Window
         try { TitleBarText.Text += " — إصدار " + Services.BuildInfo.Stamp; } catch { }
         try
         {
-            // §B84/B3: تهجير لمرة واحدة من المسار الإداري القديم (إن وُجد ولا جديد بعده)
-            if (!File.Exists(RememberPath) && File.Exists(LegacyRememberPath))
-            {
-                try
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(RememberPath));
-                    File.Move(LegacyRememberPath, RememberPath);
-                }
-                catch { /* يُعاد الدخول يدوياً مرة واحدة — لا يعطل شيئاً */ }
-            }
             if (File.Exists(RememberPath))
             {
                 UserNameBox.Text = File.ReadAllText(RememberPath).Trim();

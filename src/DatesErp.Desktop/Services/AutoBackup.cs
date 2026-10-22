@@ -14,15 +14,15 @@ public static class AutoBackup
     public const string KeyFolder = "BackupFolder";
 
     public static string DefaultFolder => System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "DateERP", "Backups");
+        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "MfgSystem", "Backups");
 
     // §1.50.67 FIX: مجلدات بديلة للنسخ الاحتياطي يمكن لخدمة SQL Server الكتابة فيها (خطأ Access is denied 5)
     private static readonly string[] FallbackFolders = new[]
     {
-        System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonDocuments), "DateERP", "Backups"),
-        @"C:\SQLBackups\DateERP",
-        @"C:\Temp\DateERP\Backups",
-        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "DateERP", "Backups"),
+        System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonDocuments), "MfgSystem", "Backups"),
+        @"C:\SQLBackups\MfgSystem",
+        @"C:\Temp\MfgSystem\Backups",
+        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "MfgSystem", "Backups"),
         DefaultFolder
     };
 
@@ -49,7 +49,7 @@ public static class AutoBackup
         var candidates = new System.Collections.Generic.List<string>();
         if (!string.IsNullOrWhiteSpace(preferred)) candidates.Add(preferred);
         string sqlDefault = GetSqlServerDefaultBackupPath(db);
-        if (!string.IsNullOrWhiteSpace(sqlDefault)) candidates.Add(System.IO.Path.Combine(sqlDefault, "DateERP"));
+        if (!string.IsNullOrWhiteSpace(sqlDefault)) candidates.Add(System.IO.Path.Combine(sqlDefault, "MfgSystem"));
         candidates.AddRange(FallbackFolders);
 
         foreach (var folder in candidates.Distinct())
@@ -112,7 +112,7 @@ public static class AutoBackup
             if (!db.Database.IsSqlServer()) return true;
             string folder = ResolveWritableBackupFolder(db, DefaultFolder);
             System.IO.Directory.CreateDirectory(folder);
-            string file = System.IO.Path.Combine(folder, $"DateERP_PreMigration_{DateTime.Now:yyyyMMdd_HHmmss}.bak");
+            string file = System.IO.Path.Combine(folder, $"MfgSystem_PreMigration_{DateTime.Now:yyyyMMdd_HHmmss}.bak");
             attemptedFile = file;
             string dbName = db.Database.GetDbConnection().Database;
             // §1.50.67 FIX: استخدام مسار يمكن لخدمة SQL Server الكتابة فيه + معالجة Access is denied
@@ -130,7 +130,7 @@ public static class AutoBackup
             string msg = ex.Message.Contains("Access is denied") || ex.Message.Contains("Operating system error 5")
                 ? $"تعذّر إنشاء نسخة احتياطية في '{attemptedFile}' بسبب صلاحيات خدمة SQL Server (خطأ 5 Access is denied).\n" +
                   $"خدمة SQL Server تعمل بحساب لا يملك صلاحية الكتابة في مجلد المستندات.\n" +
-                  $"جرّب: 1) شغّل SSMS كمسؤول وأعطِ صلاحية للمجلد، أو 2) استخدم مجلد C:\SQLBackups، أو 3) اضغط نعم للمتابعة بدون نسخة (مخاطرة).\n\nالتفاصيل: {ex.Message}"
+                  $"جرّب: 1) شغّل SSMS كمسؤول وأعطِ صلاحية للمجلد، أو 2) استخدم مجلد C:\\SQLBackups، أو 3) اضغط نعم للمتابعة بدون نسخة (مخاطرة).\n\nالتفاصيل: {ex.Message}"
                 : $"تعذّر إنشاء نسخة احتياطية قبل ترحيل قاعدة البيانات:\n{ex.Message}";
             return System.Windows.MessageBox.Show(
                 msg +

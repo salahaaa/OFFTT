@@ -29,8 +29,8 @@ public static class DependencyInjection
             else
             {
                 var cfg = AppConfig.Load();
-                if (cfg != null) options.UseSqlServer(cfg.BuildSqlServerConnectionString());
-                else options.UseSqlite("Data Source=dateerp_dev.db");
+                if (cfg != null && cfg.AuthMode != "Local") options.UseSqlServer(cfg.BuildSqlServerConnectionString());
+                else options.UseSqlite($"Data Source={Path.Combine(AppConfig.ConfigDirectory, "mfgsystem_local.db")}");
             }
         });
 

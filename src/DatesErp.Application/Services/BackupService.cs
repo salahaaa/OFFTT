@@ -45,6 +45,8 @@ public class BackupService : ServiceBase, IBackupService
     public OpResult FullBackup(string folderPath)
     {
         Require("backup", "Post");
+        if (!Db.Database.IsSqlServer())
+            return OpResult.Fail("هذه الشاشة تدعم نسخ SQL Server فقط؛ لا تستخدمها مع قاعدة SQLite المحلية.");
         try
         {
             if (!System.IO.Directory.Exists(folderPath))
@@ -64,6 +66,8 @@ public class BackupService : ServiceBase, IBackupService
     public OpResult VerifyBackup(string backupFile)
     {
         Require("backup", "View");
+        if (!Db.Database.IsSqlServer())
+            return OpResult.Fail("التحقق عبر هذه الشاشة مخصص لملفات SQL Server فقط؛ SQLite المحلي غير مدعوم هنا.");
         try
         {
             Db.Database.ExecuteSqlRaw($"RESTORE VERIFYONLY FROM DISK = N'{SafePath(backupFile)}'");
@@ -80,6 +84,8 @@ public class BackupService : ServiceBase, IBackupService
         Require("backup", "Post");
         if (!Session.IsInRole("Administrator") && !Session.IsInRole("Management"))
             return OpResult.Fail("الاستعادة صلاحية إدارية عليا فقط.");
+        if (!Db.Database.IsSqlServer())
+            return OpResult.Fail("استعادة SQLite المحلية غير مدعومة من هذه الشاشة؛ لم يتم تغيير قاعدة البيانات.");
         try
         {
             Db.Database.ExecuteSqlRaw($"ALTER DATABASE [{SafeDbName()}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE");

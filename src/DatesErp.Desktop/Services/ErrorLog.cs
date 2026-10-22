@@ -1,17 +1,18 @@
 using System.IO;
+using DatesErp.Infrastructure.Connection;
 
 namespace DatesErp.Desktop.Services;
 
 /// <summary>
 /// §28 — سجل الأخطاء: التفاصيل الفنية تُكتب في ملف سجل فقط ولا تُعرض للمستخدم.
-/// الموقع: %LocalAppData%\DateERP\logs\errors.log (§B110: المسار الفعلي — كان التوثيق يذكر ProgramData خطأً)
+/// الموقع: %LocalAppData%\MfgSystem\logs\errors.log.
 /// </summary>
 public static class ErrorLog
 {
     private static readonly object _lock = new();
 
     public static string LogDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "logs");
+        Path.Combine(AppConfig.ConfigDirectory, "logs");
 
     public static void Write(Exception ex, string source)
     {

@@ -11,4 +11,15 @@ publish/
 *.bak
 install_*.log
 install_log.txt
+update_log.txt
+_ver.tmp
+# Local publish outputs and optional offline SDK installers
+/Application*/
+/Application_*_staging/
+/dotnet-sdk-8-win-x64.exe
+_backup_before_*/
+# Local databases / mutable data must never be committed
+*.db
+*.db-shm
+*.db-wal
 __pycache__/

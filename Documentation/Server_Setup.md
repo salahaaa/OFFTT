@@ -1,66 +1,34 @@
-# إعداد السيرفر — Date ERP
+# إعداد SQL Server لـ MfgSystem 1.50.72 (اختياري)
 
-## البنية
-```
-SERVER01
- ├── SQL Server (Default أو Named Instance)
- │     └── DateFactory (قاعدة مركزية وحيدة)
- └── C:\DateERP_Backups (مجلد النسخ الاحتياطية)
-```
+## ملاحظة قبل البدء
 
-## خطوات الإعداد الكاملة
+المثبّت الافتراضي يعمل محلياً على SQLite ولا يحتاج SQL Server. اتبع هذا الدليل فقط عند الحاجة إلى قاعدة مركزية لعدة أجهزة. استخدم اسماً مستقلاً `MfgSystemDB`؛ لا تستخدم `DateFactory` أو قواعد DateERP القديمة، ولا تنفذ أوامر الحذف أو الاستعادة فوق قاعدة إنتاج قائمة.
 
-### 1. تثبيت SQL Server
-- أي إصدار 2016+ (Express يكفي لعدد أجهزة صغير).
-- أثناء التثبيت فعّل **Windows Authentication Mode**.
-- للـ Named Instance سمّها بوضوح، مثال: `SERVER01\SQLEXPRESS`.
+## المتطلبات
 
-### 2. الشبكة والجدار الناري (§14/§15)
-| الإعداد | القيمة |
-|---|---|
-| Default Instance | TCP **1433** |
-| Named Instance | منفذ ثابت (مثال 1433) أو SQL Browser (UDP 1444) |
-| اسم الخادم المدعوم | `SERVER01` أو `SERVER01\SQLEXPRESS` أو `192.168.1.10` |
+- SQL Server 2016 أو أحدث، مع اتصال TCP/IP مسموح به على المنفذ المضبوط في إعداد الخادم (عادةً TCP 1433 للمثيل الافتراضي).
+- صلاحية إنشاء قاعدة وضبط صلاحياتها. يمكن استخدام SQL Server Management Studio أو `sqlcmd`.
+- اسم قاعدة جديد `MfgSystemDB` غير مستخدم؛ السكربت يتوقف قبل أي تعديل إذا كانت القاعدة موجودة مسبقاً.
 
-> لا تستخدم `localhost` على الأجهزة العميلة — فقط على السيرفر نفسه.
+## الإعداد الأولي
 
-```powershell
-# أوامر الجدار الناري
-New-NetFirewallRule -DisplayName "SQL TCP" -Direction Inbound -Protocol TCP -LocalPort 1433 -Action Allow
-New-NetFirewallRule -DisplayName "SQL Browser UDP" -Direction Inbound -Protocol UDP -LocalPort 1444 -Action Allow
-# تفعيل البروتوكول TCP للـ Named Instance من SQL Server Configuration Manager ثم إعادة تشغيل الخدمة
-```
+1. على الخادم، راجع `Installer/server/إعداد_قاعدة_البيانات.sql` كاملاً وتأكد أن اسم `MfgSystemDB` غير مستخدم قبل التنفيذ.
+2. إذا كنت ستفعّل النسخ عبر SQL Agent، أنشئ مجلد `C:\MfgSystem_Backups` على الخادم وامنح حساب خدمة SQL Server صلاحية الكتابة فيه؛ هذه الخطوة غير مطلوبة لتشغيل قاعدة SQL نفسها.
+3. شغّل سكربت إنشاء القاعدة مرة واحدة بصلاحية مناسبة، مثلاً:
 
-### 3. إنشاء القاعدة والمخطط
-```
-مجلد المثبّت → Setup-Database.bat
-```
-أو يدوياً:
-```
-sqlcmd -S SERVER01 -E -Q "IF DB_ID(N'DateFactory') IS NULL CREATE DATABASE [DateFactory]"
-sqlcmd -S SERVER01 -E -d DateFactory -i Install.sql
-sqlcmd -S SERVER01 -E -d DateFactory -i Seed.sql
-```
-- `Install.sql`: 42 جدولاً بالمفاتيح والفهارس و`rowversion` للتزامن التفاؤلي (§5).
-- `Seed.sql`: الأدوار السبعة + مصفوفة الصلاحيات + المستخدمون (كلمات مرور مجزأة).
+   ```cmd
+   sqlcmd -b -S SERVER01 -E -i "Installer\server\إعداد_قاعدة_البيانات.sql"
+   ```
 
-### 4. النسخ الاحتياطي (§29/§30)
-`Setup-BackupPlan.sql` ينشئ مهمة يومية كاملة في SQL Server Agent:
-- نسخة كاملة كل يوم الساعة 23:00 مع `WITH CHECKSUM`.
-- `RESTORE VERIFYONLY` تلقائي بعد كل نسخة (لا تُعتبر النسخة ناجحة بدون تحقق).
-- لتفعيل الاستعادة الاختبارية دورياً:
-```
-RESTORE DATABASE [DateFactory_RestoreTest] FROM DISK = N'آخر نسخة' WITH REPLACE;
-```
+4. لا يحتوي السكربت على `DROP DATABASE`، ولا يغيّر `DateFactory`. يقوم تطبيق MfgSystem عند أول اتصال بقاعدة فارغة بإنشاء مخططه وبياناته الأساسية تلقائياً؛ تأكد من صلاحيات المستخدم لذلك.
+5. في كل جهاز عميل افتح إعداد الاتصال في التطبيق، أدخل اسم الخادم/المثيل وقاعدة `MfgSystemDB` وطريقة المصادقة، ثم اختبر الاتصال قبل الحفظ. لا تحفظ كلمة مرور كنص صريح في ملف إعداد مشترك.
 
-### 5. الترقية (§32)
-1. نسخة احتياطية كاملة + تحقق.
-2. `SELECT TOP 1 VersionNumber FROM DbVersions ORDER BY AppliedDate DESC;`
-3. نفّذ `Upgrade.sql` بعد وضع أوامر الترحيل المطلوبة فيه.
-4. تحقق من `DbVersions` ثم شغّل التطبيق الجديد.
+## جدار الحماية والنسخ
 
-## الأمان (§13)
-- Windows Authentication هو الافتراضي — لا كلمات مرور لقاعدة البيانات في أي ملف.
-- كلمات مرور المستخدمين مجزأة **PBKDF2-SHA256 (100,000 دورة)** ولا تُخزن صريحة.
-- قفل الحساب بعد 5 محاولات دخول فاشلة.
-- سجل تدقيق كامل لكل عملية مع اسم المستخدم والجهاز (§26).
+- اسمح باتصال TCP إلى المنفذ الفعلي لخادم SQL من أجهزة العملاء فقط. يلزم UDP 1434 لاكتشاف بعض المثيلات المسماة عند استخدام SQL Browser؛ الأفضل تثبيت منفذ TCP ثابت.
+- `Installer/server/إعداد_النسخ_الاحتياطي.sql` ينشئ مهمة SQL Agent يومية اختيارية إلى `C:\MfgSystem_Backups`، ويتوقف إن كانت المهمة بالاسم نفسه موجودة. ينشئ ملفاً مؤرخاً لكل تشغيل ويتحقق من الملف نفسه؛ لا يحذف النسخ القديمة تلقائياً، لذا راقب المساحة وضع سياسة احتفاظ يدوية. يتطلب SQL Server Agent (غير متوفر في SQL Server Express). اقرأ النص قبل تشغيله.
+- اختبر الاستعادة إلى قاعدة اختبار مستقلة، ولا تستخدم `WITH REPLACE` على قاعدة الإنتاج. وجود ملف backup وحده لا يثبت قابلية الاستعادة.
+
+## عزل الإصدارات القديمة
+
+إعداد التطبيق المحلي وSQLite تحت `%LocalAppData%\MfgSystem`. لا يقرأ التطبيق تلقائياً إعدادات DateERP القديمة ولا يستورد قواعدها. الإعداد متعدد المستخدمين يجب أن يستخدم `MfgSystemDB` مستقلة ومختلفة الاسم عن قواعد النسخ السابقة.

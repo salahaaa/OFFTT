@@ -262,7 +262,7 @@ public class Bootstrapper
                     ErrorLog.Write(ex, "Startup");
                     MessageBox.Show(
                         "تعذر الاتصال بخادم قاعدة البيانات.\n\nتأكد من اتصال الشبكة وتشغيل الخادم.\n(التفاصيل في سجل الأخطاء)",
-                        "Date ERP", MessageBoxButton.OK, MessageBoxImage.Error);
+                        "MfgSystem", MessageBoxButton.OK, MessageBoxImage.Error);
                     app.Shutdown();
                     return;
                 }
@@ -295,8 +295,8 @@ public class Bootstrapper
             BootTrace.Fail("Bootstrapper (catch عام)", ex);
             ErrorLog.Write(ex, "Bootstrapper");
             splash.Hide();
-            MessageBox.Show("حدث خطأ أثناء بدء التشغيل.\n\nالتفاصيل في ملف أثر الإقلاع بجانب البرنامج:\n" + BootTrace.FilePath,
-                "Date ERP", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show("حدث خطأ أثناء بدء التشغيل.\n\nسجل إقلاع MfgSystem:\n" + BootTrace.FilePath,
+                "MfgSystem", MessageBoxButton.OK, MessageBoxImage.Error);
             app.Shutdown();
         }
     }

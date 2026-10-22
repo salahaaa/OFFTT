@@ -68,7 +68,7 @@ public class ConnectionTester
             }
             if (!r.DatabaseExists)
             {
-                r.Message = $"قاعدة البيانات {database} غير موجودة على الخادم. شغّل مثبّت السيرفر DateERP_Server_Setup لإنشائها.";
+                r.Message = $"قاعدة البيانات {database} غير موجودة على الخادم. أنشئ قاعدة MfgSystemDB مستقلة أو تحقق من إعداد الاتصال.";
                 return r;
             }
 

@@ -221,6 +221,9 @@ public class PlanClosureTests
         Assert.False(svc.ClosePlanFinal(e.PlanId).Ok);
         // الحالة الموثقة (بسبب إلغاء) لا تمنع الإقفال — يغطيها T07.
     }
+
+    [Fact]
+    public void T08_Closing_Already_Closed_Plan_Is_Idempotent()
     {
         using var host = new TestHost();
         var e = Setup(host, e => new List<PlanItemDto>

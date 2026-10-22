@@ -28,7 +28,7 @@
 - **مركزي**: جميع الشاشات تستخدمه
 - **التحميل**: 
   - من قاعدة البيانات `SystemSettings` (مفتاح `UITheme_Current`)
-  - احتياط من ملف محلي `%LocalAppData%\DateERP\Themes\current_theme.json`
+  - احتياط من ملف محلي `%LocalAppData%\MfgSystem\Themes\current_theme.json`
   - افتراضي إن لم يوجد
 - **الحفظ**: 
   - في قاعدة البيانات + ملف محلي
@@ -93,8 +93,8 @@
   - `UITheme_Current` - JSON للثيم الحالي
   - `UITheme_List` - JSON لقائمة الثيمات المخصصة
 - **ملف محلي**: 
-  - `%LocalAppData%\DateERP\Themes\current_theme.json`
-  - `%LocalAppData%\DateERP\Themes\themes_list.json`
+  - `%LocalAppData%\MfgSystem\Themes\current_theme.json`
+  - `%LocalAppData%\MfgSystem\Themes\themes_list.json`
 - يعمل بدون قاعدة بيانات (وضع محلي)
 
 ## الصلاحيات

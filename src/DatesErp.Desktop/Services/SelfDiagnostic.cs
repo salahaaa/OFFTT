@@ -9,6 +9,7 @@ using DatesErp.Desktop.Screens;
 using DatesErp.Desktop.Views;
 using DatesErp.Desktop.Views.Screens;
 using DatesErp.Infrastructure.Persistence;
+using DatesErp.Infrastructure.Connection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -25,7 +26,7 @@ namespace DatesErp.Desktop.Services;
 public static class SelfDiagnostic
 {
     public static string ReportDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "logs");
+        Path.Combine(AppConfig.ConfigDirectory, "logs");
 
     public static string ReportPath => Path.Combine(ReportDirectory, "selftest.txt");
 
@@ -37,7 +38,7 @@ public static class SelfDiagnostic
     {
         _lines.Clear(); _pass = 0; _fail = 0;
 
-        Head("تقرير الفحص الذاتي — DateERP");
+        Head("تقرير الفحص الذاتي — MfgSystem");
         Line($"التاريخ            : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         Line($"إصدار البرنامج     : {BuildInfo.Stamp} · v{AssemblyVersion()}");
         Line($"نظام التشغيل       : {Environment.OSVersion} · {(Environment.Is64BitProcess ? "64-bit" : "32-bit")}");

@@ -6,5 +6,5 @@ namespace DatesErp.Desktop.Services;
 /// </summary>
 public static class BuildInfo
 {
-    public const string Stamp = "1.50.37"; // §v1.50.26: الختم = رقم التسليم — عنوان النافذة يثبت أي نسخة تعمل فعلاً
+    public const string Stamp = "1.50.72"; // رقم الإصدار المعروض للمستخدم
 }

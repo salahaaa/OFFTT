@@ -34,7 +34,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         // §ختم البناء: يظهر في شريط العنوان لمعرفة أي نسخة تعمل فعلاً على جهاز المستخدم
-        Title = "DateERP — إصدار " + Services.BuildInfo.Stamp;
+        Title = "MfgSystem — إصدار " + Services.BuildInfo.Stamp;
         BuildNav();
         UpdateStatus();
 

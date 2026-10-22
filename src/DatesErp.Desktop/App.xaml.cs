@@ -27,9 +27,9 @@ public partial class App : System.Windows.Application
             {
                 MessageBox.Show(
                     "حدث خطأ جسيم أثناء تشغيل النظام:\n" + Describe(ex) +
-                    "\n\nالتفاصيل في ملف أثر الإقلاع بجانب البرنامج:\n" + BootTrace.FilePath +
+                    "\n\nسجل إقلاع MfgSystem:\n" + BootTrace.FilePath +
                     "\nأرسل محتوى هذا الملف للدعم الفني.",
-                    "نظام Date ERP — فشل البدء", MessageBoxButton.OK, MessageBoxImage.Error);
+                    "MfgSystem — فشل البدء", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             catch { }
         };
@@ -77,9 +77,9 @@ public partial class App : System.Windows.Application
             {
                 MessageBox.Show(
                     "تعذر بدء تشغيل النظام:\n" + Describe(ex) +
-                    "\n\nالتفاصيل في ملف أثر الإقلاع بجانب البرنامج:\n" + BootTrace.FilePath +
+                    "\n\nسجل إقلاع MfgSystem:\n" + BootTrace.FilePath +
                     "\nأرسل محتوى هذا الملف للدعم الفني.",
-                    "نظام Date ERP — فشل البدء", MessageBoxButton.OK, MessageBoxImage.Error);
+                    "MfgSystem — فشل البدء", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             catch { }
             Shutdown(-1);

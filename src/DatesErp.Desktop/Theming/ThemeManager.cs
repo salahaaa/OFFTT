@@ -19,12 +19,12 @@ namespace DatesErp.Desktop.Theming
     {
         private static ThemeSettings _current;
         private static readonly string LocalThemePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "DateERP", "Themes", "current_theme.json");
+            DatesErp.Infrastructure.Connection.AppConfig.ConfigDirectory,
+            "Themes", "current_theme.json");
 
         private static readonly string LocalThemesListPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "DateERP", "Themes", "themes_list.json");
+            DatesErp.Infrastructure.Connection.AppConfig.ConfigDirectory,
+            "Themes", "themes_list.json");
 
         public static ThemeSettings Current => _current ?? ThemeSettings.CreateDefault();
         public static event EventHandler<ThemeSettings> ThemeChanged;

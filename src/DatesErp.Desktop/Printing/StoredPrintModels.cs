@@ -20,7 +20,7 @@ public static class StoredPrintModels
     {
         var company=db.CompanyInfos.AsNoTracking().OrderBy(x=>x.Id).FirstOrDefault();
         var m=new PhaseDocModel {DocTitle=title,DocNo=doc.DocumentNumber,StatusAr=PrintStatus.Of(doc),Notes=doc.Notes??"",
-            CompanyNameAr=company?.CompanyNameAr??"DateERP",CompanyAddress=company?.Address,CompanyPhone=company?.Phone,LogoBytes=company?.LogoBytes,
+            CompanyNameAr=company?.CompanyNameAr??"MfgSystem",CompanyAddress=company?.Address,CompanyPhone=company?.Phone,LogoBytes=company?.LogoBytes,
             FooterNote="نسخة من البيانات المحفوظة؛ تعديلات الشاشة غير المحفوظة لا تظهر هنا. الطباعة لا تعتمد المستند ولا تغيّر المخزون."};
         m.Info.Add(("أنشأه",db.Users.AsNoTracking().Where(u=>u.Id==doc.CreatedBy).Select(u=>u.FullName).FirstOrDefault()??"—"));
         if(doc.ApprovedDate!=null)m.Info.Add(("تاريخ الاعتماد",doc.ApprovedDate.Value.ToString("dd/MM/yyyy HH:mm")));

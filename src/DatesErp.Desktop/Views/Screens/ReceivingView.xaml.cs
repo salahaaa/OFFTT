@@ -35,7 +35,7 @@ public partial class ReceivingView : UserControl
     // §1.50.60 7-ب/7-ج/7-هـ
     private System.Windows.Threading.DispatcherTimer _autoSaveTimer2;
     private DateTime _lastAutoSave2 = DateTime.MinValue;
-    private string AutoSavePath2 => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DateERP", "drafts", $"ReceivingDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId : 0)}.json");
+    private string AutoSavePath2 => System.IO.Path.Combine(DatesErp.Infrastructure.Connection.AppConfig.ConfigDirectory, "drafts", $"ReceivingDraft_{(AppContainer.Provider?.GetService(typeof(ICurrentSession)) is ICurrentSession cs ? cs.UserId : 0)}.json");
 
     public ReceivingView()
     {

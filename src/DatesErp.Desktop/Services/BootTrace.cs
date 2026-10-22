@@ -1,11 +1,12 @@
 using System;
 using System.IO;
+using DatesErp.Infrastructure.Connection;
 
 namespace DatesErp.Desktop.Services;
 
 /// <summary>
-/// أثر إقلاع يُكتب في ملف بجانب ملف التشغيل مباشرة (وليس في LocalAppData) ليسهل العثور عليه.
-/// يبدأ من أول لحظة في التطبيق ليسجل أين يتوقف الإقلاع بالضبط حتى لو كان العطل مبكراً جداً.
+/// أثر إقلاع مستقل يُكتب في مجلد سجل MfgSystem داخل ملف المستخدم المحلي.
+/// يبدأ من أول لحظة في التطبيق ليسجل أين يتوقف الإقلاع حتى لو كان العطل مبكراً جداً.
 /// </summary>
 public static class BootTrace
 {
@@ -18,7 +19,12 @@ public static class BootTrace
         {
             if (_path == null)
             {
-                try { _path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "boot_trace.txt"); }
+                try
+                {
+                    var directory = System.IO.Path.Combine(AppConfig.ConfigDirectory, "logs");
+                    Directory.CreateDirectory(directory);
+                    _path = System.IO.Path.Combine(directory, "boot_trace.txt");
+                }
                 catch { _path = "boot_trace.txt"; }
             }
             return _path;
